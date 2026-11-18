@@ -1,0 +1,43 @@
+{
+  "id": "evt_1cb7e1b84002CAPv4UcNOn1LCN",
+  "created": 1794415401860,
+  "type": "form.created",
+  "location": {
+    "directory": "C:\\Users\\example\\projects\\ntfy-proj"
+  },
+  "data": {
+    "form": {
+      "id": "frm_1cb7e1b84001U2uZNIs350NgKa",
+      "sessionID": "ses_e3486e372ffeUCqVQtxzOv1AXd",
+      "title": "Example question",
+      "metadata": {
+        "kind": "question",
+        "tool": {
+          "messageID": "msg_1cb7dfeb40012tCp2LCd415VNJ",
+          "id": "call_d544c6f864b141bb984d44b8"
+        }
+      },
+      "fields": [
+        {
+          "key": "q0",
+          "title": "Scope choice",
+          "description": "Pick one option for this example question.",
+          "type": "string",
+          "options": [
+            {
+              "value": "Option one",
+              "label": "Option one",
+              "description": "First example option."
+            },
+            {
+              "value": "Option two",
+              "label": "Option two",
+              "description": "Second example option."
+            }
+          ],
+          "custom": true
+        }
+      ]
+    }
+  }
+}

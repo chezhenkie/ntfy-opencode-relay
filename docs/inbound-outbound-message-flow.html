@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>inbound outbound message flow</title>
+<style>
+  :root {
+    --bg: #d8e4f5;
+    --card: #fdfdfd;
+    --ink: #14181c;
+    --muted: #546374;
+    --line: #c9c9c9;
+    --accent: #0f766e;
+    --mint: #46755c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1a2b;
+      --card: #262626;
+      --ink: #e6ebef;
+      --muted: #93a2b3;
+      --line: #424242;
+      --accent: #4fd1c5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 36px 20px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: 0.2px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 32px; }
+  section { margin: 0 0 42px; }
+  h2 { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; font-size: 16px; margin: 0 0 10px; background: var(--mint); color: #fff; border: 1px solid #335742; border-radius: 3px; }
+  section + section h2 { margin-top: 8px; }
+  .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  svg { display: block; width: 100%; height: auto; }
+  .card { fill: var(--card); stroke: var(--line); stroke-width: 1.2; }
+  .focus { fill: var(--card); stroke: var(--accent); stroke-width: 1.4; }
+  .t { fill: var(--ink); font-size: 14.5px; font-weight: 600; }
+  .d { fill: var(--muted); font-size: 11.5px; }
+  .cap { fill: var(--muted); font-size: 10.5px; }
+  .side { fill: var(--muted); font-size: 10.5px; }
+  .arrow { stroke: var(--line); stroke-width: 1.4; fill: none; }
+  .arrow-a { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .dash { stroke: var(--line); stroke-width: 1.2; fill: none; stroke-dasharray: 5 4; }
+  .tag { fill: var(--card); stroke: var(--line); stroke-width: 1; }
+  footer { color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>inbound outbound message flow</h1>
+  <p class="sub">One self-hosted path from phone to agent and back. The relay is the only process that reads and writes on both sides.</p>
+
+  <section>
+    <h2>inbound: phone to agent</h2>
+    <p class="note">A message or command typed on the phone becomes a prompt in a running OpenCode session.</p>
+    <svg viewBox="0 0 1040 700" role="img" aria-label="Inbound flow from phone through the VPN, loopback bridge, ntfy server and relay to an OpenCode session">
+      <defs>
+        <marker id="inHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--line)"/>
+        </marker>
+        <marker id="inHeadA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+
+      <rect class="card" x="300" y="30" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="60">Phone</text>
+      <text class="d" x="318" y="80">F-Droid client, topic ntfy-proj, token in Authorization header</text>
+
+      <rect class="card" x="300" y="138" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="168">VPN ingress</text>
+      <text class="d" x="318" y="188">VPN only, TLS on 443, certificate for the server name</text>
+
+      <rect class="card" x="300" y="246" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="276">Loopback bridge</text>
+      <text class="d" x="318" y="296">netsh portproxy 127.0.0.1:8810 to [::1]:8810</text>
+
+      <rect class="card" x="300" y="354" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="384">ntfy server</text>
+      <text class="d" x="318" y="404">2.37.2 container, deny-all auth, ACL per user and topic</text>
+
+      <rect class="focus" x="300" y="462" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="492">Relay, inbound task</text>
+      <text class="d" x="318" y="512">SSE reader, 1000-entry queue, dedupe, pin then newest</text>
+
+      <rect class="card" x="300" y="570" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="600">OpenCode session</text>
+      <text class="d" x="318" y="620">prompt to session; files saved under .ntfy-inbox</text>
+
+      <line class="arrow" x1="535" y1="100" x2="535" y2="128" marker-end="url(#inHead)"/>
+      <text class="cap" x="549" y="118">WSS, Bearer token</text>
+
+      <line class="arrow" x1="535" y1="208" x2="535" y2="236" marker-end="url(#inHead)"/>
+      <text class="cap" x="549" y="226">TLS, proxy to localhost</text>
+
+      <line class="arrow" x1="535" y1="316" x2="535" y2="344" marker-end="url(#inHead)"/>
+      <text class="cap" x="549" y="334">podman port map, 8810 to 8080</text>
+
+      <line class="arrow" x1="535" y1="424" x2="535" y2="452" marker-end="url(#inHead)"/>
+      <text class="cap" x="549" y="442">SSE /api/event over HTTPS</text>
+
+      <line class="arrow-a" x1="535" y1="532" x2="535" y2="560" marker-end="url(#inHeadA)"/>
+      <text class="cap" x="549" y="550">session API over HTTP</text>
+
+      <path class="arrow-a" d="M 300 497 H 110 V 65 H 290" marker-end="url(#inHeadA)"/>
+      <text class="side" x="122" y="516">replies: /allow, /always, /deny</text>
+      <text class="side" x="122" y="532">header POST, ack within 15 s</text>
+
+      <rect class="tag" x="300" y="668" width="470" height="26" rx="3"/>
+      <text class="side" x="318" y="685">the pinned session receives the message; a file arrives as a local path</text>
+    </svg>
+  </section>
+
+  <section>
+    <h2>outbound: agent to phone</h2>
+    <p class="note">Assistant text and files become a notification. Permission asks carry a short code that a phone reply resolves.</p>
+    <svg viewBox="0 0 1040 700" role="img" aria-label="Outbound flow from an OpenCode session through relay outbound, turn builder and publisher to ntfy and the phone">
+      <defs>
+        <marker id="outHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--line)"/>
+        </marker>
+        <marker id="outHeadA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+
+      <rect class="card" x="300" y="30" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="60">OpenCode session</text>
+      <text class="d" x="318" y="80">assistant text, tool results, changed files</text>
+
+      <rect class="focus" x="300" y="138" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="168">Relay, outbound task</text>
+      <text class="d" x="318" y="188">one event reader, 256-event channel, journal dedupe</text>
+
+      <rect class="card" x="300" y="246" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="276">Turn builder</text>
+      <text class="d" x="318" y="296">3 s debounce, 2-newline join, link-safe, 3400 B or .md</text>
+
+      <rect class="card" x="300" y="354" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="384">Publisher</text>
+      <text class="d" x="318" y="404">JSON text, PUT files, token oc-out and oc-attach</text>
+
+      <rect class="card" x="300" y="462" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="492">ntfy server</text>
+      <text class="d" x="318" y="512">72 h cache, ACL ntfy-proj, no Firebase path</text>
+
+      <rect class="card" x="300" y="570" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="600">Phone</text>
+      <text class="d" x="318" y="620">WebSocket delivery, notification, VPN only</text>
+
+      <line class="arrow-a" x1="535" y1="100" x2="535" y2="128" marker-end="url(#outHeadA)"/>
+      <text class="cap" x="549" y="118">SSE /api/event</text>
+
+      <line class="arrow-a" x1="535" y1="208" x2="535" y2="236" marker-end="url(#outHeadA)"/>
+      <text class="cap" x="549" y="226">in process, bounded channel</text>
+
+      <line class="arrow" x1="535" y1="316" x2="535" y2="344" marker-end="url(#outHead)"/>
+      <text class="cap" x="549" y="334">HTTPS JSON POST</text>
+
+      <line class="arrow" x1="535" y1="424" x2="535" y2="452" marker-end="url(#outHead)"/>
+      <text class="cap" x="549" y="442">loopback 8080</text>
+
+      <line class="arrow" x1="535" y1="532" x2="535" y2="560" marker-end="url(#outHead)"/>
+      <text class="cap" x="549" y="550">WSS over the VPN</text>
+
+      <rect class="card" x="40" y="462" width="210" height="70" rx="3"/>
+      <text class="t" x="56" y="488">MCP send_file</text>
+      <text class="d" x="56" y="506">one file, project-confined,</text>
+      <text class="d" x="56" y="521">15 MB cap</text>
+      <path class="dash" d="M 250 497 H 290" marker-end="url(#outHead)"/>
+
+      <rect class="card" x="800" y="340" width="220" height="90" rx="3"/>
+      <text class="t" x="816" y="366">Ask registry</text>
+      <text class="d" x="816" y="384">4 hex code from the request id,</text>
+      <text class="d" x="816" y="399">record written before the push,</text>
+      <text class="d" x="816" y="414">reply binds to that record</text>
+      <path class="dash" d="M 800 385 H 780" marker-end="url(#outHead)"/>
+
+      <rect class="tag" x="300" y="668" width="470" height="26" rx="3"/>
+      <text class="side" x="318" y="685">asks carry the code; /allow, /always and /deny answer it</text>
+    </svg>
+  </section>
+
+  <footer>Both directions share one ntfy server and one relay. The phone never reaches the desktop directly; the VPN carries the traffic and the relay is the only reader of the OpenCode event stream.</footer>
+
+</main>
+</body>
+</html>

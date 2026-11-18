@@ -1,0 +1,559 @@
+# Changelog
+
+## 0.14.4
+
+### Changes
+
+* New `docs\index.html`: the front page for the three flow pages. Three cards carry a title, one line of description and a small diagram glyph; each card opens its page. The top bar, the nine themes and the print view are the template's, unchanged.
+* `docs\.nojekyll` keeps the branch site on the HTML page instead of the Jekyll build of `docs\index.md`.
+* `docs\index.md` and `docs\tree.md` list the front page.
+* `README.md` carries a 760 px screenshot of the front page under `Diagrams`, and it links the Pages site.
+* The deploy mode tests build the meshnet example address from octets, and `tools\secret-scan.allow` no longer lists the phone address; the tree scan passes without it.
+* Repository and package name: `ntfy-opencode-relay`. The public repository starts from the sanitized tree as a fresh history.
+
+### Gate
+
+* Shell style and both scripts byte-equal to the template; ASCII, LF, three resolving links; light and dark checked in a browser. No code change.
+
+## 0.14.3
+
+### Changes
+
+* `docs\ntfy-flow.html` is now `docs\inbound-outbound-message-flow.html`, and its browser title and heading follow the name. The commands page carries the browser title `commands and tags flow`.
+* The commands page puts the tag table beside the command table: seven tags, what each one means, and who can use it. `lock` and `question` name your part; the rest are relay-only.
+* New `docs\ask-and-permission-flow.html`: the agent ask, the 15-second delay before the push with the desktop answer beside it, the lock-tagged push, the code reply, and the allowed or denied outcome. Linked from `docs\index.md` and listed in `docs\tree.md`.
+* Flow page headings follow `subject: outcome`; the paired slogan under the slash diagram is gone.
+
+### Gate
+
+* Flow validator: commands 396 checks, ask 226 checks, 0 failures. Links and ASCII over 36 markdown files, tlds 1285, secrets 0 over 176 files (1 binary skipped).
+
+## 0.14.2
+
+### Changes
+
+* New `docs\commands-and-tags-flow.html`: one page, two diagrams. The first runs a phone slash command through the project topic and the relay control table to OpenCode and back as a short ack; the second routes plain text to one chat and shows the tags on the reply. The command table and the tag explanation sit below both. Linked from `docs\index.md` and listed in `docs\tree.md`.
+* No code change.
+
+### Gate
+
+* Local: flow validator 396 checks, 0 failures; links and ASCII over 36 markdown files, tlds 1285, secrets 0 over 175 files (1 binary skipped).
+
+## 0.14.1
+
+### Changes
+
+* Audit: the permission matrix's last open row, a UI-driven ask, now has a live record. A TUI shell call for `net user` raised the ask, the relay pushed it after the 15 s grace as code `5db4`, the phone reply `/allow 5db4` was accepted, and the call completed. `audit\permission-case7-0.14.0.md` holds the `/api/event` frames, the register and reply lines, and the empty session permission list; `docs\open-work.md` 10.2 is marked complete.
+* No code change.
+
+### Gate
+
+* Local: links and ASCII over 36 files, tlds 1285, secrets 0 over 174 files (1 binary skipped).
+
+## 0.14.0
+
+### Changes
+
+* One credential: `phone` is the only principal, with one ACL row `*` rw. `system` and `admin` are removed, the per-topic rows are folded into the wildcard, and `bin\ntfy-relay\ntfy-token.txt` is the only token file. The relay and the MCP read it; the app keeps its copy. No password is used and the web UI has no login. A new subscription needs only a topic name.
+* New `auth` crate, package `ntfy-relay-auth`, binary `ntfy-auth`: `apply` and `status` for the one principal, its `*` row, and the token file. The config is `ntfy-auth.json` in the relay root; unknown fields and bad values fail. `apply` is idempotent, writes the token `0600` on Unix, prints no secret, and never revokes; `--dry-run` changes nothing. Exit codes 0/2/3/4. `tools\rotate-token.ps1` is phone-only.
+* Multi-root: `projectRoots` accepts several folders. Each folder name is a topic; discovery keeps the newest 150, and a duplicate folder name keeps the more recently active project with a warning. The outbound overflow notice no longer falls back to the first root when several are configured.
+* Docs: operations 7.2 and the config table, spec 01 section 4 and the multi-root rule, spec 09 registry scope, and spec 11 for the auth bootstrap; the README, phone manual, troubleshooting, and the Ubuntu and Podman pages follow the single-token rule.
+
+### Gate
+
+* 485 tests, fmt and clippy clean. The auth crate carries 28 of them.
+* New binary: `bin\ntfy-relay\ntfy-auth.exe`, 1,540,385 bytes, sha `a6b81ba8af094fa45506f60fdcdda16ec6e1a19ff31307bec8aaaa27b3c6671f`, reporting 0.14.0 with the icon and version block. Live `status` reports the user, the `*` row, and the token as listed; `apply` and `apply --dry-run` report kept only and change nothing.
+* After one OpenCode reload, both project MCP clients are `connected`. A Foton `send_file` published `README.md` with the `oc-out,oc-manual` tags, and the phone-side ack read `Sent: README[.]md, 12785 bytes.` No auth error was logged.
+* Live: relay 0.14.0 on roots `ntfy-proj` and `fotonfrontend-proj`; two topics subscribed; three queued phone messages accepted and prompted within 80 ms; six recent turn messages backfilled; the replies reached the phone.
+
+## 0.13.4
+
+### Changes
+
+* The image builds from the tracked context alone. A fetch stage in `container\Dockerfile` downloads the pinned ntfy release tarball, checks it against `NTFY_SHA256`, and copies the unpacked binary into the final stage. The hand-downloaded binary and tarball in `container\` are removed, their `.gitignore` entries along with them, and `.dockerignore` keeps a new hand download out of the context.
+* `tools\build-image.ps1` reads `NTFY_VERSION` from the Dockerfile and derives the tag from it, so tag and pin cannot drift. It builds `container\` in place instead of copying a context to `temp\image-build`, and the `Get-FileHash` / `PSModulePath` step is gone.
+* Image scheme recorded in spec 10: reference `localhost/ntfy:<ntfy version>` plus `latest`, no registry, a `podman save` archive per claimed architecture, and amd64 as the claimed architecture because the base digest and release checksum pin it. Docs: binaries 1.2 and 1.4, windows-podman 2.3 and 2.4, ubuntu 3.2, operations 7.1, the README license note, and 10.5 marked done.
+
+### Gate
+
+* Local: build from the tracked context, image `33df141d4f44`, arch amd64, user 1000:1000, healthcheck present, `ntfy --version` reports 2.37.2, 85,318,819 bytes.
+* Clean-host path: `podman save --format docker-archive` produced `temp\image-release\ntfy-image-2.37.2-amd64.tar` (85,334,528 bytes, sha `08ec36d441aaa52586f3979480aa4479411c283ceda89b401496d92bf2493a85`); the container and every `localhost/ntfy` tag were removed; the archive was loaded; `ntfy-deploy apply` recreated the container; health 200 on loopback and HTTPS; a second `apply` reported `reused`; relay pid 8688 unchanged and resubscribed at 19:23:19.
+* Links and ASCII over 33 files, tlds 1285, secrets 0 over 162 files (1 binary skipped).
+
+## 0.13.3
+
+### Changes
+
+* README rewritten as an entry point: what the project is, the three runtime parts and the topic that links them, the route of a message, protocols, requirements, quick start, checks, layout, and license. Version history and crate-by-crate status moved out to specsheet 03 and 06, operations 7.9, and this file.
+* Quick start publishes with `bin\ntfy-relay\ntfy-system-token.txt`. The earlier text read the phone token under a system-token comment.
+* Layout names `audit\`, `docs\specsheet\`, and `e2e-smoke-tests\`, so it matches the tree after 10.8.
+* Docs: 10.4 marked done in `docs\open-work.md`. No code change.
+
+### Gate
+
+* Links and ASCII over 33 files, tlds 1285, secrets 0 over 162 files (1 binary skipped).
+
+## 0.13.2
+
+### Changes
+
+* The Windows binaries carry the product icon and a version block. `rust\assets\ntfy-icon.svg` is the art source; `rust\assets\ntfy.ico` holds 16, 24, 32, 48, 64, 128, and 256 px entries with slightly rounded corners. A shared build script, `rust\build\win-resource.rs`, writes the resource from that icon and the version in `package.json`, compiles it with `windres` for windows-gnu, and links it into `ntfy-relay.exe` and `ntfy-deploy.exe`, so every release build embeds both.
+* File properties show FileDescription, FileVersion, ProductName, ProductVersion, InternalName, and OriginalFilename, and Explorer uses the icon for each binary. An MSVC build uses `rc.exe` when it is on PATH and otherwise builds without the resource, so CI test builds stay green; the release build is windows-gnu.
+* Docs: the tree lists the assets, the shared build script, and both `build.rs` files.
+
+### Gate
+
+* Local: release build for `x86_64-pc-windows-gnu` in WSL; `ntfy-relay.exe` 11,552,611 bytes and `ntfy-deploy.exe` 1,740,620 bytes; both report version 0.13.2 and expose the icon through the shell.
+* Checks: fmt, clippy, 457 tests, links and ASCII over 33 files, tlds 1285, secrets 0 over 162 files (the icon is the one binary skipped).
+
+## 0.13.1
+
+### Changes
+
+* New `docs\switching-networks.md`, the operator manual for `ntfy-deploy mode`: what a switch changes, prerequisites, the menu and named targets, the phone URL per path, verification, rollback, a failure table, and exit codes. Linked from the manual index, spec 10, and operations 7.1.
+* No code change.
+
+### Gate
+
+* Local: links and ASCII over 33 files, tlds 1285, secrets 0 over 158 files.
+
+## 0.13.0
+
+### Changes
+
+* `ntfy-deploy mode` adds the one-command network switch. With no target it prints the detected paths as a numbered menu; `mode tailscale`, `mode nord`, and `mode lan` select directly; `--dry-run` prints the document and the plan and writes nothing. An unavailable target exits 2 and names what was detected.
+* Detection reads interface addresses from `netsh interface ipv4 show addresses` on Windows, from `ip -4 -o addr show` plus the default route on Linux, and the node name and IPv4 from `tailscale status --json`. A stopped VPN or a missing tool removes its entry; it is not an error. A Nord address outside `100.64/10` is offered with a note that Meshnet peers use that range, and Tailscale plus Meshnet are flagged as sharing `100.64/10`.
+* The command writes `ntfy-deploy.json` with the chosen mode, base URL, `behindProxy`, and `vpn.ip`, proves the exact text parses and validates, applies it through the existing path, and prints the phone server URL. `apply` and `status` still never write the config.
+* `DeployConfig` gains a canonical serializer; the written document keeps the field order and shape of the example file.
+* Docs: spec 10 commands, tests, acceptance, and non-goals; operations 7.1; network, https rollback, windows-podman, ubuntu, tree, README.
+
+### Gate
+
+* Local: fmt, clippy `-D warnings`, 457 tests on Linux (59 in `deploy`), links and ASCII pass, tlds, secrets 0.
+* Live: deploy binary 1,687,368 bytes, sha `edb50c8d372d282f2ea40cef7f56d83a859afe2151f506e09ddf4d822fa7d82c`; `mode tailscale --dry-run` printed the document and plan; the interactive `mode` wrote a byte-identical config and reused the container at health 200; `mode nord` exits 2 while Meshnet is off; `status` reports ok.
+
+## 0.12.1
+
+### Changes
+
+* `ntfy-deploy apply` now compares content, not just the tag. Before reusing a container it reads the container image ID from `podman inspect` and the local image ID for the configured reference, and recreates when they differ. A rebuild that keeps `localhost/ntfy:2.37.2` is therefore rolled out by the next `apply`; previously it reported `reused` and left the old image running. When either ID is unavailable the reference comparison alone decides, which keeps the old behaviour as a fallback. `--dry-run` prints the added `podman image inspect` line.
+* `tools\build-image.ps1` resets `PSModulePath` to the machine and user values when `Get-FileHash` is not resolvable, so a Windows PowerShell 5.1 launch from a pwsh parent shell no longer fails on the checksum step.
+* Docs: spec 10 and operations 7.1 describe the image ID rule. No relay code changed.
+
+### Gate
+
+* Local: fmt, clippy `-D warnings`, 447 tests on Linux (49 in `deploy`), links and ASCII pass, secrets 0.
+* Live: deploy binary 1,628,720 bytes, sha `dd06212db5869587c8984b37b335697cced1fc15823f3ace95a84a17d90f56d0`; `apply` reports `reused` with container and tag both at `6c7427154d80`; `--dry-run` prints the image check; a direct launch of `build-image.ps1` from pwsh rebuilt the same image ID with no error. Relay binary unchanged.
+
+## 0.12.0
+
+### Changes
+
+* New `deploy` crate, package `ntfy-relay-deploy`, binary `ntfy-deploy`: `apply` and `status` for modes `proxy`, `vpn`, and `lan`. The config is `ntfy-deploy.json` in the relay root; unknown fields and modes fail. `apply` validates, reuses a matching healthy container, otherwise recreates it with `NTFY_BASE_URL` and `NTFY_BEHIND_PROXY`, waits for loopback `/v1/health`, and reconciles the Windows portproxy. The Windows loopback bridge is ensured before the health wait; the VPN entry changes after it. `--dry-run` prints the plan and changes nothing. Exit codes are 0 ok, 2 invalid config, 3 unhealthy, 4 platform command failed.
+* Relay contract: `ntfy.server` is `http://127.0.0.1:<port>` in every mode. A mode switch never edits the relay config, restarts the relay, or changes the token.
+* Attachments: the relay accepts the deployment `baseUrl` host as well as the server host. It reads only `baseUrl` from `ntfy-deploy.json` at each attachment fetch and fetches that hop through the configured server base, so no plaintext connection goes to the mesh or LAN address and a switch needs no restart. A missing or invalid file leaves the server host only.
+* Image contract: `container\server.yml` no longer bakes `base-url` or `behind-proxy`; `tools\build-image.ps1` builds the tracked context without rendering. Every deployment supplies both values at container creation.
+* Windows: loopback portproxy in every mode, VPN entry added only in `vpn` and removed otherwise, `netsh` failure is exit 4. Linux: `proxy` publishes on loopback; `vpn` and `lan` publish on all interfaces so the relay's loopback path stays reachable.
+* Docs: spec 10, spec 00, operations 7.1, windows-podman, ubuntu, network 4.5, https 5.4 and 5.8, tree, README, and open-work 10.5 describe the crate and the env-at-creation contract.
+
+### Gate
+
+* Local: fmt, clippy `-D warnings`, 443 tests on Linux (45 in `deploy`), links 32, secrets 0 over 146 files.
+* Live: relay build 11,529,962 bytes, sha `5cbbdce662dc0a1410ab879b42a8b2e199ea5644a925dc6a6a2d85f1e5367ab5`, pid 8608, config `http://127.0.0.1:8810`, `subscribed`, MCP `connected`. `ntfy-deploy apply` recreated the container with the env pair and reported health 200; the second apply reused it; `status` is ok. HTTPS health 200 and a `ntfy-probe` publish 200. The VPN config reports the missing entry as unhealthy (exit 3), and the Windows and Linux dry-runs match the mode table.
+
+## 0.11.0
+
+### Changes
+
+* Routing is derived, not stored. The per-topic pin is gone. `resolve_session` is replaced by a pure resolver in `rust\crates\inbound\src\routing.rs` that ranks a live snapshot: a one-shot pending target, then the previous target inside a 10-minute continuity window, then the session with the newest activity. Activity is the later of `time.viewed` (desktop use) and `time.updated` (any message). Child sessions are excluded. Ties break on running, then the previous target, then id, so one snapshot always resolves to one session.
+* The failure this removes: a pin set on 2026-11-12 routed three phone texts on 2026-11-14 to that session while the desktop worked in a newer one, and only an `/auto` or an id-bearing `/to` could recover. A hint outside its window is now ignored, so no stored decision outlives the evidence.
+* State: `pins` is replaced by `targets` with `last`, `lastAt`, `pending`, `pendingAt`. An old `pins` field is ignored and dropped on the first write; no migration step. Target rows are capped like topic rows.
+* Commands: `/to` with no argument pushes numbered titles and keeps the list for 10 minutes; `/to 2` or `/to <title fragment>` sets the one-shot target. `/new` targets the session it creates. The pending target is consumed by the next accepted prompt or expires after 10 minutes. `/auto` clears it. No command takes a session id. `/sessions` prints numbers and titles; `/status` prints `target` instead of `pin`.
+* Adapter: `SessionApi::session_signals` carries `time.viewed` and `parentID`; the default implementation keeps harnesses without those fields on `updated` only. `pin_session`, `get_session`, `PinRequest`, and `PinSink` are removed. The control capability names `session.pin` and `session.auto` stay as the command gates.
+* Live-test fixes: continuity now yields when any other session was active after the previous prompt, so a 10-minute hint cannot hold a chat the desktop left. Hint timestamps come from the wall clock; the control engine's monotonic clock stays on confirm and cooldown arithmetic, so `pendingAt` is epoch milliseconds and the one-shot target actually fires. An opened-but-idle chat is not a target: OpenCode writes `time.viewed` on input, not on focus, and an empty TUI `/new` draft has no server session until its first prompt.
+* Docs: specs 01, 02, 03, 04, 07, 09, and 10, operations, the phone manual, and troubleshooting describe the resolver and the bounded hints.
+
+### Gate
+
+* Local: fmt, clippy `-D warnings`, 394 tests on Linux, links and ASCII 32 files, secrets 0 over 146 files.
+* Live: binary 11,499,238 bytes, sha `3e41408e2d899f36e0765a9d96c186f56d87b5dc53f73dfc4f888e008f101323`, pid 19448, loopback `/v1/health` 200, `subscribed`, MCP `connected` after reload, state `targets` written with epoch `pendingAt`. Phone matrix in `audit\relay-target-0.11.0.md`: plain text follows the last desktop message, `/new` from the phone creates the session and the next text arrives with `source=pending`.
+
+## 0.10.0
+
+### Changes
+
+* Relay root: the daemon and the MCP server read and write only `bin\ntfy-relay\` on Windows. The config, the system and phone tokens, the state, the asks registry, the seen journal, and the log moved out of `~/.config/opencode` and `~/.local/state/opencode`. The stale lock, the corrupt state backup, and the dead plugin config `notification-ntfy-with-questions.json` were deleted.
+* Resolution: `NTFY_RELAY_CONFIG`, else `<install root>/ntfy-relay.json`; the root is `NTFY_RELAY_HOME` or the directory that holds `ntfy-relay.exe`. The default token, state, log, and control-table names are plain files in that root. There is no fallback to the old paths.
+* `relay-config.ps1` derives the root from `NTFY_RELAY_HOME`, `NTFY_RELAY_BIN`, or `bin\ntfy-relay\`; the `relay.binary` key is no longer read. `rotate-token.ps1` writes the consumer token into the root. `startup-check.ps1` adds `relay-root-clean`, which fails when an `ntfy*` file exists under the OpenCode config or state directory.
+* Docs name the root. Spec 01 and spec 03 carry a path note for their older examples; spec 10 records the migration as executed. The spec 10 examples use a documentation VPN address instead of a host address.
+* README states the runtime properties in ten bullets, starting with the relay boundary. Spec 00 adds the design rules: the framework never talks to ntfy, three runtime entities, one host-side publisher, framework access only through its API, and loopback on every mode switch. Spec 08 cites rule 1. Spec 10 names the deployment modes `proxy`, `vpn`, and `lan` and requires the inbound attachment host check to accept the deployment base URL.
+
+### Gate
+
+* Local: fmt, clippy `-D warnings`, 388 tests on Linux, TLD 1285, links 31, secrets 0 over 145 files.
+* Live: binary 11,441,924 bytes, sha `8ba63a6fc6f2a56b7ffcf3dc9e6fc8bf4a4c28bbe2c445e2bcab55dbcb1950bd`, pid 7836, loopback `/v1/health` 200, MCP `connected`. `startup-check.ps1` passes process, heartbeat, container, loopback portproxy, and `relay-root-clean`. Tailscale reported `NoState` during the gate, so `tailscale-serve` and the HTTPS health check failed and were not verified; the same endpoint passed before the migration.
+
+## 0.9.0
+
+### Changes
+
+* Permission replies are bound to the ask that was pushed. The relay writes a registry record with the session id, request id, session title, and push time before publishing the push, and appends a short code line: `Reply /allow <code>, /always <code>, or /deny <code>; with one ask, /allow is enough.` The code is the first 4 lowercase hex characters of the request id's sha256, extended to 5, 6, or 7 only on collision.
+* `/allow`, `/always`, and `/deny` take an optional code, with or without `#` and in any case. Without one they answer the newest ask. The reply path no longer reads the pin, the routing preference, the active map, or session recency; the pin routes text prompts only. A successful ack names the session title and the code, for example `approved once in Fix links (3f2a), 2 more pending`.
+* Registry `~/.local/state/opencode/ntfy-relay-asks.json`: compact JSON, version 1, mode 0600, 512 records, oldest pushed evicted. A persist failure suppresses the push and retries on the next tick; three failures drop the entry with one error line. A failed publish removes the record.
+* A desktop answer (`permission.replied`) removes the record and keeps an in-memory tombstone for 15 minutes, so a late phone reply acks `already answered in <title> (<code>)`. A 404, 409, or an already-answered 400 removes the record too; other 4xx and 5xx keep it for a retry.
+* `/status` adds `asks <n>` after the pin. The native help text names the optional code. A missing or corrupt registry file starts empty after quarantine and never blocks startup.
+
+### Gate
+
+* Local: fmt, clippy `-D warnings`, 387 tests on Linux (was 352), TLD 1285, links 30, secrets 0 over 143 files.
+* Live: swapped to the 0.9.0 build (rollback `bin\ntfy-relay\ntfy-relay.080-live.exe`), MCP `connected`, `startup-check.ps1` all PASS. The seven-case matrix is in `audit\permission-reply-0.9.0.md`: cases 1 to 6 pass, including an unrelated pin, newest default, `#CODE` and uppercase, a desktop answer tombstone, restart persistence, and the empty registry message. The UI-driven ask case stays open.
+
+## 0.8.1
+
+### Changes
+
+* Tooling: `tools\secret-scan.mjs` scans tracked files and reachable blobs for tokens, credentials, tailnet names, and real absolute paths; `npm run secrets` is the tree gate and CI runs it. `tools\secret-scan.allow` holds the example host and the fake test credentials.
+* Fixtures and docs: the captured project list, session titles, tool command, and question are synthetic; paths use the example user, `docs\phone-app.md` uses the example host, and the loopback test uses a TEST-NET-3 address.
+* Relay: the Windows binary was rebuilt from 0.8.0 and swapped live (11,217,442 bytes, `2da18a801fbeff6676aa183475cc1b4f1599ecfe5b08e735e3da53a27875a50b`); rollback is `bin\ntfy-relay\ntfy-relay.079-live.exe`. The source delta since 0.7.9 is one line: `bin` is excluded from auto-attach.
+
+### Gate
+
+* Local: fmt, clippy `-D warnings`, 352 tests, TLD 1285, links 28, secrets 0 over 138 files. History scan: 874 hits, all in pre-sanitization blobs, pending 10.3.
+* CI run 43423678990 green: checks (TLD, links, secrets), 352 tests on ubuntu-26.04, 349 on windows-latest.
+* Live: pid 11216, `subscribed`, cold backfill `published=0`, `status` reports the lock pid alive with `pins=1`, `/v1/health` 200, MCP `connected` through the API.
+
+## 0.8.0
+
+### Changes
+
+* Node relay deleted: six `.mjs` modules, three test files, its README, and the implementation switch in the Windows wrappers. `start-relay.ps1` is the only launcher and merges the old `start-rust-relay.ps1`; `relay-config.ps1`, `relay-watchdog.ps1`, `startup-check.ps1`, and `rotate-token.ps1` no longer resolve Node. A `relay.implementation` key in an existing config is ignored.
+* Folder `ntfy-opencode-incoming-relay\` renamed to `relay-windows\`. It keeps the launcher, the config helpers, the watchdog script and VBS, the task registration, and the control table example.
+* Runtime moved out of user scratch: `resources\ntfy-relay\` to `bin\ntfy-relay\`, live exe plus rollback builds. `bin\` is gitignored; `resources\` stays user scratch for downloads. The MCP registration, the wrapper default, and `startup-check.ps1` follow the new path.
+* Auto-attach also excludes `bin`, next to `resources`.
+* `tools\link-safety\build-tlds.mjs` writes and checks only the Rust table. `npm test` and the CI Node test step are gone; `npm run tlds` and `npm run links` stay.
+
+### Gate
+
+* Local: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` 352 passed on Linux, `npm run tlds` 1285, `npm run links` 28 files. Windows tests not run locally; CI covers them.
+* Live: relay pid 15660 from `bin\ntfy-relay\ntfy-relay.exe`, `subscribed`, cold backfill `published=6`, `/status` accepted with `control status ok`, watchdog task repointed to `relay-windows\relay-watchdog.vbs` and fired once with result 0 and no restart, `opencode reload` then `mcp list` reported `ntfy connected` from the new path, and `tools\startup-check.ps1` passed all checks.
+
+## 0.7.11
+
+### Changes
+
+* CI: the Rust matrix pins `ubuntu-26.04`. `ubuntu-latest` still resolved to `ubuntu-24.04`, so the gate now runs on the same LTS as the development machine; `windows-latest` stays floating.
+
+### Gate
+
+* Run 43387519047 green on checks, `rust (ubuntu-26.04)`, and `rust (windows-latest)`: 352 tests on Linux, 349 on Windows, Node 94, TLD 1285, links 27. CI-only change; the live binary is unchanged.
+
+## 0.7.10
+
+### Changes
+
+* Tokens: `tools\rotate-token.ps1 -Expires` issues a temporary token for a test device, a demo, or a one-off client. It writes no consumer file and refuses `-RestartRelay`, `-RevokeOld`, and either live consumer path, so the relay and phone tokens stay non-expiring.
+* Tokens: the issue phase reads `ntfy token list` back and fails when the server did not apply the requested expiry, or when a plain issue comes back with one; `-Expires` takes `Nm`, `Nh`, `Nd`, or `Nw` and prints the computed UTC end.
+* Docs: spec 01 records the expiry rule and the destructive-handler boundary (own user, token, topic, and local activation; registry closed); the operations runbook carries the temporary-token commands.
+* Docs tooling: `tools\check-doc-links.mjs` builds its file list from `git ls-files`, so it checks exactly the tracked markdown it claims; an untracked scratch note no longer fails the gate.
+
+### Gate
+
+* 14 checks: five rejected forms (bad format, relay restart, revoke mix, consumer path, zero), the dry-run plan, a temporary issue, the list expiry, publish `200`, revoke by prefix, the token gone, `401` afterwards, and both consumer files unchanged.
+* Live path: a plain issue to an explicit non-consumer file, `never expires` in the list, publish `200`, revoke, and the phone consumer file unchanged. No relay restart was needed; the live token is untouched.
+
+## 0.7.9
+
+### Changes
+
+* Start, stop, and memory audit: `audit/startstop-memory.md` records eight disk findings, three fix rows, and the start/stop rows that belong to the bridge.
+* Logs: the four wrappers share one rotating writer. `relay-start.log`, `relay-watchdog.log`, and `startup-check.log` rotate at 1 MiB into one `.1` copy instead of appending forever; a failed rotate still writes the line.
+* State: `core::state::prune_corrupt_backups` removes `<state>.corrupt-*` backups older than 7 days at startup and logs the count once. A fresh quarantine is inside the TTL and is never pruned; a name that does not parse as a timestamp is left alone.
+* Ownership, reconcile, and the reboot race are unchanged: no job object or cgroup owner exists until the bridge, so the watchdog and the lock pid remain the restart and adoption path.
+
+### Rust port
+
+* Two core tests: an 8-day backup is removed while a fresh one and a non-numeric name survive; a missing parent directory returns zero instead of an error.
+* Gate: 352 tests on Linux, 349 on Windows; Node 94, TLD 1285, links 27; CI run 43380558860 green on checks, rust Ubuntu, and rust Windows. The live binary is the 0.7.9 build (11,217,414 bytes). After the swap the start log shows `state pruned corrupt backups=1`, a `/status` ack returned with uptime 42 s, and the cold backfill recovered the one turn text whose debounce raced the stop (74 messages scanned, 1 published). MCP reconnected after `opencode reload`.
+
+## 0.7.8
+
+### Changes
+
+* Docs only: the 13 doc rows and 3 accepted costs from `audit/r3-plan.md`; no code change.
+* Commands: `/new [title]` and `/status` are in the spec command table, the new-session out-of-scope line is gone, and the deleted plugin paths are removed from the deliverables and rollout text.
+* Limits: the fixed 0.7.7 values are recorded: 30 prompts per minute per topic with a burst of 10, the 200 MB inbox budget, the 256-state turn cap, the 90 s stream idle deadline, the attachment host rule, and exactly one `projectRoots` entry.
+* Link safety: the manual and the spec carry the 68-entry allowlist, including `lu`.
+* Accuracy: rustls public roots only, trusted local registration without owner or mode checks, the prompt-retry duplicate risk, the failed-publish path, the Rust stderr log name, untested macOS, and WebSocket or JSON-stream delivery.
+* `audit/` is committed and added to the directory tree.
+
+### Rust port
+
+* Docs-only release; the live 0.7.7 binary is unchanged. `npm run links` passes over 26 markdown files with all ASCII; `npm run tlds` reports 1285 identical entries. CI run 43378278836 green on checks, rust Ubuntu, and rust Windows.
+
+## 0.7.7
+
+### Changes
+
+* Round 4 wave 2: the 13 runtime, turn, and fixed-value fixes from `audit/r3-plan.md`; no new config keys.
+* Turn text: a new execution start flushes buffered text that has no terminal instead of discarding it. The tracker caps at 256 states, publishes the oldest buffered text as a partial, and logs every drop.
+* Target resolution: an event whose session or project lookup fails transiently stays unmarked and is recoverable by backfill, which ignores the negative cache. At zero permission delay, the duplicate and reply-before-ask checks still run.
+* Send file: the inspected file is opened once, stat'ed and read through the same handle, and the read stops at the cap, so a symlink swap cannot redirect it.
+* Inbound: one drain pass handles at most 8 messages and re-arms itself. Prompts are limited to 30 per minute per topic with a burst of 10, `/steer` included. The per-project inbox holds a 200 MB budget; older files are pruned oldest-first to make room, and a message that still does not fit gets one error push and no prompt.
+* Runtime: state writes, seen-journal compaction, inbox prune, and log rotation run off the runtime thread. A 10 s timeout bounds both error-body reads, and both event streams reconnect after 90 s of silence.
+* Topic ownership: discovery publishes one owner per topic to a map shared with outbound; a losing canonical gets no route and no publish. More than one `projectRoots` entry fails at start.
+* Attachments: the URL host must equal the `ntfy.server` host on every hop.
+
+### Rust port
+
+* 350 tests on Linux, 347 on Windows. CI run 43373965388 green on checks, rust Ubuntu, and rust Windows. Node 94, TLD 1285, links 26. The live binary is the 0.7.7 build (11,204,680 bytes); the live turn, ack, and restart-dedupe smoke passed.
+
+## 0.7.6
+
+### Changes
+
+* Round 4 wave 1: the 21 config, wire, and parse fixes from `audit/r3-plan.md`.
+* Config: `ntfy.server` accepts `http://` only on a loopback host and `https://` everywhere else. `USERPROFILE` is read on Windows only. Every boolean, `enabled` included, must be a JSON boolean. Bounded counts are integers: `0.5`, `0`, and `1e300` fail, as do out-of-range values. `heartbeatMinutes` is capped at 1440 so the timer cannot panic. `files.inboxDir` must be a plain relative path, so `C:foo`, `/abs`, `.`, and `..` fail on both platforms.
+* Wire: one transport rule for publish and attachment fetch, HTTPS except on loopback. SSE lines cap at 1 MiB and a joined data frame at 8 MiB; an oversize frame is dropped and the connection logs once. Publish response bodies cap at 8 KiB. State and seen writes call `sync_all` before the rename and fsync the parent on Unix. State loads cap at 500 ids and 512 topic rows; an unknown version is quarantined. Attachment names fall through `<seconds>-`, `<millis>-`, then a counter. State, journal, log, and attachment files are 0600 on Unix.
+* Parse: a permission reply takes the first request in server order, not the smallest id. Non-2xx API bodies clip at 200 characters. Inbound metadata caps at 32 tags of 64 bytes, a 255-byte attachment name, and a 2048-byte URL. A message more than 60 s in the future is rejected. Control parsing and header trimming use the JavaScript whitespace set, so U+0085 is not a separator. An ack is link-safe first, then clamped to 3400 bytes on a character boundary. The MCP stdio line caps at 1 MiB: one error frame, then exit.
+* Test hygiene: the inbound control suite writes under the workspace `temp/` tree, and both no-op-waker loops fail after 5 s instead of spinning.
+
+### Rust port
+
+* 319 tests on Linux, 320 on Windows. CI: fmt, clippy `-D warnings`, Node 94, TLD 1285, links 26. The live binary stays the 0.7.4 build; 0.7.7 builds and swaps it with the live smoke.
+
+## 0.7.5
+
+### Changes
+
+* Docs only. Doc and code drift corrected: the Rust daemon replaces plugin wording in the request path and rollback notes, startup order is relay then Podman machine, the workspace counts read 295/296, `projectRoots` replaces `projects`, the `app` dependency list includes `ntfy`, `inbound` depends on `core` only, the fixture count is seven, and `/status` reads topics, queue, pin, and uptime.
+* Server examples: the Ubuntu config gains the deny-all auth block and the user provisioning step; the Windows snippet gains `enable-signup: false`.
+* `docs\audit\` is deleted: the round 1 and round 2 audits, the outgoing audit pair, the compliance record, and the security pass. They cover the Node relay and the deleted plugin and verifier; the Rust audit is planned after the build is final. Git history keeps them.
+
+### Rust port
+
+* No Rust change. 295 tests on Linux, 296 on Windows.
+
+## 0.7.4
+
+### Changes
+
+* Reconnect backfill: outbound reads completed assistant messages from `GET /api/session/{id}/message` after a stream reconnect or a start and publishes text the live stream missed. Assistant message ids join event ids in one seen journal, so a live part and a backfilled message publish once. Reconnect scope is the open turns, the session that published last, and pinned sessions; a cold start reads the newest 20 sessions per project root inside the 15-minute window, capped at 200 messages. Permission asks and question forms have no history endpoint and stay uncovered.
+* Tree cleanup: the project-local `ntfy-forwarder` plugin, the loopback ingest, its registration file, and its bearer token are deleted. `/api/event` is the only event feed; `.opencode\` is gone.
+
+### Rust port
+
+* `crates\opencode` adds the assistant message API (`messages`, `MessageInfo`, `MessagePage`, `decode_messages`) with a captured `messages.json` fixture. Cursor pages omit `order`; the server rejects the combination with `InvalidCursorError`.
+* `crates\outbound` adds `FeedState`, gap tracking, the backfill pass, message-id marking, `turn::compose_body`, `turn::recovered_body`, and `seen::contains`. The ingest, the hyper stack, and `reqwest` leave the crate. 295 tests on Linux, 296 on Windows.
+* Live gate 2026-11-12: the plugin was moved out and the relay stopped for 41 s while a three-line gate turn completed. The start logged `backfill cold=true sessions=20 messages=111 published=1`; the phone received `GATE-A`, `GATE-B`, `GATE-C` once. A restart logged `published=0`.
+
+### Documentation
+
+* README, specs 00, 03, 04, 06, and 07, operations 7.4 and 7.9, and the tree drop the forwarder and the ingest. Spec 04 row 12 is implemented and row 1 is marked superseded. The Node suite drops the forwarder tests (94).
+
+## 0.7.3
+
+### Changes
+
+* Repository layout: the Rust workspace moved to `rust-src\` with `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, and `crates\`. CI runs the Rust job from that directory, `npm run tlds` writes `rust-src\crates\core\src\tlds.rs`, and the docs and tree list the new paths. No code or binary change.
+
+### Rust port
+
+* No Rust change. 286 tests on Linux, 287 on Windows.
+
+## 0.7.2
+
+### Changes
+
+* Docs only. The relay docs record the process-manager boundary: a future per-environment bridge owns process lifecycle and cross-environment routing, the relay keeps ntfy semantics, start order is container, OpenCode registration, relay, and stop order is the reverse. The division is provisional; no code or binary change.
+
+### Rust port
+
+* No Rust change. 286 tests on Linux, 287 on Windows.
+
+### Documentation
+
+* Spec 00 gains a process supervision section and corrected test counts and dependencies; operations 7.3 records the implicit start order and the target order; troubleshooting covers the reboot race where a stale `service.json` pid makes the daemon exit and the watchdog restarts it; the phone auth path is recorded as a custom Bearer header, and operations 7.2 records the phone rotation rehearsal; a root user manual covers phone setup, commands, and tags.
+
+## 0.7.1
+
+### Changes
+
+* Token rotation: `tools\rotate-token.ps1` issues a token, writes the consumer file, optionally restarts the relay and requires a probe publish, then revokes the old token by prefix. Two phases keep the old token valid until the new one is in use. The revoke phase refuses the token in the consumer file.
+
+### Rust port
+
+* No Rust change. 286 tests on Linux, 287 on Windows.
+
+### Documentation
+
+* Operations 7.2 gains the rotation procedure and the rehearsal evidence; the tree lists the new tool.
+
+## 0.7.0
+
+### Changes
+
+* Tree cleanup: the patched publisher plugin `opencode-ntfy-with-questions@0.2.1`, its patch script, vendored `dist`, and the local-only verifier are deleted. The Rust outbound is the only publisher; rollback is a previous `ntfy-relay.exe` build or the last known good commit. The Node relay stays as the inbound rollback.
+* Link safety maintains two copies: `ntfy-opencode-incoming-relay\link-safe.mjs` and the generated Rust table. `npm run tlds` fails on drift between them.
+
+### Rust port
+
+* No Rust change. 286 tests on Linux, 287 on Windows.
+
+### Documentation
+
+* README, tree, operations, troubleshooting, and specs 00, 01, 03, and 05 drop the plugin rollback and record the cleanup. Audits stay as dated findings.
+
+## 0.6.1
+
+### Changes
+
+* Restart dedupe: the outbound worker journals each handled event id to `ntfy-relay-seen.jsonl` next to the state file and reloads the 15-minute, 8192-id window on start, so a forwarder replay after a relay restart no longer republishes the last turns. An id is written after its effects, so a crash can repeat an effect but never skip one. A journal that cannot be read or written logs once and leaves the in-memory window running.
+* Lock recovery: on Windows a killed relay can keep its pid reachable while a parent still holds the process object, so a restart reported `relay already running` until the lock was removed. The liveness check now reads the exit code and treats a terminated process as dead; a failed query still reports alive, so a second relay never starts.
+
+### Rust port
+
+* `crates\outbound` adds `seen`; 57 to 63 tests. The journal compacts on load and at 1 MiB or 16384 lines.
+* `crates\app` adds one Windows-only terminated-pid lock test. The workspace totals 286 on Linux and 287 on Windows.
+
+## 0.6.0
+
+### Changes
+
+* Task supervision: a failed inbound SSE or outbound task restarts in place with 1 s to 60 s backoff instead of ending the daemon. A panicking outbound worker aborts its reader.
+* Event gap: the project-local `ntfy-forwarder` OpenCode plugin forwards raw envelopes from the in-process stream to a `127.0.0.1` ingest with a bearer token. The ingest and `/api/event` share one worker and an 8192-id dedupe window; the plugin retains 10 minutes, 2048 events, or 8 MiB and replays after a failed POST. It holds no ntfy token and never publishes.
+* Live gate: the relay was stopped for 31 s mid-turn. Without the forwarder the push held only part 3; with it the single push held parts 1, 2, and 3 and no duplicate.
+
+### Rust port
+
+* `crates\outbound` adds `ingest`, the event-id dedupe window, and the reader abort guard; 48 to 57 tests. `crates\app` adds the supervisor; 45 to 49 tests. The workspace totals 280.
+* The ingest writes `~/.local/state/opencode/ntfy-relay-forward.json` and removes it on a graceful stop. The loopback listener accepts a 4 MiB JSON body and 64 concurrent connections.
+
+### Node
+
+* The forwarder adds 9 tests; the suite totals 103.
+
+### Documentation
+
+* Specs 00, 03, 04, 05, and 06 record row 1 as decided, the forwarder capture, and the new counts. `docs\operations.md` 7.4 and 7.9 cover the ingest, the registration file, and the gate.
+
+## 0.5.0
+
+### Changes
+
+* Outbound cutover: the Rust daemon is the only publisher. `outbound.enabled: true`; the patched plugin is removed from `opencode.jsonc` and kept as rollback. One relay process owns inbound and outbound.
+* `ntfy_send_file` moves to `ntfy-relay mcp`: one `send_file` tool over stdio, registered as `mcp.servers.ntfy` with `codemode: false`. The tool is project-confined from the process working directory and publishes `oc-out,oc-manual`.
+* Live gate on `ntfy-proj`: turn text, a long turn with a 11361-byte `.md` attachment, a three-file auto-attach set, a permission ask with the 15 s grace, a question form, child-session suppression, and one agent call to the MCP tool.
+
+### Rust port
+
+* `crates\app` grows from 42 to 45 tests, including a spawned stdio server test; the workspace totals 267.
+* The MCP loop answers `initialize`, `ping`, `tools/list`, and `tools/call`, echoes a known protocol revision, and returns the plugin's refusal text as a normal result.
+* Question asks map from `form.created` with `metadata.kind = "question"`; permission replies use `once`, `always`, or `reject`.
+
+### Documentation
+
+* Specs 00, 03, 04, and 06 record the live Rust path, the MCP decision, and child suppression; `docs\operations.md` 7.4 and 7.9 describe the outbound cutover and the rollback order.
+
+## 0.4.2
+
+### Changes
+
+* Inbound cutover: the Rust daemon is the live relay on `ntfy-proj`. `relay.implementation` in `~/.config/opencode/ntfy-relay.json` reads `rust`; set it back to `node` to roll back.
+* `start-relay.ps1` dispatches to `start-rust-relay.ps1`. The hidden WMI spawn and the 30 s lock wait are proven end to end (`PASS relay-started`).
+* `startup-check.ps1` reports the implementation and passes under Rust: `relay-process pid=... impl=rust`, heartbeat, container, Serve, portproxy, HTTPS.
+
+### Rust port
+
+* Rediscovery: the client re-reads `~/.local/state/opencode/service.json` after a transport error or HTTP 401 and swaps only when the URL or password changed. GETs retry once inline; writes refresh and let the caller retry.
+* The relay lock compares the executable image name, so a reused pid no longer blocks startup.
+* `crates\app` grows from 32 to 42 tests; the workspace totals 210.
+
+### Documentation
+
+* `docs\tree.md` section 9.1 records the crate boundaries, the inward dependency direction, and the one-way adapter seam. The patched plugin stays until `outbound` replaces it.
+
+## 0.4.1
+
+### Changes
+
+* Server base is Alpine 3.24.4, pinned by the linux/amd64 manifest digest `sha256:0f49f331...`. The 3.20 tag was past end of support.
+* The image installs no packages. BusyBox `wget` and `grep` run the healthcheck, and the static binary needs no ca-certificates or tzdata.
+* `COPY --chmod=0755` removes the duplicate 76.6 MB binary layer. The image drops from 166 MB to 85 MB.
+* The server runs as uid 1000 with a read-only root, tmpfs `/tmp`, `--cap-drop=ALL`, and `no-new-privileges`. An existing cache volume needs a one-time chown.
+
+### Rust port
+
+* `crates\ntfy` is the wire client: JSON and header publish, file PUT, SSE parsing, a streaming response seam, and bounded attachment fetch, with 40 tests over the Node fixtures.
+* `crates\opencode` is the local API client, the native event types, and the `SessionApi` implementation, with 45 tests. Service discovery reads `~/.local/state/opencode/service.json` (`url`, `pid`, `password`); `opencode.baseUrl` is an optional override. Fixtures are captured `/api/project`, `/api/session`, and `/api/session/active` responses plus one recorded `/api/event` stream.
+* `crates\core` owns config loading, the state file (pins, replay cursor, 500-id window, atomic rename, quarantine), the byte budgets used by acks, and the link-safe filter, with 31 tests.
+* `crates\app` is the daemon composition root: config gate, lock, rotating log, project discovery, SSE resubscribe, one-writer state, serial queue drain, control and native commands, attachment download, and link-safe acks and error pushes, with 32 tests. `ntfy-relay run` and `status` ship; `mcp` waits for `outbound`. `relay.implementation` selects Node or Rust behind the existing launcher, and `start-rust-relay.ps1` starts the Rust binary hidden.
+* `crates\inbound` adds the message filter, dedupe cursor, 1000-entry queue, pin-and-running routing, prompt delivery, native permission replies, and inbox retention against the Node suite, with 52 tests.
+* `SessionApi` gains `get_session` and `prompt`. Permission replies are a second `PermissionApi` trait, because the adapter contract names only create, list, pin, and prompt. The OpenCode adapter retries a prompt twice on network errors and 5xx, and keeps the HTTP status on the error.
+
+### Infrastructure
+
+* CI runs `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` on Ubuntu and Windows.
+
+### Documentation
+
+* `docs\windows-podman.md`, `docs\ubuntu.md`, `docs\https.md`, `docs\operations.md`, `docs\binaries.md`, and `docs\tree.md` carry the new base, size, and run flags.
+* Rust daemon status, build, smoke, and rollback are documented in `README.md`, `docs\operations.md`, and `specsheet\03-rust-relay-merge.md`; `docs\index.md` and `docs\troubleshooting.md` carry the uid 1000 container posture.
+
+## 0.4.0
+
+### Features
+
+* Inbox retention: `<project>\.ntfy-inbox` is pruned at relay startup and every 6 hours. Only regular files named `<epoch>-<name>` older than 7 days are deleted; symlinks, directories, and unmatched names are left alone. Each run logs one `inbox-prune` line, and a per-root failure is logged without stopping the relay.
+* `ntfy_send_file` stays project-confined. An absolute path outside the project canonical is refused, with no override; recorded in the security pass and the phone continuation spec.
+
+### Documentation
+
+* `specsheet\05-js-to-rust-pitfalls.md`: behavioral pitfalls for the Rust port, tied to the module that carries each one, with a per-module risk table and an evidence-gaps section.
+
+## 0.3.0
+
+### Features
+
+* Command and control is data, not code: the action table is JSON at `~/.config/opencode/ntfy-relay-control.json`. Prefixes `/` and `hey relay`, case-insensitive, aliases, one argument string, and a closed handler set (`session.create`, `session.list`, `session.pin`, `session.auto`, `relay.help`, `relay.status`).
+* Built-in `new`, `sessions`, `to`, `auto`, `help`, and `status` actions when the control file is missing; the relay logs the expected path once and never writes the file. Invalid content stops the relay at startup. `ntfy-relay-control.example.json` is committed.
+* `/new [title]` creates a session in the project, pins it, and acks the short id and title. `adapter.agent` and `adapter.model` in `ntfy-relay.json` are required; the capability list omits `session.create` when either is absent.
+* Actions declare `requires` capabilities. An unmet requirement disables that action, logs once, and answers with one error ack naming the missing capability; the rest of the table keeps working.
+* Confirmable actions hold for 60 seconds and accept `/yes` or `/no`; one confirmation per topic, and a late `/yes` reports expiry. Cooldowns are per topic and verb. Commands with an attachment are rejected.
+* `/steer`, `/allow`, `/always`, and `/deny` stay native. Free text still never creates a session.
+
+### Fixes
+
+* Server signup is disabled in the baked image (`enable-signup: false`); anonymous access stays denied and the admin user holds no token.
+* The control file is capped at 64 KiB and must be a regular file. Created session titles are cleaned of control characters and capped at 200 characters.
+* Relay acks and error pushes for control actions use the same link filter and 3400-byte clamp.
+
+## 0.2.0
+
+### Changes
+
+* Relay lock is created atomically. A live pid exits clean, an unreadable lock fails closed, and a readable lock with a dead pid is replaced once.
+* Replay cursor is split from delivery state and advances only after a message is handled, so a dropped queue entry can no longer skip a message.
+* Delivery is at-most-once. State is written before delivery, every failure produces one error push and one log line with the message id, and there is no outbox.
+* Publish calls abort after 10 seconds. Attachment URLs must be HTTPS, redirects are manual, capped at three hops, and every hop is checked.
+* Command set is exact and case-insensitive: `/help`, `/sessions`, `/to`, `/auto`, `/steer`, `/allow`, `/always`, `/deny`. Any other leading-slash text is delivered as a prompt.
+* Topic discovery keeps the 150 most recently active topics and logs every skipped topic on each warning-set change. Duplicate folder names keep the newest and warn once.
+* Full map refresh runs every 60 seconds, so project ids and duplicate winners do not go stale.
+* Logging defaults to `info` with echo off, never logs prompt text, rotates at 5 MB with one old file, and writes a heartbeat with `topics=`, `lastEventAge=`, and `queue=`.
+* Shutdown aborts the SSE stream, waits up to 10 seconds for the drain, logs dropped queued messages, and releases the lock last.
+* Relay dependencies are injected, so drain, delivery, commands, discovery, rotation, and shutdown run under test without network or filesystem state.
+* `start-relay.ps1` shares node, config, state, lock, log, and server resolution with the watchdog through `relay-config.ps1`.
+
+### Fixes
+
+* A corrupt state file is renamed to `.corrupt-<unix>` and the relay starts empty instead of refusing to start.
+* Relay acks and error pushes pass through the link filter and are clamped at 3400 bytes.
+
+## 0.1.0
+
+### Features
+
+* ntfy 2.37.2 image on Podman, host port 8810 bound to `[::1]`, HTTPS served by Tailscale Serve, deny-all auth with per-user read-write grants and an anonymous health endpoint.
+* Patched `opencode-ntfy-with-questions@0.2.1`, patches 1 to 7: location-less terminal frames, completion mapping, one push per event across loaded instances, project folder as topic, turn text buffering and debounce, long text as `.md` attachment, new-file auto-attach, `ntfy_send_file`, and link safety on every outgoing body.
+* Inbound relay on one SSE connection: replay window, bounded queue, jittered reconnect, pinned and automatic session routing, `/help`, `/sessions`, `/to`, `/auto`, `/steer`, `/allow`, `/always`, `/deny`.
+* Attachment download to `<project>\.ntfy-inbox\<unix>-<name>` and delivery as `file:///` URIs.
+* Startup wrapper with a single-instance lock, watchdog task every five minutes, and a startup check covering relay process, heartbeat, Podman machine, container health, Serve, loopback portproxy, and HTTPS health.

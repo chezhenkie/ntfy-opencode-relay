@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "container": "ntfy",
+  "user": "phone",
+  "topic": "*",
+  "permission": "rw",
+  "tokenLabel": "owner",
+  "tokenFile": "ntfy-token.txt"
+}

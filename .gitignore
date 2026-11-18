@@ -1,0 +1,10 @@
+# local artifacts and runtime data
+resources/
+bin/
+logs/
+temp/
+.scratch/
+.ntfy-inbox/
+
+# rust build output
+target/

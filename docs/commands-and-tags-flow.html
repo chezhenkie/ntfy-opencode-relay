@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-print="off">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>commands and tags flow</title>
+<script>
+  (function () {
+    var d = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
+  })();
+</script>
+<style>
+  /* Default tokens: vercel theme for light, github for dark. The bar script replaces them. */
+  :root {
+    color-scheme: light;
+    --page-bg: #E1E2E7;
+    --page-ink: #B81F1F;
+    --page-muted: #333333;
+    --page-line: #333333;
+    --card: #FFFFFF;
+    --ink: #B81F1F;
+    --muted: #333333;
+    --line: #333333;
+    --accent: #E8A020;
+    --pick-ink: #000000;
+    --tb-ink: #333333;
+    --tb-line: #333333;
+    /* Print palette: written once here, aliased by the toggle and by the print stylesheet. */
+    --print-bg: #FFFFFF;
+    --print-ink: #000000;
+    --print-muted: #333333;
+    --print-line: #9A9A9A;
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --page-bg: #0D1117;
+    --page-ink: #C9D1D9;
+    --page-muted: #8B949E;
+    --page-line: #30363D;
+    --card: #010409;
+    --ink: #C9D1D9;
+    --muted: #8B949E;
+    --line: #30363D;
+    --accent: #2971E1;
+    --pick-ink: #FFFFFF;
+    --tb-ink: #8B949E;
+    --tb-line: #30363D;
+  }
+  html[data-print="on"] { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page-bg);
+    color: var(--page-ink);
+    font: 15px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+    transition: background .25s, color .25s;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 46px 20px 60px; }
+  h1 { font-size: 22px; font-weight: 400; margin: 0 0 4px; letter-spacing: 0.2px; }
+  .sub { color: var(--page-muted); font-size: 13px; margin: 0 0 32px; }
+  section { margin: 0 0 42px; }
+  .head { display: flex; align-items: center; margin: 0 0 10px; }
+  h2 {
+    display: inline-flex; align-items: center; height: 28px; padding: 0 12px 4px;
+    font-size: 16px; font-weight: 600; margin: 0; background: transparent;
+    color: var(--page-ink); border: 2px solid var(--accent); border-radius: 3px;
+  }
+  .note { color: var(--page-muted); font-size: 13px; margin: 0 0 16px; }
+  svg { display: block; width: 100%; height: auto; }
+  .card { fill: var(--card); stroke: var(--line); stroke-width: 1.2; }
+  .focus { fill: var(--card); stroke: var(--accent); stroke-width: 1.4; }
+  .t { fill: var(--ink); font-size: 14.5px; font-weight: 600; }
+  .d { fill: var(--muted); font-size: 12.5px; }
+  .cap { fill: var(--muted); font-size: 11.5px; }
+  .side { fill: var(--muted); font-size: 11.5px; }
+  .arrow { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+  .arrow-a { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .dash { stroke: var(--muted); stroke-width: 1.2; fill: none; stroke-dasharray: 5 4; }
+  .loop { stroke: var(--muted); stroke-width: 1.6; fill: none; stroke-dasharray: 0.1 6; stroke-linecap: round; }
+  .tag { fill: var(--card); stroke: var(--line); stroke-width: 1; }
+  .card, .focus, .tag { transition: fill .25s, stroke .25s; }
+  .t, .d, .cap, .side { transition: fill .25s; }
+  h2 { transition: background .25s, color .25s, border-color .25s; }
+  footer {
+    color: var(--page-muted); font-size: 12px;
+    border-top: 1px solid var(--page-line); padding-top: 12px;
+  }
+
+  #tb {
+    position: fixed; top: 0; left: 0; right: 0; height: 24px; z-index: 10;
+    display: flex; align-items: center; justify-content: flex-end; gap: 7px;
+    padding: 0 28px; background: var(--page-bg); color: var(--tb-ink);
+    font: 10px/1 "Segoe UI", system-ui, -apple-system, sans-serif;
+    user-select: none; transition: background .25s, color .25s;
+  }
+  .s { width: 1px; height: 12px; background: var(--tb-line); }
+  .tb-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    height: 18px; padding: 0 6px 3px; cursor: pointer;
+    color: inherit; background: transparent;
+    border: 1px solid var(--tb-line); border-radius: 2px;
+    white-space: nowrap;
+  }
+  .tb-btn svg { width: 13px; height: 13px; }
+  .tb-btn.on { background: var(--tb-ink); color: var(--page-bg); border-color: var(--tb-ink); }
+  .tb-btn.fold { min-width: 68px; }
+  .tb-btn.fold::after {
+    content: ""; width: 0; height: 0; margin-left: 4px;
+    border-left: 3px solid transparent; border-right: 3px solid transparent;
+    border-top: 4px solid currentColor;
+  }
+  .group { position: relative; display: inline-flex; }
+  .menu {
+    display: none; position: absolute; top: 21px; right: 0; z-index: 20;
+    flex-direction: column; min-width: 100%; padding: 2px;
+    background: var(--page-bg); border: 1px solid var(--tb-line); border-radius: 2px;
+  }
+  .menu.open { display: flex; }
+  .menu button {
+    height: 16px; padding: 0 6px; cursor: pointer; text-align: left;
+    font: inherit; color: inherit; background: transparent; border: 0; border-radius: 1px;
+    white-space: nowrap;
+  }
+  .menu button:hover, .menu button:focus-visible { background: var(--tb-line); }
+  .menu button[aria-checked="true"] { background: var(--accent); color: var(--pick-ink); }
+  .toggle {
+    position: relative; width: 44px; height: 20px; padding: 0; cursor: pointer;
+    background: transparent; border: 0; color: inherit;
+  }
+  .toggle-thumb {
+    position: absolute; top: 2px; left: 5px; width: 16px; height: 16px;
+    border-radius: 2px; background: var(--thumb); border: 1px solid var(--thumb-line);
+    transition: transform .25s cubic-bezier(.4, 0, .2, 1), background .25s, border-color .25s;
+  }
+  .toggle.on .toggle-thumb { transform: translateX(17px); }
+  .toggle svg {
+    position: absolute; top: 50%; width: 12px; height: 12px;
+    transform: translateY(-50%); pointer-events: none;
+    transition: opacity .25s;
+  }
+  .toggle .ico-l { left: 7px; opacity: 1; }
+  .toggle .ico-r { right: 8px; opacity: 0.45; }
+  .toggle.on .ico-l { opacity: 0.45; }
+  .toggle.on .ico-r { opacity: 1; }
+  .tb-btn:focus-visible, .toggle:focus-visible, .menu button:focus-visible {
+    outline: 2px solid var(--tb-ink); outline-offset: 1px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+
+  @media print {
+    @page { margin: 12mm; }
+    :root {
+      color-scheme: light !important;
+      --page-bg: var(--print-bg) !important;
+      --page-ink: var(--print-ink) !important;
+      --page-muted: var(--print-muted) !important;
+      --page-line: var(--print-line) !important;
+      --card: var(--print-bg) !important;
+      --ink: var(--print-ink) !important;
+      --muted: var(--print-muted) !important;
+      --line: var(--print-line) !important;
+      --accent: var(--print-ink) !important;
+      --pick-ink: var(--print-bg) !important;
+      --tb-ink: var(--print-muted) !important;
+      --tb-line: var(--print-line) !important;
+    }
+    #tb { display: none; }
+    main { max-width: none; padding: 0; }
+    body { background: var(--page-bg) !important; color: var(--page-ink) !important; }
+    h1, .sub, .note, footer { color: var(--page-ink) !important; }
+    .card, .tag { fill: var(--card) !important; stroke: var(--line) !important; }
+    .focus { fill: var(--card) !important; stroke: var(--accent) !important; }
+    .t { fill: var(--ink) !important; }
+    .d, .cap, .side { fill: var(--muted) !important; }
+    .arrow, .dash, .loop { stroke: var(--muted) !important; }
+    .arrow-a { stroke: var(--accent) !important; }
+    footer { border-top-color: var(--line) !important; }
+    section { break-inside: avoid; margin-bottom: 24px; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<div id="tb" role="group" aria-label="Page controls">
+  <button class="tb-btn" id="print" type="button" aria-pressed="false" aria-label="Print friendly" title="Print friendly">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 9V3h12v6"/>
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+      <rect x="6" y="14" width="12" height="8" rx="1"/>
+    </svg>
+    <span>print friendly</span>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <button class="toggle on" id="mode" type="button" role="switch" aria-checked="true" aria-label="Light mode" title="Light or dark mode">
+    <span class="toggle-thumb" aria-hidden="true"></span>
+    <svg class="ico-l" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    <svg class="ico-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <div class="group">
+    <button class="tb-btn fold" id="dark-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="dark-menu" title="Dark theme">dark theme</button>
+    <div class="menu" id="dark-menu" role="menu" aria-label="Dark theme"></div>
+  </div>
+  <div class="group">
+    <button class="tb-btn fold" id="light-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="light-menu" title="Light theme">light theme</button>
+    <div class="menu" id="light-menu" role="menu" aria-label="Light theme"></div>
+  </div>
+</div>
+
+<main>
+
+  <!-- Page copy: replace the title, subtitle and footer. -->
+  <h1>Commands and tags</h1>
+  <p class="sub">Phone text crosses ntfy and the relay into OpenCode; replies return as tagged pushes.</p>
+
+  <section>
+    <div class="head">
+      <h2>slash commands: text to action</h2>
+    </div>
+    <p class="note">The relay reads the first word, does what it names, and answers on the topic. /to and /auto only change where the next message goes.</p>
+    <svg viewBox="0 0 1040 592" role="img" aria-label="Phone command, project topic, relay control, OpenCode and reply cards, with a short ack loop back to the phone">
+      <defs>
+        <marker id="cmdHead" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"/>
+        </marker>
+        <marker id="cmdHeadA" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+
+      <path class="loop" d="M 770 266 H 824 V 80 H 770" marker-end="url(#cmdHead)"/>
+      <text class="side" x="830" y="122">short ack</text>
+
+      <rect class="card" x="300" y="30" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="56">Phone command</text>
+      <text class="d" x="318" y="74">you type /to 2 or /allow 5db4</text>
+      <text class="d" x="318" y="89">a line without a slash is a prompt</text>
+
+      <line class="arrow" x1="535" y1="100" x2="535" y2="128" marker-end="url(#cmdHead)"/>
+      <text class="cap" x="549" y="118">you send it like a message</text>
+
+      <rect class="card" x="300" y="138" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="164">Project topic</text>
+      <text class="d" x="318" y="182">the line lands on ntfy-proj</text>
+      <text class="d" x="318" y="197">the relay reads it first</text>
+
+      <line class="arrow-a" x1="535" y1="208" x2="535" y2="236" marker-end="url(#cmdHeadA)"/>
+      <text class="cap" x="549" y="226">the relay picks it up</text>
+
+      <rect class="focus" x="300" y="246" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="272">Relay control</text>
+      <text class="d" x="318" y="290">the first word names the action</text>
+      <text class="d" x="318" y="305">the rest is its argument</text>
+
+      <line class="arrow-a" x1="535" y1="316" x2="535" y2="344" marker-end="url(#cmdHeadA)"/>
+      <text class="cap" x="549" y="334">the call the action needs</text>
+
+      <rect class="card" x="300" y="354" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="380">OpenCode</text>
+      <text class="d" x="318" y="398">list chats, create one, approve an ask</text>
+      <text class="d" x="318" y="413">a prompt runs in the chosen chat</text>
+
+      <line class="arrow" x1="535" y1="424" x2="535" y2="452" marker-end="url(#cmdHead)"/>
+      <text class="cap" x="549" y="442">the result and a short ack</text>
+
+      <rect class="card" x="300" y="462" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="488">Reply</text>
+      <text class="d" x="318" y="506">a short ack on the topic</text>
+      <text class="d" x="318" y="521">names the chat or the code</text>
+
+      <rect class="tag" x="300" y="560" width="470" height="26" rx="3"/>
+      <text class="side" x="318" y="577">an unknown slash is a prompt; you never type a session id</text>
+    </svg>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>routing: text to one chat</h2>
+    </div>
+    <p class="note">The relay chooses the chat when the message arrives, then sends the answer back as a tagged push.</p>
+    <svg viewBox="0 0 1040 700" role="img" aria-label="Phone text, relay routing, chat choice, delivery, reply back with tags and phone inbox cards, with a next message loop">
+      <defs>
+        <marker id="rtHead" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"/>
+        </marker>
+        <marker id="rtHeadA" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+
+      <path class="loop" d="M 770 590 H 824 V 80 H 770" marker-end="url(#rtHead)"/>
+      <text class="side" x="830" y="122">next message</text>
+
+      <rect class="card" x="300" y="30" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="56">Phone text</text>
+      <text class="d" x="318" y="74">you type a message with no slash</text>
+      <text class="d" x="318" y="89">it lands on the project topic</text>
+
+      <line class="arrow-a" x1="535" y1="100" x2="535" y2="128" marker-end="url(#rtHeadA)"/>
+      <text class="cap" x="549" y="118">no slash, so it is a prompt</text>
+
+      <rect class="focus" x="300" y="138" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="164">Relay routing</text>
+      <text class="d" x="318" y="182">the chat you worked in last</text>
+      <text class="d" x="318" y="197">an open but idle chat does not count</text>
+
+      <line class="arrow-a" x1="535" y1="208" x2="535" y2="236" marker-end="url(#rtHeadA)"/>
+      <text class="cap" x="549" y="226">a pick can override</text>
+
+      <rect class="card" x="300" y="246" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="272">Which chat</text>
+      <text class="d" x="318" y="290">a /to or /new pick lasts one message</text>
+      <text class="d" x="318" y="305">then the last chat you used</text>
+
+      <line class="arrow" x1="535" y1="316" x2="535" y2="344" marker-end="url(#rtHead)"/>
+      <text class="cap" x="549" y="334">the pick clears after this message</text>
+
+      <rect class="card" x="300" y="354" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="380">Delivery</text>
+      <text class="d" x="318" y="398">sent as a queued prompt</text>
+      <text class="d" x="318" y="413">/steer adds text to the running answer</text>
+
+      <line class="arrow" x1="535" y1="424" x2="535" y2="452" marker-end="url(#rtHead)"/>
+      <text class="cap" x="549" y="442">the answer comes back</text>
+
+      <rect class="card" x="300" y="462" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="488">Reply back</text>
+      <text class="d" x="318" y="506">the answer goes back to the phone</text>
+      <text class="d" x="318" y="521">asks, idles, errors and files too</text>
+
+      <rect class="card" x="40" y="462" width="210" height="90" rx="3"/>
+      <text class="t" x="56" y="488">Tags</text>
+      <text class="d" x="56" y="506">oc-out: from the relay</text>
+      <text class="d" x="56" y="521">lock: a permission ask</text>
+      <text class="d" x="56" y="536">oc-manual: a file</text>
+      <path class="dash" d="M 300 497 H 254" marker-end="url(#rtHead)"/>
+
+      <line class="arrow" x1="535" y1="532" x2="535" y2="560" marker-end="url(#rtHead)"/>
+      <text class="cap" x="549" y="550">tagged with the project</text>
+
+      <rect class="card" x="300" y="570" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="596">Phone shows</text>
+      <text class="d" x="318" y="614">the project name in the title</text>
+      <text class="d" x="318" y="629">tags as small labels</text>
+
+      <rect class="tag" x="300" y="668" width="470" height="26" rx="3"/>
+      <text class="side" x="318" y="685">a pick lasts one message or ten minutes; else your last chat</text>
+    </svg>
+  </section>
+
+  <div style="display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start;margin:0 0 18px">
+    <div>
+      <h3 style="font-size:15px;font-weight:600;margin:0 0 8px">Phone commands</h3>
+      <table style="border-collapse:collapse;font-size:13px">
+      <tr>
+        <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">command</th>
+        <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">what it does</th>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/help</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">list the commands</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/status</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">topics, queue, target, asks, uptime</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/new &lt;title&gt;</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">create a session and target it</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/sessions [count]</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">list recent sessions</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/to</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">list five numbered sessions</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/to 2</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">target entry 2 for one message</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/to &lt;fragment&gt;</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">target the single matching title</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/auto</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">drop the pending target</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/steer &lt;text&gt;</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">inject text into the running turn</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/allow [code]</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">allow once, newest or named</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/always [code]</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">allow and remember for matches</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/deny [code]</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">reject, newest or named</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/yes</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">confirm a held action</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/no</td>
+        <td style="border:1px solid var(--line);padding:4px 10px">cancel a held action</td>
+      </tr>
+      </table>
+    </div>
+    <div>
+      <h3 style="font-size:15px;font-weight:600;margin:0 0 8px">Tags</h3>
+      <table style="border-collapse:collapse;font-size:13px">
+        <tr>
+          <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">tag</th>
+          <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">what it means</th>
+          <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">who can use it</th>
+        </tr>
+        <tr>
+          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">oc-out</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">relay output; never add it yourself</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">relay only</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">oc-attach</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">a file added during the turn</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">relay only</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">oc-manual</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">a file you asked the agent to send</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">relay, on an agent request</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">lock</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">a permission ask waits for a reply</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">relay, then you reply</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">question</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">a question form</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">relay, then you answer on the desktop</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">warning</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">an error notice</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">relay only</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">hourglass_done</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">an idle notice</td>
+          <td style="border:1px solid var(--line);padding:4px 10px">relay only</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+  <p style="color:var(--page-muted);font-size:13px;margin:0">A message without a leading slash is a prompt, and so is an unknown slash command. A phone message never carries oc-out, and the relay ignores anything that does, so only phone text becomes a prompt.</p>
+
+  <footer>the relay holds the token and publishes every reply; the phone never reaches a session directly</footer>
+
+</main>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var modeBtn = document.getElementById('mode');
+    var printBtn = document.getElementById('print');
+    var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    var manual = false;
+    var savedMode = null;
+
+    var THEMES = {
+      dark: {
+        github:     { bg: '#0D1117', card: '#010409', ink: '#C9D1D9', muted: '#8B949E', line: '#30363D', accent: '#2971E1' },
+        monochrome: { bg: '#000000', card: '#1A1A1A', ink: '#EDEDED', muted: '#A8A8A8', line: '#1F1F1F', accent: '#D4D4D4' },
+        ayu:        { bg: '#0B0E14', card: '#0F131A', ink: '#AAD94C', muted: '#59C2FF', line: '#6C7380', accent: '#E6B450' },
+        nightowl:   { bg: '#011627', card: '#1D3B53', ink: '#FFCB6B', muted: '#7FDBCA', line: '#9B6FD0', accent: '#27A65C' },
+        solarized:  { bg: '#002B36', card: '#073642', ink: '#9DB0B0', muted: '#8FA5AA', line: '#073642', accent: '#C24F1F' }
+      },
+      light: {
+        vercel:      { bg: '#E1E2E7', card: '#FFFFFF', ink: '#B81F1F', muted: '#333333', line: '#333333', accent: '#E8A020' },
+        tokyonight:  { bg: '#E1E2E7', card: '#D5D6DB', ink: '#2655C2', muted: '#474F60', line: '#737A8C', accent: '#B15C00' },
+        cursor:      { bg: '#E1E2E7', card: '#F3F3F3', ink: '#2C5960', muted: '#58696D', line: '#7E979C', accent: '#50ADC5' },
+        orng:        { bg: '#E1E2E7', card: '#FFF7F1', ink: '#A63D1A', muted: '#333333', line: '#C2765A', accent: '#C94D24' }
+      }
+    };
+    var chosen = { dark: 'github', light: 'vercel' };
+    var THUMB = {
+      dark: { bg: '#2E2E2E', line: '#777777' },
+      light: { bg: '#CBCBCB', line: '#888888' }
+    };
+
+    function isDark() { return root.getAttribute('data-theme') === 'dark'; }
+    function isPrint() { return root.getAttribute('data-print') === 'on'; }
+
+    function inkOn(hex) {
+      var s = hex.replace('#', '');
+      if (s.length === 3) s = s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
+      var c = [0, 2, 4].map(function (i) {
+        var v = parseInt(s.slice(i, i + 2), 16) / 255;
+        return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      });
+      var l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      return l > 0.179 ? '#000000' : '#FFFFFF';
+    }
+
+    function applyTheme() {
+      if (isPrint()) return;
+      var mode = isDark() ? 'dark' : 'light';
+      var t = THEMES[mode][chosen[mode]];
+      var vars = {
+        '--page-bg': t.bg, '--page-ink': t.ink, '--page-muted': t.muted, '--page-line': t.line,
+        '--card': t.card, '--ink': t.ink, '--muted': t.muted, '--line': t.line,
+        '--accent': t.accent, '--pick-ink': inkOn(t.accent),
+        '--tb-ink': t.muted, '--tb-line': t.line,
+        '--thumb': THUMB[mode].bg, '--thumb-line': THUMB[mode].line
+      };
+      for (var k in vars) root.style.setProperty(k, vars[k]);
+    }
+
+    function applyPrint() {
+      var vars = {
+        '--page-bg': 'var(--print-bg)', '--page-ink': 'var(--print-ink)',
+        '--page-muted': 'var(--print-muted)', '--page-line': 'var(--print-line)',
+        '--card': 'var(--print-bg)', '--ink': 'var(--print-ink)',
+        '--muted': 'var(--print-muted)', '--line': 'var(--print-line)',
+        '--accent': 'var(--print-ink)', '--pick-ink': 'var(--print-bg)',
+        '--tb-ink': 'var(--print-muted)', '--tb-line': 'var(--print-line)',
+        '--thumb': THUMB.light.bg, '--thumb-line': THUMB.light.line
+      };
+      for (var k in vars) root.style.setProperty(k, vars[k]);
+    }
+
+    function setMode(dark) {
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      modeBtn.setAttribute('aria-checked', String(!dark));
+      modeBtn.setAttribute('aria-label', dark ? 'Dark mode' : 'Light mode');
+      modeBtn.classList.toggle('on', !dark);
+      applyTheme();
+    }
+
+    function setPrint(on) {
+      if (on && savedMode === null) savedMode = isDark() ? 'dark' : 'light';
+      root.setAttribute('data-print', on ? 'on' : 'off');
+      printBtn.setAttribute('aria-pressed', String(on));
+      printBtn.classList.toggle('on', on);
+      if (on) applyPrint();
+      if (!on && savedMode !== null) {
+        setMode(savedMode === 'dark');
+        savedMode = null;
+      }
+    }
+
+    function buildMenu(id, mode) {
+      var menu = document.getElementById(id);
+      Object.keys(THEMES[mode]).forEach(function (name) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('role', 'menuitemradio');
+        b.setAttribute('aria-checked', String(chosen[mode] === name));
+        b.textContent = name;
+        b.addEventListener('click', function () {
+          manual = true;
+          chosen[mode] = name;
+          syncMenus();
+          closeMenus();
+          setMode(mode === 'dark');
+          document.getElementById(mode === 'dark' ? 'dark-theme' : 'light-theme').focus();
+        });
+        menu.appendChild(b);
+      });
+    }
+
+    function syncMenus() {
+      [['dark', 'dark-menu'], ['light', 'light-menu']].forEach(function (pair) {
+        var menu = document.getElementById(pair[1]);
+        Array.prototype.forEach.call(menu.children, function (b) {
+          b.setAttribute('aria-checked', String(b.textContent === chosen[pair[0]]));
+        });
+      });
+    }
+
+    function closeMenus() {
+      [['dark-theme', 'dark-menu'], ['light-theme', 'light-menu']].forEach(function (pair) {
+        document.getElementById(pair[1]).classList.remove('open');
+        document.getElementById(pair[0]).setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    function toggleMenu(btnId, menuId) {
+      var btn = document.getElementById(btnId);
+      var menu = document.getElementById(menuId);
+      var open = !menu.classList.contains('open');
+      closeMenus();
+      if (open) {
+        menu.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+        var items = Array.prototype.slice.call(menu.children);
+        var pick = items.filter(function (b) {
+          return b.getAttribute('aria-checked') === 'true';
+        })[0] || items[0];
+        if (pick) pick.focus();
+      }
+    }
+
+    function menuKey(e) {
+      var items = Array.prototype.slice.call(this.children);
+      var n = items.length;
+      var i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        items[(i + (e.key === 'ArrowDown' ? 1 : -1) + n) % n].focus();
+      } else if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault();
+        items[e.key === 'Home' ? 0 : n - 1].focus();
+      }
+    }
+
+    modeBtn.addEventListener('click', function () {
+      manual = true;
+      if (isPrint()) setPrint(false);
+      setMode(!isDark());
+    });
+    printBtn.addEventListener('click', function () {
+      setPrint(!isPrint());
+    });
+    document.getElementById('dark-theme').addEventListener('click', function (e) {
+      e.stopPropagation();
+      toggleMenu('dark-theme', 'dark-menu');
+    });
+    document.getElementById('light-theme').addEventListener('click', function (e) {
+      e.stopPropagation();
+      toggleMenu('light-theme', 'light-menu');
+    });
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.group')) closeMenus();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      var openBtn = null;
+      [['dark-theme', 'dark-menu'], ['light-theme', 'light-menu']].forEach(function (pair) {
+        if (document.getElementById(pair[1]).classList.contains('open')) {
+          openBtn = document.getElementById(pair[0]);
+        }
+      });
+      closeMenus();
+      if (openBtn) openBtn.focus();
+    });
+
+    buildMenu('dark-menu', 'dark');
+    buildMenu('light-menu', 'light');
+    document.getElementById('dark-menu').addEventListener('keydown', menuKey);
+    document.getElementById('light-menu').addEventListener('keydown', menuKey);
+    applyTheme();
+
+    if (mq) {
+      setMode(mq.matches);
+      var onChange = function (e) { if (!manual) setMode(e.matches); };
+      if (mq.addEventListener) mq.addEventListener('change', onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    }
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "prefixes": ["/", "hey relay"],
+  "caseSensitive": false,
+  "actions": {
+    "new": {
+      "handler": "session.create",
+      "requires": ["session.create"],
+      "aliases": ["start"],
+      "arg": "title",
+      "ack": "new session {id} in {project}",
+      "target": true,
+      "cooldownMs": 5000
+    },
+    "sessions": {
+      "handler": "session.list",
+      "requires": ["session.list"],
+      "arg": "count",
+      "ack": "sessions listed"
+    },
+    "to": {
+      "handler": "session.pin",
+      "requires": ["session.pin"],
+      "arg": "session",
+      "ack": "next message -> {title}"
+    },
+    "auto": {
+      "handler": "session.auto",
+      "requires": ["session.auto"],
+      "ack": "target cleared"
+    }
+  }
+}

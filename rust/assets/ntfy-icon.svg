@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Banded sunset across dark hills">
+  <defs>
+    <clipPath id="frame">
+      <rect width="256" height="256" rx="10" ry="10"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="256" height="24" fill="#1f2c47"/>
+    <rect y="24" width="256" height="24" fill="#2e3d5a"/>
+    <rect y="48" width="256" height="24" fill="#46506a"/>
+    <rect y="72" width="256" height="24" fill="#63637a"/>
+    <rect y="96" width="256" height="24" fill="#867c86"/>
+    <rect y="120" width="256" height="24" fill="#ac928e"/>
+    <rect y="144" width="256" height="24" fill="#d7ac92"/>
+    <rect y="168" width="256" height="88" fill="#f2cda2"/>
+    <circle cx="92" cy="48" r="22" fill="#d8d5d8"/>
+    <circle cx="198" cy="158" r="20" fill="#f7e5b4"/>
+    <path d="M0 184 C 34 172 62 168 90 176 C 120 185 150 186 180 176 C 210 166 236 166 256 172 L256 256 L0 256 Z" fill="#9c6757"/>
+    <path d="M0 208 C 40 194 80 192 112 200 C 150 210 190 212 224 203 C 236 200 248 200 256 201 L256 256 L0 256 Z" fill="#6d463c"/>
+    <rect y="232" width="256" height="24" fill="#3a2623"/>
+  </g>
+</svg>

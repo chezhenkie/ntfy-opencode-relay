@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/inbound", "crates/ntfy", "crates/opencode", "crates/outbound", "crates/app", "crates/deploy", "crates/auth"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
