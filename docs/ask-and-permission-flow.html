@@ -221,7 +221,6 @@
 
 <main>
 
-  <!-- Page copy: replace the title, subtitle and footer. -->
   <h1>Ask and permission</h1>
   <p class="sub">An agent permission ask waits, reaches the phone as a lock-tagged push, and your code reply decides it.</p>
 
@@ -230,7 +229,7 @@
       <h2>permission asks: chat to phone and back</h2>
     </div>
     <p class="note">The ask stays open until you answer it in the chat or from the push. The push waits 15 seconds, so a chat answer means no notification.</p>
-    <svg viewBox="0 0 1040 592" role="img" aria-label="Agent asks, short pause with a desktop answer side box, phone push, your code reply, and allowed or denied outcomes">
+    <svg viewBox="0 0 1040 592" role="img" aria-label="Agent ask, short pause with a desktop answer beside it, phone push, your code reply, and allowed or denied outcomes">
       <defs>
         <marker id="askHead" viewBox="0 0 10 10" refX="9" refY="5"
                 markerWidth="7" markerHeight="7" orient="auto">
@@ -247,13 +246,9 @@
       <text class="d" x="318" y="74">the agent wants to run a command</text>
       <text class="d" x="318" y="89">the chat waits for your answer</text>
 
-      <line class="arrow" x1="535" y1="100" x2="535" y2="128" marker-end="url(#askHead)"/>
-      <text class="cap" x="549" y="118">answer in the chat if you are there</text>
-
       <rect class="card" x="300" y="138" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="164">Short pause</text>
-      <text class="d" x="318" y="182">the push waits 15 seconds</text>
-      <text class="d" x="318" y="197">for that chat answer</text>
+      <text class="d" x="318" y="182">the push waits 15 seconds for a chat answer</text>
 
       <rect class="card" x="800" y="138" width="220" height="70" rx="3"/>
       <text class="t" x="816" y="164">Desktop answer</text>
@@ -261,21 +256,24 @@
       <text class="d" x="816" y="197">the push is cancelled</text>
       <path class="dash" d="M 770 173 H 796" marker-end="url(#askHead)"/>
 
-      <line class="arrow" x1="535" y1="208" x2="535" y2="236" marker-end="url(#askHead)"/>
-      <text class="cap" x="549" y="226">no answer, so the push goes out</text>
-
       <rect class="card" x="300" y="246" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="272">Phone push</text>
-      <text class="d" x="318" y="290">titled permission requested</text>
-      <text class="d" x="318" y="305">with a code, tagged lock</text>
-
-      <line class="arrow" x1="535" y1="316" x2="535" y2="344" marker-end="url(#askHead)"/>
-      <text class="cap" x="549" y="334">you reply with that code</text>
+      <text class="d" x="318" y="290">titled permission requested, tagged lock</text>
+      <text class="d" x="318" y="305">with a 4 hex code</text>
 
       <rect class="focus" x="300" y="354" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="380">Your reply</text>
       <text class="d" x="318" y="398">/allow, /always or /deny</text>
-      <text class="d" x="318" y="413">bare /allow takes the newest ask</text>
+      <text class="d" x="318" y="413">bare takes the newest ask</text>
+
+      <line class="arrow" x1="535" y1="100" x2="535" y2="128" marker-end="url(#askHead)"/>
+      <text class="cap" x="549" y="118">answer in the chat if you are there</text>
+
+      <line class="arrow" x1="535" y1="208" x2="535" y2="236" marker-end="url(#askHead)"/>
+      <text class="cap" x="549" y="226">no answer, so the push goes out</text>
+
+      <line class="arrow-a" x1="535" y1="316" x2="535" y2="344" marker-end="url(#askHeadA)"/>
+      <text class="cap" x="549" y="334">you reply with that code</text>
 
       <line class="arrow-a" x1="411" y1="424" x2="411" y2="452" marker-end="url(#askHeadA)"/>
       <text class="cap" x="425" y="442">you allow</text>
@@ -293,11 +291,11 @@
       <text class="d" x="566" y="521">the agent is told no</text>
 
       <rect class="tag" x="300" y="560" width="470" height="26" rx="3"/>
-      <text class="side" x="318" y="577">your reply lands on the ask named by the code</text>
+      <text class="side" x="318" y="577">a reply lands on the ask named by the code</text>
     </svg>
   </section>
 
-  <footer>a reply lands on the ask it names, wherever routing points</footer>
+  <footer>A reply lands on the ask it names, wherever routing points.</footer>
 
 </main>
 
@@ -313,10 +311,10 @@
     var THEMES = {
       dark: {
         github:     { bg: '#0D1117', card: '#010409', ink: '#C9D1D9', muted: '#8B949E', line: '#30363D', accent: '#2971E1' },
-        monochrome: { bg: '#000000', card: '#1A1A1A', ink: '#EDEDED', muted: '#A8A8A8', line: '#1F1F1F', accent: '#D4D4D4' },
-        ayu:        { bg: '#0B0E14', card: '#0F131A', ink: '#AAD94C', muted: '#59C2FF', line: '#6C7380', accent: '#E6B450' },
-        nightowl:   { bg: '#011627', card: '#1D3B53', ink: '#FFCB6B', muted: '#7FDBCA', line: '#9B6FD0', accent: '#27A65C' },
-        solarized:  { bg: '#002B36', card: '#073642', ink: '#9DB0B0', muted: '#8FA5AA', line: '#073642', accent: '#C24F1F' }
+        harbor:     { bg: '#0F1A2B', card: '#212121', ink: '#C9C9C9', muted: '#999999', line: '#424242', accent: '#4FD1C5' },
+        solarized:  { bg: '#002B36', card: '#073642', ink: '#9DB0B0', muted: '#8FA5AA', line: '#073642', accent: '#C24F1F' },
+        oledblack:  { bg: '#000000', card: '#1A1A1A', ink: '#EDEDED', muted: '#A8A8A8', line: '#1F1F1F', accent: '#D4D4D4' },
+        ayu:        { bg: '#0B0E14', card: '#0F131A', ink: '#AAD94C', muted: '#59C2FF', line: '#6C7380', accent: '#E6B450' }
       },
       light: {
         vercel:      { bg: '#E1E2E7', card: '#FFFFFF', ink: '#B81F1F', muted: '#333333', line: '#333333', accent: '#E8A020' },

@@ -221,7 +221,6 @@
 
 <main>
 
-  <!-- Page copy: replace the title, subtitle and footer. -->
   <h1>Commands and tags</h1>
   <p class="sub">Phone text crosses ntfy and the relay into OpenCode; replies return as tagged pushes.</p>
 
@@ -242,7 +241,7 @@
         </marker>
       </defs>
 
-      <path class="loop" d="M 770 266 H 824 V 80 H 770" marker-end="url(#cmdHead)"/>
+      <path class="loop" d="M 770 482 H 824 V 80 H 770" marker-end="url(#cmdHead)"/>
       <text class="side" x="830" y="122">short ack</text>
 
       <rect class="card" x="300" y="30" width="470" height="70" rx="3"/>
@@ -250,37 +249,33 @@
       <text class="d" x="318" y="74">you type /to 2 or /allow 5db4</text>
       <text class="d" x="318" y="89">a line without a slash is a prompt</text>
 
-      <line class="arrow" x1="535" y1="100" x2="535" y2="128" marker-end="url(#cmdHead)"/>
-      <text class="cap" x="549" y="118">you send it like a message</text>
-
       <rect class="card" x="300" y="138" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="164">Project topic</text>
-      <text class="d" x="318" y="182">the line lands on ntfy-proj</text>
-      <text class="d" x="318" y="197">the relay reads it first</text>
-
-      <line class="arrow-a" x1="535" y1="208" x2="535" y2="236" marker-end="url(#cmdHeadA)"/>
-      <text class="cap" x="549" y="226">the relay picks it up</text>
+      <text class="d" x="318" y="182">the line lands on ntfy-proj, one topic per project</text>
 
       <rect class="focus" x="300" y="246" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="272">Relay control</text>
-      <text class="d" x="318" y="290">the first word names the action</text>
-      <text class="d" x="318" y="305">the rest is its argument</text>
+      <text class="d" x="318" y="290">the first word names the action, the rest is argument</text>
+
+      <rect class="card" x="300" y="354" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="380">OpenCode</text>
+      <text class="d" x="318" y="398">list chats, create one, resolve an ask</text>
+
+      <rect class="card" x="300" y="462" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="488">Reply</text>
+      <text class="d" x="318" y="506">a short ack on the topic names the chat or code</text>
+
+      <line class="arrow" x1="535" y1="100" x2="535" y2="128" marker-end="url(#cmdHead)"/>
+      <text class="cap" x="549" y="118">you send it like a message</text>
+
+      <line class="arrow-a" x1="535" y1="208" x2="535" y2="236" marker-end="url(#cmdHeadA)"/>
+      <text class="cap" x="549" y="226">the relay reads it first</text>
 
       <line class="arrow-a" x1="535" y1="316" x2="535" y2="344" marker-end="url(#cmdHeadA)"/>
       <text class="cap" x="549" y="334">the call the action needs</text>
 
-      <rect class="card" x="300" y="354" width="470" height="70" rx="3"/>
-      <text class="t" x="318" y="380">OpenCode</text>
-      <text class="d" x="318" y="398">list chats, create one, approve an ask</text>
-      <text class="d" x="318" y="413">a prompt runs in the chosen chat</text>
-
       <line class="arrow" x1="535" y1="424" x2="535" y2="452" marker-end="url(#cmdHead)"/>
-      <text class="cap" x="549" y="442">the result and a short ack</text>
-
-      <rect class="card" x="300" y="462" width="470" height="70" rx="3"/>
-      <text class="t" x="318" y="488">Reply</text>
-      <text class="d" x="318" y="506">a short ack on the topic</text>
-      <text class="d" x="318" y="521">names the chat or the code</text>
+      <text class="cap" x="549" y="442">the command result</text>
 
       <rect class="tag" x="300" y="560" width="470" height="26" rx="3"/>
       <text class="side" x="318" y="577">an unknown slash is a prompt; you never type a session id</text>
@@ -292,7 +287,7 @@
       <h2>routing: text to one chat</h2>
     </div>
     <p class="note">The relay chooses the chat when the message arrives, then sends the answer back as a tagged push.</p>
-    <svg viewBox="0 0 1040 700" role="img" aria-label="Phone text, relay routing, chat choice, delivery, reply back with tags and phone inbox cards, with a next message loop">
+    <svg viewBox="0 0 1040 700" role="img" aria-label="Phone text, relay routing, chat choice, delivery, reply back with a tags side box, and phone inbox, with a next message loop">
       <defs>
         <marker id="rtHead" viewBox="0 0 10 10" refX="9" refY="5"
                 markerWidth="7" markerHeight="7" orient="auto">
@@ -309,40 +304,44 @@
 
       <rect class="card" x="300" y="30" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="56">Phone text</text>
-      <text class="d" x="318" y="74">you type a message with no slash</text>
+      <text class="d" x="318" y="74">you type a message with no leading slash</text>
       <text class="d" x="318" y="89">it lands on the project topic</text>
-
-      <line class="arrow-a" x1="535" y1="100" x2="535" y2="128" marker-end="url(#rtHeadA)"/>
-      <text class="cap" x="549" y="118">no slash, so it is a prompt</text>
 
       <rect class="focus" x="300" y="138" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="164">Relay routing</text>
-      <text class="d" x="318" y="182">the chat you worked in last</text>
+      <text class="d" x="318" y="182">one snapshot: a pick, else the previous target</text>
       <text class="d" x="318" y="197">an open but idle chat does not count</text>
-
-      <line class="arrow-a" x1="535" y1="208" x2="535" y2="236" marker-end="url(#rtHeadA)"/>
-      <text class="cap" x="549" y="226">a pick can override</text>
 
       <rect class="card" x="300" y="246" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="272">Which chat</text>
-      <text class="d" x="318" y="290">a /to or /new pick lasts one message</text>
-      <text class="d" x="318" y="305">then the last chat you used</text>
-
-      <line class="arrow" x1="535" y1="316" x2="535" y2="344" marker-end="url(#rtHead)"/>
-      <text class="cap" x="549" y="334">the pick clears after this message</text>
+      <text class="d" x="318" y="290">a pick lasts one message or ten minutes</text>
 
       <rect class="card" x="300" y="354" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="380">Delivery</text>
-      <text class="d" x="318" y="398">sent as a queued prompt</text>
-      <text class="d" x="318" y="413">/steer adds text to the running answer</text>
-
-      <line class="arrow" x1="535" y1="424" x2="535" y2="452" marker-end="url(#rtHead)"/>
-      <text class="cap" x="549" y="442">the answer comes back</text>
+      <text class="d" x="318" y="398">queued prompt; /steer adds to the running turn</text>
 
       <rect class="card" x="300" y="462" width="470" height="70" rx="3"/>
       <text class="t" x="318" y="488">Reply back</text>
       <text class="d" x="318" y="506">the answer goes back to the phone</text>
-      <text class="d" x="318" y="521">asks, idles, errors and files too</text>
+
+      <rect class="card" x="300" y="570" width="470" height="70" rx="3"/>
+      <text class="t" x="318" y="596">Phone shows</text>
+      <text class="d" x="318" y="614">the project name in the title, tags as labels</text>
+
+      <line class="arrow" x1="535" y1="100" x2="535" y2="128" marker-end="url(#rtHead)"/>
+      <text class="cap" x="549" y="118">no slash, so it is a prompt</text>
+
+      <line class="arrow-a" x1="535" y1="208" x2="535" y2="236" marker-end="url(#rtHeadA)"/>
+      <text class="cap" x="549" y="226">a pick can override</text>
+
+      <line class="arrow" x1="535" y1="316" x2="535" y2="344" marker-end="url(#rtHead)"/>
+      <text class="cap" x="549" y="334">the pick clears after this message</text>
+
+      <line class="arrow" x1="535" y1="424" x2="535" y2="452" marker-end="url(#rtHead)"/>
+      <text class="cap" x="549" y="442">the answer comes back</text>
+
+      <line class="arrow" x1="535" y1="532" x2="535" y2="560" marker-end="url(#rtHead)"/>
+      <text class="cap" x="549" y="550">tagged with the project</text>
 
       <rect class="card" x="40" y="462" width="210" height="90" rx="3"/>
       <text class="t" x="56" y="488">Tags</text>
@@ -350,14 +349,6 @@
       <text class="d" x="56" y="521">lock: a permission ask</text>
       <text class="d" x="56" y="536">oc-manual: a file</text>
       <path class="dash" d="M 300 497 H 254" marker-end="url(#rtHead)"/>
-
-      <line class="arrow" x1="535" y1="532" x2="535" y2="560" marker-end="url(#rtHead)"/>
-      <text class="cap" x="549" y="550">tagged with the project</text>
-
-      <rect class="card" x="300" y="570" width="470" height="70" rx="3"/>
-      <text class="t" x="318" y="596">Phone shows</text>
-      <text class="d" x="318" y="614">the project name in the title</text>
-      <text class="d" x="318" y="629">tags as small labels</text>
 
       <rect class="tag" x="300" y="668" width="470" height="26" rx="3"/>
       <text class="side" x="318" y="685">a pick lasts one message or ten minutes; else your last chat</text>
@@ -369,64 +360,64 @@
       <h3 style="font-size:15px;font-weight:600;margin:0 0 8px">Phone commands</h3>
       <table style="border-collapse:collapse;font-size:13px">
       <tr>
-        <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">command</th>
-        <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">what it does</th>
+        <th style="border:1px solid var(--page-line);padding:4px 10px;text-align:left">command</th>
+        <th style="border:1px solid var(--page-line);padding:4px 10px;text-align:left">what it does</th>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/help</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">list the commands</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/help</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">list the commands</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/status</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">topics, queue, target, asks, uptime</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/status</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">topics, queue, target, asks, uptime</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/new &lt;title&gt;</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">create a session and target it</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/new &lt;title&gt;</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">create a session and target it</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/sessions [count]</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">list recent sessions</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/sessions [count]</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">list recent sessions</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/to</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">list five numbered sessions</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/to</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">list five numbered sessions</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/to 2</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">target entry 2 for one message</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/to 2</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">target entry 2 for one message</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/to &lt;fragment&gt;</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">target the single matching title</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/to &lt;fragment&gt;</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">target the single matching title</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/auto</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">drop the pending target</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/auto</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">drop the pending target</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/steer &lt;text&gt;</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">inject text into the running turn</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/steer &lt;text&gt;</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">inject text into the running turn</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/allow [code]</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">allow once, newest or named</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/allow [code]</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">allow once, newest or named</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/always [code]</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">allow and remember for matches</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/always [code]</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">allow and remember for matches</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/deny [code]</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">reject, newest or named</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/deny [code]</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">reject, newest or named</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/yes</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">confirm a held action</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/yes</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">confirm a held action</td>
       </tr>
       <tr>
-        <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">/no</td>
-        <td style="border:1px solid var(--line);padding:4px 10px">cancel a held action</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">/no</td>
+        <td style="border:1px solid var(--page-line);padding:4px 10px">cancel a held action</td>
       </tr>
       </table>
     </div>
@@ -434,51 +425,51 @@
       <h3 style="font-size:15px;font-weight:600;margin:0 0 8px">Tags</h3>
       <table style="border-collapse:collapse;font-size:13px">
         <tr>
-          <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">tag</th>
-          <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">what it means</th>
-          <th style="border:1px solid var(--line);padding:4px 10px;text-align:left">who can use it</th>
+          <th style="border:1px solid var(--page-line);padding:4px 10px;text-align:left">tag</th>
+          <th style="border:1px solid var(--page-line);padding:4px 10px;text-align:left">what it means</th>
+          <th style="border:1px solid var(--page-line);padding:4px 10px;text-align:left">who can use it</th>
         </tr>
         <tr>
-          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">oc-out</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">relay output; never add it yourself</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">relay only</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">oc-out</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">relay output; never add it yourself</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">relay only</td>
         </tr>
         <tr>
-          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">oc-attach</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">a file added during the turn</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">relay only</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">oc-attach</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">a file added during the turn</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">relay only</td>
         </tr>
         <tr>
-          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">oc-manual</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">a file you asked the agent to send</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">relay, on an agent request</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">oc-manual</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">a file you asked the agent to send</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">relay, on an agent request</td>
         </tr>
         <tr>
-          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">lock</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">a permission ask waits for a reply</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">relay, then you reply</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">lock</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">a permission ask waits for a reply</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">relay, then you reply</td>
         </tr>
         <tr>
-          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">question</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">a question form</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">relay, then you answer on the desktop</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">question</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">a question form</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">relay, then you answer on the desktop</td>
         </tr>
         <tr>
-          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">warning</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">an error notice</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">relay only</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">warning</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">an error notice</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">relay only</td>
         </tr>
         <tr>
-          <td style="border:1px solid var(--line);padding:4px 10px;font-family:Consolas,monospace">hourglass_done</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">an idle notice</td>
-          <td style="border:1px solid var(--line);padding:4px 10px">relay only</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px;font-family:Consolas,monospace">hourglass_done</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">an idle notice</td>
+          <td style="border:1px solid var(--page-line);padding:4px 10px">relay only</td>
         </tr>
       </table>
     </div>
   </div>
   <p style="color:var(--page-muted);font-size:13px;margin:0">A message without a leading slash is a prompt, and so is an unknown slash command. A phone message never carries oc-out, and the relay ignores anything that does, so only phone text becomes a prompt.</p>
 
-  <footer>the relay holds the token and publishes every reply; the phone never reaches a session directly</footer>
+  <footer>The relay holds the token and publishes every reply; the phone never reaches a session directly.</footer>
 
 </main>
 
@@ -494,10 +485,10 @@
     var THEMES = {
       dark: {
         github:     { bg: '#0D1117', card: '#010409', ink: '#C9D1D9', muted: '#8B949E', line: '#30363D', accent: '#2971E1' },
-        monochrome: { bg: '#000000', card: '#1A1A1A', ink: '#EDEDED', muted: '#A8A8A8', line: '#1F1F1F', accent: '#D4D4D4' },
-        ayu:        { bg: '#0B0E14', card: '#0F131A', ink: '#AAD94C', muted: '#59C2FF', line: '#6C7380', accent: '#E6B450' },
-        nightowl:   { bg: '#011627', card: '#1D3B53', ink: '#FFCB6B', muted: '#7FDBCA', line: '#9B6FD0', accent: '#27A65C' },
-        solarized:  { bg: '#002B36', card: '#073642', ink: '#9DB0B0', muted: '#8FA5AA', line: '#073642', accent: '#C24F1F' }
+        harbor:     { bg: '#0F1A2B', card: '#212121', ink: '#C9C9C9', muted: '#999999', line: '#424242', accent: '#4FD1C5' },
+        solarized:  { bg: '#002B36', card: '#073642', ink: '#9DB0B0', muted: '#8FA5AA', line: '#073642', accent: '#C24F1F' },
+        oledblack:  { bg: '#000000', card: '#1A1A1A', ink: '#EDEDED', muted: '#A8A8A8', line: '#1F1F1F', accent: '#D4D4D4' },
+        ayu:        { bg: '#0B0E14', card: '#0F131A', ink: '#AAD94C', muted: '#59C2FF', line: '#6C7380', accent: '#E6B450' }
       },
       light: {
         vercel:      { bg: '#E1E2E7', card: '#FFFFFF', ink: '#B81F1F', muted: '#333333', line: '#333333', accent: '#E8A020' },
