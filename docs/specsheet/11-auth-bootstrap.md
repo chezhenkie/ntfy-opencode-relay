@@ -1,6 +1,6 @@
 # Auth bootstrap
 
-Status: implemented in 0.14.0. `ntfy-auth apply|status` creates the one principal, its wildcard row, and the token file, and changes nothing on a second run. The binding plan is `PLAN.md`; operations 7.2 is the operator page.
+Status: implemented in 0.14.0. `ntfy-auth apply|status` creates the one principal, its wildcard row, and the token file, and changes nothing on a second run. The specsheet is binding; operations 7.2 is the operator page.
 
 ## Why it exists
 

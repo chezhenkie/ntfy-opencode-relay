@@ -6,12 +6,6 @@ ntfy-proj\
   CHANGELOG.md                    change list, versioned
   LICENSE                         MIT
   package.json                    type module, Node >= 20, tlds/links/secrets scripts
-  audit\                          code, docs, triage, and start/stop reports
-    audit-rust-relay-code.md      round 1 code audit
-    r2-docs.md                    round 2 docs audit
-    r3-plan.md                    round 3 triage, release waves
-    startstop-memory.md           start/stop and memory audit, bridge-bound rows
-    permission-reply-0.9.0.md     0.9.0 live permission matrix and gate
   rust\                           Rust workspace root
     Cargo.toml                    Rust workspace, resolver 2
     Cargo.lock                    pinned Rust dependency graph

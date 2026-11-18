@@ -6,5 +6,9 @@ temp/
 .scratch/
 .ntfy-inbox/
 
+# local planning and audit
+PLAN.md
+audit/
+
 # rust build output
 target/

@@ -3,7 +3,7 @@
 ## Header
 
 - Scope: how `/allow`, `/always`, and `/deny` from the phone select the OpenCode session and permission request they answer.
-- Status: implemented and live-verified as 0.9.0 on 2026-11-13. Matrix in `audit\permission-reply-0.9.0.md`; cases 1 to 6 pass, the UI-driven ask case stays open.
+- Status: implemented and live-verified as 0.9.0 on 2026-11-13. The local audit holds the matrix; cases 1 to 6 pass, the UI-driven ask case stays open.
 - Related: `01-phone-continuation.md` (permission contract), `08-comms-and-mcp.md` (surfaces), `../operations.md` (notification behavior), `../phone-app-user-manual.md` (phone commands), `../open-work.md` item 10.2.
 
 ## 1. Problem

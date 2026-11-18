@@ -12,9 +12,9 @@ Status 2026-11-16: done. `rust\assets\ntfy.ico` holds 16 to 256 px entries cut f
 
 Both interactive paths have unit tests and fixtures, but no live phone round exists. Exercise a question with one field, a question with several fields and options, hidden fields omitted, and the answer reaching the session. For permissions: an ask answered on the desktop inside the 15 s grace (no push), an unanswered ask (one push), `/allow`, `/always`, `/deny`, two pending asks (ack names the remainder), and a reply with no pending ask (error push). Record the observed push and the session outcome in the audit. A saved `always` can satisfy a matching ask silently, so use an unapproved command such as `net user`.
 
-Status 2026-11-13: permission replies are fixed in 0.9.0 and verified live: an unrelated pin no longer captures a reply, the newest ask is the default, `/allow #CODE` and uppercase resolve a named ask, a desktop answer leaves a truthful tombstone, the registry survives a restart, and an empty registry answers `no pending permission ask`. Matrix in `audit\permission-reply-0.9.0.md`. Question pushes pass; answering a form stays desktop-only per spec 09 section 13.
+Status 2026-11-13: permission replies are fixed in 0.9.0 and verified live: an unrelated pin no longer captures a reply, the newest ask is the default, `/allow #CODE` and uppercase resolve a named ask, a desktop answer leaves a truthful tombstone, the registry survives a restart, and an empty registry answers `no pending permission ask`. The local audit holds the matrix. Question pushes pass; answering a form stays desktop-only per spec 09 section 13.
 
-Status 2026-11-18: the matrix's last open row, a UI-driven ask, is closed. A TUI shell call for `net user` produced a `permission.asked` frame with the project location; the relay registered the ask as `5db4` after the 15 s grace, the phone reply `/allow 5db4` was accepted, and the shell call completed. The session permission list was empty afterwards. Record in `audit\permission-case7-0.14.0.md`.
+Status 2026-11-18: the matrix's last open row, a UI-driven ask, is closed. A TUI shell call for `net user` produced a `permission.asked` frame with the project location; the relay registered the ask as `5db4` after the 15 s grace, the phone reply `/allow 5db4` was accepted, and the shell call completed. The session permission list was empty afterwards. Recorded in the local audit.
 
 ## 10.3 First GitHub release
 
@@ -30,7 +30,7 @@ The release carries the image tarball from `podman save` (one per claimed archit
 
 Rewriting one section at a time with the user, agreeing on the wording before the next. The target is an entry point for someone who has never seen the project. Move version and crate-by-crate status out; keep the protocol table, requirements, quick start, and license. Stay ASCII and keep relative links resolving. The layout section waits for 10.8.
 
-Status 2026-11-16: done. The README opens with the three runtime parts and the topic, keeps the protocol table, requirements, quick start, checks, and license, and sends version history and crate boundaries to specsheet 03 and 06 and operations 7.9. The layout names `audit\` and `e2e-smoke-tests\`. The quick start read the system token file at the time; 0.14.0 replaced that with `ntfy-token.txt`.
+Status 2026-11-16: done. The README opens with the three runtime parts and the topic, keeps the protocol table, requirements, quick start, checks, and license, and sends version history and crate boundaries to specsheet 03 and 06 and operations 7.9. The layout names `e2e-smoke-tests\`. The quick start read the system token file at the time; 0.14.0 replaced that with `ntfy-token.txt`.
 
 ## 10.5 Container image
 
@@ -50,9 +50,9 @@ Status 2026-11-14: done. `phone` had read-write on `foton-alerts` (`ntfy access 
 
 ## 10.8 Directory reorganization
 
-The docs tree is settled: the numbered spec set is `docs\specsheet\`, the phone app manual is `docs\phone-app-user-manual.md`, and `audit\` stays outside `docs\`.
+The docs tree is settled: the numbered spec set is `docs\specsheet\`, the phone app manual is `docs\phone-app-user-manual.md`, and the audit stays local, outside `docs\`.
 
-Status 2026-11-14: done. `rust-src\` is now `rust\` and `ntfy-server-container\` is now `container\`. The tree chapter, README layout, every specsheet tree, CI, the TLD generator, the image script, `.gitignore`, and the Rust doc comments name the new paths; `CHANGELOG.md` and `audit\` keep the names that were true when written. Stale statements about a Node rollback were removed. No code changed.
+Status 2026-11-14: done. `rust-src\` is now `rust\` and `ntfy-server-container\` is now `container\`. The tree chapter, README layout, every specsheet tree, CI, the TLD generator, the image script, `.gitignore`, and the Rust doc comments name the new paths; `CHANGELOG.md` keeps the names that were true when written. Stale statements about a Node rollback were removed. No code changed.
 
 ## 10.9 Pre-publication secret and path scan
 
@@ -68,7 +68,7 @@ After the first release, a small interactive installer for Linux and Windows can
 
 ## 10.11 Post-publication audit
 
-Not part of the publication gate. `audit\` stays as written through 10.3; when the project is complete and published, one full audit runs over the published tree, the live stack, and the release assets, and records fresh findings in a new round rather than reopening the old reports.
+Not part of the publication gate. The local audit stays as written through 10.3; when the project is complete and published, one full audit runs over the published tree, the live stack, and the release assets, and records fresh findings in a new round rather than reopening the old reports.
 
 ## 10.12 Phone question forms
 

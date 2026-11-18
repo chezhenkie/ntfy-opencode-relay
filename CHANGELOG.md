@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.9
+
+### Changes
+
+* `PLAN.md` and `audit\` are local only: added to `.gitignore` and removed from the index, with the files kept on disk.
+* Docs references now say "the local audit"; the README layout and `docs\tree.md` no longer list the folder.
+
+### Gate
+
+* Links and ASCII over 28 markdown files; secrets 0 over 170 files (2 binary skipped). No code change.
+
 ## 0.14.8
 
 ### Changes

@@ -130,7 +130,6 @@ container\                        ntfy image: Dockerfile, server.yml, .dockerign
 relay-windows\                    Windows launcher, watchdog, control and deploy examples
 tools\                            image build, startup check, token rotation, link and secret scans
 docs\                             setup and operations manual, phone manual, specsheet\, flow pages
-audit\                            audit rounds and gate evidence, outside the manual
 .github\workflows\ci.yml          Node checks and Rust matrix
 bin\, resources\, logs\, temp\    local only, gitignored
 ```
