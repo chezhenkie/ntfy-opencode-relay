@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.10
+
+### Changes
+
+* The three flow pages are rebuilt on the current simple-flow shell: nine themes in two foldouts, the 108 px grid with baselines at +26, +44 and +59, one focus card per diagram, up to two accent connectors, loop lanes and the tag geometry.
+* The inbound page now shares the same shell. Every diagram carries a rule line and a tag. The commands page keeps the command and tag tables below its two diagrams.
+
+### Gate
+
+* Flow validator: 375 checks on inbound, 356 on commands, 221 on ask, 0 failures. Links, ASCII, tlds, secrets pass. No code change.
+
 ## 0.14.9
 
 ### Changes
