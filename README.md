@@ -8,7 +8,7 @@ A self-hosted ntfy relay for OpenCode. The phone is both an output and an input:
 - Permission asks: a `lock` push carries a four-character code; `/allow`, `/always` or `/deny` decides it.
 - Questions: a `question` push shows the agent's question; the answer goes in the desktop chat, because a phone reply format is not yet implemented.
 - Tags: the relay stamps each push (`oc-out`, `oc-attach`, `oc-manual`, `lock`, `question`, `warning`, `hourglass_done`). A phone message carries no `oc-out`, so it becomes a prompt; the relay ignores the pushes it wrote itself. The tag decides the direction, which is how command and control stays inside the relay.
-- Boundary: OpenCode holds no ntfy token and opens no connection to the server. The relay is the only publisher, and it also drives OpenCode through the local API: create a session, target one, prompt it and reply to a permission.
+- Boundary: the relay holds the only ntfy token and is the only publisher; OpenCode has no token and opens no connection to the server. The relay also drives OpenCode through the local API: create a session, target one, prompt it and reply to a permission.
 
 ## What it is
 
@@ -17,7 +17,7 @@ A self-hosted ntfy relay for OpenCode. The phone is both an output and an input:
 | element | how many | what it does |
 |---|---|---|
 | ntfy container | one | stores messages for 72 h and pushes them to the phone |
-| relay | one daemon, plus one `mcp` process per open project | the only publisher; reads the phone topic, prompts OpenCode, sends each turn |
+| relay | one daemon, plus one `mcp` process per open project | the only publisher and the only token holder; reads the phone topic, prompts OpenCode, sends each turn |
 | phone | one Android app | the F-Droid ntfy client; reads pushes, sends text, files and commands |
 | OpenCode | one host | runs the sessions; holds no ntfy token |
 
@@ -34,7 +34,7 @@ Three binaries ship for each platform. Only `ntfy-relay` stays running; the othe
 
 ## The boundary
 
-The relay sits between two systems that never meet. OpenCode has no ntfy token and no connection to the server. The relay reads the OpenCode event stream over the local API, builds each turn, and is the only process that publishes. It also drives OpenCode in the other direction: it creates a session, targets one, sends the prompt and answers a permission. OpenCode starts `ntfy-relay.exe mcp` for a project, and the file tool publishes through the same code path. There is no plugin and no second publisher.
+The relay sits between two systems that never meet and is the only process that holds the ntfy token. OpenCode has no token and no connection to the server. The relay reads the OpenCode event stream over the local API, builds each turn, and is the only process that publishes. It also drives OpenCode in the other direction: it creates a session, targets one, sends the prompt and answers a permission. OpenCode starts `ntfy-relay.exe mcp` for a project, and the file tool publishes through the same code path. There is no plugin and no second publisher.
 
 ## How a message travels
 

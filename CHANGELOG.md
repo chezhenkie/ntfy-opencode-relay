@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.8
+
+### Changes
+
+* README: the relay is named as the only holder of the ntfy token, in the intro, the runtime table and the boundary section.
+
+### Gate
+
+* Links, ASCII, tlds, secrets pass. No code change.
+
 ## 0.14.7
 
 ### Changes
