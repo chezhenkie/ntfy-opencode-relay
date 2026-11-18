@@ -20,6 +20,8 @@ Status 2026-11-18: the matrix's last open row, a UI-driven ask, is closed. A TUI
 
 The repository is private with no tags and no releases. Decided 2026-11-13: one public repository, published from the sanitized tree as a fresh history; the current private repository is deleted at the cut, never kept alongside, so the public name is free. The binary name stays. The Node inbound rollback is decided: pruned in 0.8.0, so the release ships one implementation. Build the Windows and Linux binaries from the tagged source, publish SHA256 sums, and take the notes from `CHANGELOG.md`. Add a tag-triggered release job so CI builds the artifacts. The Android client stays upstream: the F-Droid APK comes from the ntfy-android releases.
 
+Status 2026-11-18: published as `chezhenkie/ntfy-opencode-relay`. The sanitized tree is one commit, `npm run secrets --history` reports 0 over 177 blobs, and the former private repository is deleted. Pages serves `docs\` at https://chezhenkie.github.io/ntfy-opencode-relay/. A tag and the release assets remain open.
+
 Release goal: Linux ships two targets, `linux-gnu` for glibc hosts and `linux-musl` for Alpine. The workspace resolves rustls with the ring provider and no OpenSSL, and musl targets already default to `crt-static`, so the builder needs a C toolchain rather than a second TLS stack. CI tests the gnu target only today, so the musl artifact needs its own job and one `cargo test --workspace` plus a live start on Alpine before the release claims it. The relay does not belong inside the ntfy container: it needs the OpenCode registration, the token files, and the project roots on the host.
 
 The release carries the image tarball from `podman save` (one per claimed architecture; amd64 for now), a compose file, an env example, the binary zips, and SHA256 sums, so a host installs with `podman load` and three commands, without a registry or a clone.
@@ -74,4 +76,4 @@ A question form can only be answered on the desktop. A form with several fields,
 
 ## 10.13 Diagram site
 
-The three flow pages under `docs\` are linked from the manual index but sit as loose files. A GitHub page can present them in one place and give each diagram a stable address. Decide the index layout, the URL, and whether the pages publish from the repository as they are or are generated; keep one source per diagram. Status 2026-11-18: open; next session after 10.12.
+The three flow pages under `docs\` are linked from the manual index but sit as loose files. A GitHub page can present them in one place and give each diagram a stable address. Decide the index layout, the URL, and whether the pages publish from the repository as they are or are generated; keep one source per diagram. Status 2026-11-18: done. `docs\index.html` is the front page for the three diagrams, and Pages serves it at https://chezhenkie.github.io/ntfy-opencode-relay/.

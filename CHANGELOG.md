@@ -10,6 +10,7 @@
 * `README.md` carries a 760 px screenshot of the front page under `Diagrams`, and it links the Pages site.
 * The deploy mode tests build the meshnet example address from octets, and `tools\secret-scan.allow` no longer lists the phone address; the tree scan passes without it.
 * Repository and package name: `ntfy-opencode-relay`. The public repository starts from the sanitized tree as a fresh history.
+* Published as `chezhenkie/ntfy-opencode-relay`: one commit, `npm run secrets --history` 0 over 177 blobs, Pages live at https://chezhenkie.github.io/ntfy-opencode-relay/. The tag and the release assets stay open.
 
 ### Gate
 
