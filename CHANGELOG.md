@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.5
+
+### Changes
+
+* README rewrite. The runtime elements and the three binaries come first, the OpenCode-to-ntfy boundary is stated, and install, phone commands and operations are separate from the development section.
+* Repository layout, protocols and build commands moved to the end, before the license.
+
+### Gate
+
+* Links, ASCII, tlds, secrets pass. No code change.
+
 ## 0.14.4
 
 ### Changes
