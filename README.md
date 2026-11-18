@@ -1,32 +1,40 @@
 # ntfy-opencode-relay
 
-A self-hosted ntfy relay for OpenCode. It pushes each assistant turn to a phone without Google services, and carries phone replies, commands and files back into the running session.
+A self-hosted ntfy relay for OpenCode. The phone is both an output and an input: pushes leave the host, and text, files, commands and permission replies come back into the running session.
+
+- Push out: every assistant turn, and any file the agent sends, arrives as a notification.
+- Push back: phone text and files become a prompt in the target session.
+- Commands: `/new`, `/to`, `/sessions`, `/status` and `/auto` run on the host from the phone.
+- Permission asks: a `lock` push carries a four-character code; `/allow`, `/always` or `/deny` decides it.
+- Questions: a `question` push shows the agent's question; the answer goes in the desktop chat, because a phone reply format is not implemented.
+- Tags: the relay stamps each push (`oc-out`, `oc-attach`, `oc-manual`, `lock`, `question`, `warning`, `hourglass_done`). A phone message carries no `oc-out`, so it becomes a prompt; the relay ignores the pushes it wrote itself. The tag decides the direction, which is how command and control stays inside the relay.
+- Boundary: OpenCode holds no ntfy token and opens no connection to the server. The relay is the only publisher, and it also drives OpenCode through the local API: create a session, target one, prompt it and reply to a permission.
 
 ## What it is
 
+### Always running
+
 | element | how many | what it does |
 |---|---|---|
+| ntfy container | one | stores messages for 72 h and pushes them to the phone |
+| relay | one daemon, plus one `mcp` process per open project | the only publisher; reads the phone topic, prompts OpenCode, sends each turn |
 | phone | one Android app | the F-Droid ntfy client; reads pushes, sends text, files and commands |
-| ntfy server | one container | stores messages for 72 h and pushes them to the phone |
-| relay | one daemon | the only publisher; reads the phone topic, prompts OpenCode, sends each turn |
-| MCP tool | one process per open project | `ntfy-relay.exe mcp`, the `send_file` tool |
 | OpenCode | one host | runs the sessions; holds no ntfy token |
 
-Three runtime elements, the phone, the server and the relay, plus the OpenCode host they serve. One topic per project folder carries the traffic. Outbound pushes carry the `oc-out` tag, so the relay ignores them; every other message on the topic is a phone message.
+One topic per project folder carries the traffic. The MCP server is part of `ntfy-relay`, so the install has one service binary.
 
-Three binaries ship for each platform:
+### One-shot setup
 
-| binary | runs as | what it does |
-|---|---|---|
-| `ntfy-relay` | the service, plus one MCP process per project | `run`, `mcp` and `status`; the relay and the MCP server |
-| `ntfy-deploy` | one shot | creates or updates the container, and switches the network mode |
-| `ntfy-auth` | one shot | creates the `phone` user, the wildcard row and the token file |
+Three binaries ship for each platform. Only `ntfy-relay` stays running; the other two run once:
 
-The MCP server is part of `ntfy-relay`, so the install has one service binary.
+| binary | what it does |
+|---|---|
+| `ntfy-deploy` | creates or updates the container, and switches the network mode |
+| `ntfy-auth` | creates the `phone` user, the wildcard row and the token file |
 
 ## The boundary
 
-OpenCode never talks to the ntfy server. It has no token and no connection to it. The relay reads the OpenCode event stream over the local API, builds each turn, and is the only process that publishes. OpenCode starts `ntfy-relay.exe mcp` for a project, and the file tool publishes through the same code path. There is no plugin and no second publisher.
+The relay sits between two systems that never meet. OpenCode has no ntfy token and no connection to the server. The relay reads the OpenCode event stream over the local API, builds each turn, and is the only process that publishes. It also drives OpenCode in the other direction: it creates a session, targets one, sends the prompt and answers a permission. OpenCode starts `ntfy-relay.exe mcp` for a project, and the file tool publishes through the same code path. There is no plugin and no second publisher.
 
 ## How a message travels
 
@@ -72,7 +80,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\startup-check.ps
 
 Plain text goes to the chat last typed in on the desktop. `/new <title>` creates a session and targets it. `/to` lists five numbered sessions; `/to 2` or a title fragment targets one message. `/auto` drops a pending target. `/sessions` prints numbers and titles. `/status` prints the target and the open asks.
 
-Permission replies are `/allow [code]`, `/always [code]` and `/deny [code]`. A permission ask carries a four-character code and stays answerable until it is answered or evicted.
+Permission replies are `/allow [code]`, `/always [code]` and `/deny [code]`. A permission ask carries a four-character code and stays answerable until it is answered or evicted. A question form arrives on the phone as a `question` push and is answered in the desktop chat; a phone reply format is not implemented.
 
 ## Everyday operations
 

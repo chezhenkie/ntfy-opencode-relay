@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.6
+
+### Changes
+
+* README intro is a bullet list: push out, push back, commands, permission asks, questions, tags and the boundary. The two-way path is the lead.
+* The runtime table holds the container, relay, phone and OpenCode; the one-shot table holds only `ntfy-deploy` and `ntfy-auth`, and names `ntfy-relay` as the only service binary.
+* The boundary section states both directions: OpenCode has no ntfy token, and the relay drives OpenCode through the local API.
+
+### Gate
+
+* Links, ASCII, tlds, secrets pass. No code change.
+
 ## 0.14.5
 
 ### Changes
