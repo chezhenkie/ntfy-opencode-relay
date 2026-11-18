@@ -6,7 +6,7 @@ A self-hosted ntfy relay for OpenCode. The phone is both an output and an input:
 - Push back: phone text and files become a prompt in the target session.
 - Commands: `/new`, `/to`, `/sessions`, `/status` and `/auto` run on the host from the phone.
 - Permission asks: a `lock` push carries a four-character code; `/allow`, `/always` or `/deny` decides it.
-- Questions: a `question` push shows the agent's question; the answer goes in the desktop chat, because a phone reply format is not implemented.
+- Questions: a `question` push shows the agent's question; the answer goes in the desktop chat, because a phone reply format is not yet implemented.
 - Tags: the relay stamps each push (`oc-out`, `oc-attach`, `oc-manual`, `lock`, `question`, `warning`, `hourglass_done`). A phone message carries no `oc-out`, so it becomes a prompt; the relay ignores the pushes it wrote itself. The tag decides the direction, which is how command and control stays inside the relay.
 - Boundary: OpenCode holds no ntfy token and opens no connection to the server. The relay is the only publisher, and it also drives OpenCode through the local API: create a session, target one, prompt it and reply to a permission.
 
@@ -80,7 +80,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\startup-check.ps
 
 Plain text goes to the chat last typed in on the desktop. `/new <title>` creates a session and targets it. `/to` lists five numbered sessions; `/to 2` or a title fragment targets one message. `/auto` drops a pending target. `/sessions` prints numbers and titles. `/status` prints the target and the open asks.
 
-Permission replies are `/allow [code]`, `/always [code]` and `/deny [code]`. A permission ask carries a four-character code and stays answerable until it is answered or evicted. A question form arrives on the phone as a `question` push and is answered in the desktop chat; a phone reply format is not implemented.
+Permission replies are `/allow [code]`, `/always [code]` and `/deny [code]`. A permission ask carries a four-character code and stays answerable until it is answered or evicted. A question form arrives on the phone as a `question` push and is answered in the desktop chat; a phone reply format is not yet implemented.
 
 ## Everyday operations
 

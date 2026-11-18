@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.7
+
+### Changes
+
+* README: the phone question reply format is described as not yet implemented, in the intro and the phone commands section.
+
+### Gate
+
+* Links, ASCII, tlds, secrets pass. No code change.
+
 ## 0.14.6
 
 ### Changes
