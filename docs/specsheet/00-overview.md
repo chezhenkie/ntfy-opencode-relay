@@ -50,16 +50,16 @@ Each product owns its files. The relay root holds the relay config, tokens, depl
 
 ## Process supervision
 
-The relay is one process among several. Today the OS logon shortcut and the `ntfy-relay-watchdog` task start it, and the daemon supervises its own SSE and outbound tasks; nothing above it owns the process. A future per-environment process manager, the bridge, will start and stop children in dependency order and route events between environments. The relay stays a black box to it: a health endpoint, a log, a service registration, and token files.
+The relay is one process among several. Today the OS logon shortcut and the `ntfy-relay-watchdog` task start it, and the daemon supervises its own SSE and outbound tasks; nothing above it owns the process. A future per-environment process manager, the bridge, will start and stop children in dependency order and route events between environments. The relay stays a black box to it: `ntfy-relay status`, the lock file, the state file, the log, and the config. The relay serves no HTTP; `/v1/health` on port 8810 is the ntfy container's endpoint.
 
 - Start order once a manager exists: container healthy, OpenCode service registration valid, relay last.
-- Stop order: relay first, then OpenCode, then the container.
+- Stop order: relay first, then OpenCode, then the container. The bridge design fixes only the relay step; the container owner is open there.
 - Boundary: the manager owns process lifecycle and cross-environment routing; the relay owns ntfy semantics, meaning the token, the subscription, the control verbs, and the outbound mapping.
-- The division is fixed; the interface may grow. The interface is limited to the relay's surface: `/v1/health`, `service.json`, the token files, and `ntfy-relay status`.
+- The division is fixed; the interface may grow. The interface is limited to the relay's surface: `ntfy-relay status`, the lock file, the state file, the log, and the config. OpenCode's `service.json` is read for the start order and belongs to OpenCode.
 
 ## Standalone entity and comms seam
 
-The relay is a standalone project. The bridge is a separate entity and a separate project: no shared code, no shared repository, no shared lifecycle, and no process owner inside the relay. The relay never imports, spawns, or assumes the bridge. The bridge may start, stop, observe, and address the relay only through the documented surface: `/v1/health`, `service.json`, the token files, the log, and `ntfy-relay status`.
+The relay is a standalone project. The bridge is a separate entity and a separate project: no shared code, no shared repository, no shared lifecycle, and no process owner inside the relay. The relay never imports, spawns, or assumes the bridge. The bridge may start, stop, and observe the relay only through the documented surface: `ntfy-relay status`, the lock file, the state file, the log, and the config.
 
 - Client comms beyond OpenCode is decided: no OpenAI-compatible endpoint. REST plus SSE is the control plane and MCP the action facade; `08` records the evaluation and what would reopen it.
 - Any additional comms shape is additive: its own module behind a boundary trait, with the inbound and outbound paths unchanged. `08` holds the MCP topology, the shared-crate rule, and the naming split.

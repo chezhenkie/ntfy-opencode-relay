@@ -1,6 +1,6 @@
 {
   "name": "ntfy-opencode-relay",
-  "version": "0.14.10",
+  "version": "0.14.11",
   "private": true,
   "description": "Self-hosted ntfy transport for OpenCode: Rust relay and MCP file tool",
   "license": "MIT",

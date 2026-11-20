@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.11
+
+### Changes
+
+* `docs\bridge-relay-relation.md` is a new chapter: the division of work, the start and stop order, the routing choice, and the administrative state. It is linked from `docs\index.md`.
+* The relay's observable surface is corrected in the chapter and in spec 00: `ntfy-relay status`, the lock file, the state file, the log, and the config. The relay serves no HTTP; `/v1/health` belongs to the ntfy container and `service.json` to OpenCode.
+* `docs\operations.md` drops "provisional" for the division of work and limits the fixed stop order to the relay step.
+
+### Gate
+
+* Links and ASCII over 29 markdown files; secrets 0 over 171 files (2 binary skipped). No code change; no binary rebuilt.
+
 ## 0.14.10
 
 ### Changes

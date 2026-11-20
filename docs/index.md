@@ -30,7 +30,7 @@ The setup is deliberately zero Google: no Firebase Cloud Messaging, no Google Pl
 
 Chapters 4 and 5 describe a generic private network and TLS terminator. Any VPN or LAN that reaches the host on 443 works; the ntfy settings do not change.
 
-Related: [README](../README.md), [specsheet](specsheet/00-overview.md), [phone app manual](phone-app-user-manual.md), [switching networks](switching-networks.md).
+Related: [README](../README.md), [specsheet](specsheet/00-overview.md), [phone app manual](phone-app-user-manual.md), [switching networks](switching-networks.md), [bridge and relay relation](bridge-relay-relation.md).
 
 Flow diagrams: [front page](index.html) with [inbound and outbound](inbound-outbound-message-flow.html), [commands and tags](commands-and-tags-flow.html), and [ask and permission](ask-and-permission-flow.html).
 
