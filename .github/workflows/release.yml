@@ -1,0 +1,139 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Relay version, empty for the next patch
+        required: false
+        type: string
+      ntfy_version:
+        description: ntfy server version, empty keeps the Dockerfile pin
+        required: false
+        type: string
+      notes:
+        description: Release notes for the Changes section
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 musl-tools zip
+          rustup target add x86_64-pc-windows-gnu x86_64-unknown-linux-musl
+      - name: decide versions
+        id: versions
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_NTFY: ${{ inputs.ntfy_version }}
+        run: |
+          set -euo pipefail
+          current=$(node -p "require('./package.json').version")
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then
+            version=$(node -e "const v=process.argv[1].split('.').map(Number); v[2]+=1; console.log(v.join('.'))" "$current")
+          fi
+          ntfy=$(sed -n 's/^ARG NTFY_VERSION=//p' container/Dockerfile)
+          if [ -n "$INPUT_NTFY" ]; then
+            ntfy="$INPUT_NTFY"
+            curl -fsSL "https://github.com/binwiederhier/ntfy/releases/download/v$ntfy/checksums.txt" -o /tmp/ntfy-checksums.txt
+            sha=$(grep "  ntfy_${ntfy}_linux_amd64.tar.gz\$" /tmp/ntfy-checksums.txt | cut -d' ' -f1)
+            test -n "$sha"
+            sed -i "s|^ARG NTFY_VERSION=.*|ARG NTFY_VERSION=$ntfy|" container/Dockerfile
+            sed -i "s|^ARG NTFY_SHA256=.*|ARG NTFY_SHA256=$sha|" container/Dockerfile
+          fi
+          test "$(grep -c '^version = ' rust/Cargo.toml)" -eq 1
+          sed -i "s|^version = \".*\"\$|version = \"$version\"|" rust/Cargo.toml
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json')); p.version=process.argv[1]; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n')" "$version"
+          cargo update --workspace --manifest-path rust/Cargo.toml
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "ntfy=$ntfy" >> "$GITHUB_OUTPUT"
+      - name: test
+        run: cargo test --workspace --manifest-path rust/Cargo.toml
+      - name: build
+        run: |
+          set -euo pipefail
+          for target in x86_64-pc-windows-gnu x86_64-unknown-linux-gnu x86_64-unknown-linux-musl; do
+            cargo build --release --manifest-path rust/Cargo.toml --target "$target" \
+              -p ntfy-relay-app -p ntfy-relay-deploy -p ntfy-relay-auth -p ntfy-relay-admin
+          done
+      - name: assets
+        env:
+          VERSION: ${{ steps.versions.outputs.version }}
+          NTFY: ${{ steps.versions.outputs.ntfy }}
+        run: |
+          set -euo pipefail
+          zip -j "ntfy-relay-$VERSION-x86_64-windows.zip" \
+            rust/target/x86_64-pc-windows-gnu/release/ntfy-relay.exe \
+            rust/target/x86_64-pc-windows-gnu/release/ntfy-deploy.exe \
+            rust/target/x86_64-pc-windows-gnu/release/ntfy-auth.exe \
+            rust/target/x86_64-pc-windows-gnu/release/ntfy-admin.exe
+          tar -czf "ntfy-relay-$VERSION-x86_64-linux-gnu.tar.gz" -C rust/target/x86_64-unknown-linux-gnu/release ntfy-relay ntfy-deploy ntfy-auth ntfy-admin
+          tar -czf "ntfy-relay-$VERSION-x86_64-linux-musl.tar.gz" -C rust/target/x86_64-unknown-linux-musl/release ntfy-relay ntfy-deploy ntfy-auth ntfy-admin
+          docker build -t localhost/ntfy:server -t localhost/ntfy:latest container
+          docker save -o "ntfy-image-$NTFY-amd64.tar" localhost/ntfy:server localhost/ntfy:latest
+          cp container/compose.yml container/env.example .
+      - name: notes
+        env:
+          VERSION: ${{ steps.versions.outputs.version }}
+          NTFY_VERSION: ${{ steps.versions.outputs.ntfy }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          let text = fs.readFileSync('release/README-RELEASE.md.in', 'utf8');
+          const notes = (process.env.NOTES || '').trim() || 'See `CHANGELOG.md` for the full history.';
+          text = text.replaceAll('@VERSION@', process.env.VERSION)
+                     .replaceAll('@NTFY_VERSION@', process.env.NTFY_VERSION)
+                     .replaceAll('@NOTES@', notes);
+          fs.writeFileSync('README-RELEASE.md', text);
+          NODE
+      - name: sums
+        run: |
+          sha256sum ntfy-relay-*.zip ntfy-relay-*-linux-gnu.tar.gz ntfy-relay-*-linux-musl.tar.gz ntfy-image-*-amd64.tar compose.yml env.example README-RELEASE.md > SHA256SUMS
+      - name: commit and tag
+        env:
+          VERSION: ${{ steps.versions.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json rust/Cargo.toml rust/Cargo.lock container/Dockerfile
+          git commit -m "ntfy-opencode-relay $VERSION"
+          git tag "v$VERSION"
+          git push origin HEAD:main
+          git push origin "v$VERSION"
+      - name: publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.versions.outputs.version }}
+          NTFY: ${{ steps.versions.outputs.ntfy }}
+        run: |
+          set -euo pipefail
+          old=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')
+          gh release create "v$VERSION" --title "$VERSION" --notes-file README-RELEASE.md \
+            "ntfy-relay-$VERSION-x86_64-windows.zip" \
+            "ntfy-relay-$VERSION-x86_64-linux-gnu.tar.gz" \
+            "ntfy-relay-$VERSION-x86_64-linux-musl.tar.gz" \
+            "ntfy-image-$NTFY-amd64.tar" \
+            compose.yml env.example README-RELEASE.md SHA256SUMS
+          if [ -n "$old" ] && [ "$old" != "v$VERSION" ]; then
+            gh release delete "$old" --yes
+            git push origin ":refs/tags/$old"
+          fi

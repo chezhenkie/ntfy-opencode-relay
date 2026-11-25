@@ -1,0 +1,34 @@
+# ntfy server for the relay. The image comes from the release tarball and
+# carries the stable local tag:
+#   podman load -i ntfy-image-<version>-amd64.tar
+#   docker load -i ntfy-image-<version>-amd64.tar
+# The relay itself runs on the host, not here; it needs the OpenCode
+# registration, the token file, and the project roots.
+services:
+  ntfy:
+    image: localhost/ntfy:server
+    container_name: ntfy
+    command: ["serve"]
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    restart: unless-stopped
+    ports:
+      - "${NTFY_PORT:-8810}:8080"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+    environment:
+      NTFY_BASE_URL: ${NTFY_BASE_URL:?set NTFY_BASE_URL in .env}
+      NTFY_BEHIND_PROXY: ${NTFY_BEHIND_PROXY:-true}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  ntfy-cache:
+    name: ntfy-cache

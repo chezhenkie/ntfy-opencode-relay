@@ -1,0 +1,88 @@
+# ntfy relay @VERSION@
+
+Self-hosted ntfy @NTFY_VERSION@ for OpenCode: one Rust relay on the host, one
+ntfy container, one token. The relay publishes turn text, permission asks, and
+question forms to the phone, accepts prompts and native replies, and serves one
+MCP file tool.
+
+## Changes
+
+@NOTES@
+
+## Assets
+
+| file | contents |
+| --- | --- |
+| `ntfy-relay-@VERSION@-x86_64-windows.zip` | the four Windows executables |
+| `ntfy-relay-@VERSION@-x86_64-linux-gnu.tar.gz` | the four Linux binaries, glibc |
+| `ntfy-relay-@VERSION@-x86_64-linux-musl.tar.gz` | the four Linux binaries, static musl |
+| `ntfy-image-@NTFY_VERSION@-amd64.tar` | the ntfy server image, docker-archive |
+| `compose.yml`, `env.example` | container definition and its values |
+| `SHA256SUMS` | every asset above |
+
+## Install
+
+Container, from the release folder, with either engine:
+
+```sh
+podman load -i ntfy-image-@NTFY_VERSION@-amd64.tar
+# or: docker load -i ntfy-image-@NTFY_VERSION@-amd64.tar
+cp env.example .env
+# set NTFY_BASE_URL to the public HTTPS name
+podman-compose up -d
+```
+
+The image carries the stable local tag `localhost/ntfy:server`, which
+`compose.yml` names. A server-only update ships a new tarball and needs the load
+plus a container recreate; the relay and its config do not change.
+
+Windows relay, from the unpacked zip:
+
+```powershell
+& .\ntfy-deploy.exe install
+```
+
+Linux relay, from the unpacked tarball:
+
+```bash
+~/.local/share/ntfy-relay/ntfy-deploy install
+```
+
+`install` places the four binaries in the relay root, writes the missing
+configs, registers the startup and watchdog entries, and starts the relay. A
+root without a token is not a failure: the relay waits for `ntfy-token.txt` and
+attaches it when `ntfy-auth apply` writes it.
+
+On a host without systemd, such as Alpine, the installer writes no unit and no
+`systemctl` call, prints `unit: skipped, no systemd (systemctl not found)` with
+a warning that no autostart and no watchdog were installed, and still starts
+the relay. A host whose `systemctl` answers but whose user manager is not
+running takes the same path, reports `unit: skipped, no systemd user session (systemctl --user show-environment failed)`, and still starts the relay. The
+last line reads `result: installed, without autostart`. The token file is
+copied from the host that runs the container, because `ntfy-auth` drives
+`podman exec` there.
+
+Then:
+
+```sh
+ntfy-auth apply
+```
+
+The relay serves `https://<your name>` through a TLS terminator on 443 to the
+container's loopback port; the phone subscribes to the project folders as
+topics. See `docs/specsheet/10-deploy-mode.md` and `docs/operations.md`.
+
+## Phone
+
+Plain text goes to the chat last typed in on the desktop. `/new <title>` creates
+and targets a session, `/to` lists five, `/auto` drops the target. Permission
+asks take `/allow`, `/always`, or `/deny`. A question form takes `/answer`
+followed by any text: the relay closes the newest form with that text as the
+reason, and the assistant reads it and asks again when it needs more.
+
+## Checks
+
+The release workflow built the four binaries for the three targets and the
+image from the tagged tree, and ran the workspace tests. The smoke suite,
+`e2e-smoke-tests/smoke.mjs`, runs eight checks against the live server. The
+manual is published as HTML from the repository's `docs/` tree.
