@@ -436,7 +436,7 @@ The relay ignores every message with `oc-out`. That is the only direction marker
 
 ## 10. Testing
 
-Unit and integration tests run with `cargo test`. The workspace holds 624 tests at 0.6.12: 94 in `deploy`, 89 in `outbound`, 86 in `inbound`, 99 in `app`, 75 in `core`, 54 in `ntfy`, 50 in `opencode`, 30 in `control`, 28 in `auth`, and 19 in `admin`. No test uses the network; test directories stay inside the workspace.
+Unit and integration tests run with `cargo test`. The workspace holds 624 tests at 0.6.13: 94 in `deploy`, 89 in `outbound`, 86 in `inbound`, 99 in `app`, 75 in `core`, 54 in `ntfy`, 50 in `opencode`, 30 in `control`, 28 in `auth`, and 19 in `admin`. No test uses the network; test directories stay inside the workspace.
 
 - Topic derivation: Windows and POSIX paths, trailing separators, invalid characters, length limit, empty basename, duplicate folder names.
 - Filter: `oc-out`, stale, oversized, empty, attachment-only, duplicate ID.
