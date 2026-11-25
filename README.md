@@ -54,7 +54,7 @@ The [manual index](https://chezhenkie.github.io/ntfy-opencode-relay/) opens the 
 
 ## Requirements
 
-- A host for the ntfy server: Podman on Windows or Linux, or the native binary on Linux under systemd
+- A host for the ntfy server: Podman or Docker on Windows or Linux, or the native binary on Linux under systemd
 - A private network from phone to host, and TLS on 443. The certificate must chain to a public root, because the relay uses the rustls public store; a private CA is not supported
 - The F-Droid ntfy client on Android, with no Firebase and no Play services
 - OpenCode 2.2.7 or newer

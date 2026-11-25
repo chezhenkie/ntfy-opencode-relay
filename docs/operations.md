@@ -45,6 +45,8 @@ ntfy Up 11 seconds (starting) 0.0.0.0:8810->8080/tcp
 
 The machine itself is not started automatically by Podman. Start it manually with `podman machine start`, or let Podman Desktop start it at login.
 
+Docker Desktop substitutes one-for-one in the container commands below (`docker stop`, `docker logs`, `docker exec`) and has no machine step; the tarball is a docker-archive. `ntfy-deploy` currently drives Podman only, so a Docker host manages the container itself.
+
 The private network client starts automatically and reconnects without a tray. A tray UI is optional and does not carry connectivity.
 
 Windows:

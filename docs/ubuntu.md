@@ -1,5 +1,7 @@
 # 3. Ubuntu/Xubuntu path
 
+The server image is engine-neutral: one standard Dockerfile, one docker-archive. Every container command in this chapter works with `docker` in place of `podman`, and `docker load` opens the same tarball; the container sections use Podman because it is the tested rootless path, and `ntfy-deploy` currently drives Podman only.
+
 ## 3.1 Native binary with systemd
 
 Install dependencies and download the release:

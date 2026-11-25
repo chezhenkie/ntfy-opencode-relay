@@ -1,5 +1,7 @@
 # 2. Windows path: Podman
 
+The image and its tarball are engine-neutral: one standard Dockerfile, one docker-archive. This page uses Podman, the tested path on Windows. Docker Desktop takes the same `build`, `load`, and `run` commands with `docker` in place of `podman` and has no machine step; `ntfy-deploy` currently drives Podman, so a Docker user runs the container from `compose.yml` or the `docker run` line below.
+
 ## 2.1 Install Podman
 
 The winget package failed because its download hit the same GitHub 504:

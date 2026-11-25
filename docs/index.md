@@ -7,6 +7,7 @@ Self-hosted ntfy 2.38.2 without Google, reachable only over a private network, o
 - [Zero Google baseline](zero-google.md): the three paths that can leak to Google or ntfy.sh, and how each is disabled. Read it before installing anything.
 - [Windows path: Podman](windows-podman.md): Podman machine, image build, container, local verification.
 - [Ubuntu/Xubuntu path](ubuntu.md): native binary with systemd, or rootless Podman with the same image.
+- Container engine: the image builds from one standard Dockerfile and the release tarball is a docker-archive; `podman load` and `docker load` restore the same image. The deploy CLI currently drives Podman.
 - [Startup, stop and restart](startup.md): one page for the check, the start, the stop, the restart, and the logs.
 
 ## Network and TLS
