@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.11
+
+### Changes
+
+* Releases are cut by the `release` workflow. It bumps the patch version, optionally moves the ntfy pin and checksum, builds the windows-gnu, linux-gnu and linux-musl targets, builds the image, runs the workspace tests, commits and tags, publishes the one release with the binaries, the image tarball, `compose.yml`, `env.example`, `README-RELEASE.md` and `SHA256SUMS`, and deletes the previous release and tag. The fresh single-commit cut is dropped because the history is already public.
+* ntfy moves to 2.38.2: the template amplification fix, the Go 1.27.4 security fixes, and the `X-Forwarded-For` rate-limit bypass fix. The image carries the stable `localhost/ntfy:server` tag, so a server change no longer touches the relay config.
+* The image is built with Docker on the runner and saved as a compressed archive with both an OCI index and a docker manifest; `podman load` and `docker load` both restore `localhost/ntfy:server` and `latest`.
+* The release `compose.yml` and `env.example` move into `container\`, and `release\README-RELEASE.md.in` holds the notes template.
+
+### Gate
+
+* 0.6.11 published by workflow run `45708812227` with eight assets; the Windows zip and image sums match a download.
+* The released image loads in Podman, reports 2.38.2, and the live container was recreated from it; the live install moved to 0.6.11 (pid 17144, health 200); smoke 8 of 8.
+
 ## 0.6.10
 
 ### Changes
