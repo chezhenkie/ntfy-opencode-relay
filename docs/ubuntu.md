@@ -101,7 +101,7 @@ cd ~/ntfy-proj
 podman build --format docker -t localhost/ntfy:server -t localhost/ntfy:latest container
 ```
 
-The tag is stable across ntfy versions, so a newer server version is a rebuild of the same tag plus an `apply`, not a new tag and not a relay release.
+The tag is stable across ntfy versions, so a newer server version is a rebuild of the same tag plus an `apply`, not a new tag and not a relay release. The Dockerfile is the standard build format; Podman builds it directly, with no separate Podmanfile, and `--format docker` keeps the healthcheck.
 
 Run rootless. `ntfy-deploy mode` writes the config from the detected path and applies it; `ntfy-deploy apply` runs an existing config. The manual equivalent:
 

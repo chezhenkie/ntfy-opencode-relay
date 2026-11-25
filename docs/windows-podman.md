@@ -213,7 +213,7 @@ The script reads the ntfy version pin from the Dockerfile, then builds `containe
 podman build --format docker -t localhost/ntfy:server -t localhost/ntfy:latest container
 ```
 
-`--format docker` is required. With the default OCI format Podman drops `HEALTHCHECK`:
+The file is a standard Dockerfile. Podman builds it directly, so there is no second Podmanfile and no Docker-only build path; `--format docker` selects the output image format, not the build language. It is required because the default OCI format drops `HEALTHCHECK`:
 
 ```
 level=warning msg="HEALTHCHECK is not supported for OCI image format and will be ignored. Must use `docker` format"

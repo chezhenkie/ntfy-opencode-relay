@@ -79,7 +79,7 @@ ntfy-deploy apply
 ntfy-deploy status
 ```
 
-The build fetches the pinned ntfy release and checks it against `NTFY_SHA256`, so it needs outbound HTTPS to GitHub. A version change updates `NTFY_VERSION` and `NTFY_SHA256` in the Dockerfile together; the script takes the tag from that pin.
+The build fetches the pinned ntfy release and checks it against `NTFY_SHA256`, so it needs outbound HTTPS to GitHub. A version change updates `NTFY_VERSION` and `NTFY_SHA256` in the Dockerfile together; the build tags `localhost/ntfy:server` regardless of version.
 
 A mode or base URL change needs only `ntfy-deploy apply` with the new `ntfy-deploy.json`; it recreates the container and never rebuilds the image. A rebuild that keeps the tag is rolled out by the next `apply`, which compares the container's image ID with the local one and replaces the container when they differ. `ntfy-deploy mode` writes that config for you: with no argument it lists the paths it detects (Tailscale, Nord Meshnet, LAN) as a numbered menu, applies the choice, and prints the phone URL; `mode tailscale`, `mode nord`, and `mode lan` do the same without the menu, and `mode ... --dry-run` shows the document and plan first. See [switching networks manual](switching-networks-user-manual.md) for the operator steps. Modes are `proxy`, `vpn`, and `lan`; the config sits in the relay root. On Windows the switch needs an elevated shell for the portproxy step. `ntfy-deploy apply --dry-run` prints the plan, `ntfy-deploy status` reports mode, container, health, and the active portproxy. Exit codes: 0 ok, 2 invalid config or unavailable path, 3 unhealthy, 4 platform command failed. The relay keeps `ntfy.server` on loopback in every mode, so a switch never restarts it.
 
