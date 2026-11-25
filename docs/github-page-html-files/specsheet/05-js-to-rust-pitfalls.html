@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JS to Rust pitfalls: ntfy relay</title>
+<style>
+#tb{
+  position:fixed;top:0;left:0;right:0;height:24px;z-index:10;
+  display:flex;align-items:center;justify-content:flex-end;gap:7px;
+  padding:0 28px;background:var(--page-bg);color:var(--tb-ink);
+  font:10px/1 var(--font-ui);
+  user-select:none;transition:background .25s,color .25s;
+}
+#tb .s{width:1px;height:12px;background:var(--tb-line)}
+#tb .tb-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  height:18px;padding:0 6px 3px;cursor:pointer;
+  color:inherit;background:transparent;
+  border:1px solid var(--tb-line);border-radius:2px;
+  white-space:nowrap;
+}
+#tb .tb-btn svg{width:13px;height:13px}
+#tb .tb-btn.on{background:var(--tb-ink);color:var(--page-bg);border-color:var(--tb-ink)}
+#tb .tb-btn.fold{min-width:68px}
+#tb .tb-btn.fold::after{
+  content:"";width:0;height:0;margin-left:4px;
+  border-left:3px solid transparent;border-right:3px solid transparent;
+  border-top:4px solid currentColor;
+}
+#tb .group{position:relative;display:inline-flex}
+#tb .menu{
+  display:none;position:absolute;top:21px;right:0;z-index:20;
+  flex-direction:column;min-width:100%;padding:2px;
+  background:var(--page-bg);border:1px solid var(--tb-line);border-radius:2px;
+}
+#tb .menu.open{display:flex}
+#tb .menu button{
+  height:16px;padding:0 6px;cursor:pointer;text-align:left;
+  font:inherit;color:inherit;background:transparent;border:0;border-radius:1px;
+  white-space:nowrap;
+}
+#tb .menu button:hover,#tb .menu button:focus-visible{background:var(--tb-line)}
+#tb .menu button[aria-checked="true"]{background:var(--accent);color:var(--pick-ink)}
+#tb .toggle{
+  position:relative;width:44px;height:20px;padding:0;cursor:pointer;
+  background:transparent;border:0;color:inherit;
+}
+#tb .toggle-thumb{
+  position:absolute;top:2px;left:5px;width:16px;height:16px;
+  border-radius:2px;background:var(--thumb);border:1px solid var(--thumb-line);
+  transition:transform .25s cubic-bezier(.4,0,.2,1),background .25s,border-color .25s;
+}
+#tb .toggle.on .toggle-thumb{transform:translateX(17px)}
+#tb .toggle svg{
+  position:absolute;top:50%;width:12px;height:12px;
+  transform:translateY(-50%);pointer-events:none;
+  transition:opacity .25s;
+}
+#tb .toggle .ico-l{left:7px;opacity:1}
+#tb .toggle .ico-r{right:8px;opacity:.45}
+#tb .toggle.on .ico-l{opacity:.45}
+#tb .toggle.on .ico-r{opacity:1}
+#tb .sl{display:inline-flex;align-items:center;gap:4px}
+#tb .sl svg{width:10px;height:10px;flex-shrink:0}
+#tb .sl input[type=range]{
+  -webkit-appearance:none;appearance:none;width:48px;height:3px;
+  padding:0;margin:0;cursor:pointer;outline:none;
+  background:var(--tb-line);border:1px solid var(--tb-line);border-radius:2px;
+}
+#tb .sl input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:10px;height:10px;
+  background:var(--page-bg);border:1px solid var(--tb-ink);border-radius:2px;
+  cursor:pointer;
+}
+#tb .sl input[type=range]::-moz-range-thumb{
+  width:10px;height:10px;background:var(--page-bg);
+  border:1px solid var(--tb-ink);border-radius:2px;cursor:pointer;
+}
+#tb .sl .v{min-width:14px;text-align:center;font-variant-numeric:tabular-nums}
+#tb .tb-btn:focus-visible,#tb .toggle:focus-visible,#tb .sl input:focus-visible,#tb .menu button:focus-visible{
+  outline:2px solid var(--tb-ink);outline-offset:1px;
+}
+@media(prefers-reduced-motion:reduce){
+  #tb *{transition:none!important}
+}
+:root{
+  color-scheme:light;
+  --page-bg:#F3F3F1;
+  --page-ink:#20242A;
+  --page-muted:#4E545C;
+  --page-line:#C9CCD1;
+  --card:#FFFFFF;
+  --accent:#9A6400;
+  --pick-ink:#000000;
+  --tb-ink:#4E545C;
+  --tb-line:#C9CCD1;
+  --thumb:#CBCBCB;
+  --thumb-line:#888888;
+  --print-bg:#FFFFFF;
+  --print-ink:#000000;
+  --print-muted:#333333;
+  --print-line:#9A9A9A;
+  --font-serif:Georgia,'Times New Roman',serif;
+  --font-ui:'Segoe UI',Helvetica,Arial,sans-serif;
+  --font-mono:'Cascadia Code',Consolas,monospace;
+}
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --page-bg:#0D1117;
+  --page-ink:#C9D1D9;
+  --page-muted:#8B949E;
+  --page-line:#6E7681;
+  --card:#010409;
+  --accent:#3B82F6;
+  --pick-ink:#000000;
+  --tb-ink:#8B949E;
+  --tb-line:#6E7681;
+  --thumb:#2E2E2E;
+  --thumb-line:#777777;
+}
+html[data-print="on"]{color-scheme:light}
+[data-os="windows"]{
+  --font-ui:"Segoe UI Variable Text","Segoe UI",sans-serif;
+  --font-serif:Georgia,"Times New Roman",serif;
+  --font-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace;
+}
+[data-os="mac"]{
+  --font-ui:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;
+  --font-serif:"New York","Times New Roman",Times,serif;
+  --font-mono:"SF Mono",Menlo,Monaco,monospace;
+}
+[data-os="ios"]{
+  --font-ui:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;
+  --font-serif:"New York",Georgia,"Times New Roman",serif;
+  --font-mono:"SF Mono",Menlo,monospace;
+}
+[data-os="android"]{
+  --font-ui:Roboto,"Noto Sans",sans-serif;
+  --font-serif:"Noto Serif",serif;
+  --font-mono:"Roboto Mono","Droid Sans Mono","Noto Sans Mono",monospace;
+}
+[data-os="linux"]{
+  --font-ui:Ubuntu,"Cantarell","Noto Sans",sans-serif;
+  --font-serif:"Liberation Serif","Noto Serif",serif;
+  --font-mono:"Ubuntu Mono","DejaVu Sans Mono",monospace;
+}
+body{
+  margin:0;
+  background:var(--page-bg);
+  color:var(--page-ink);
+  font-family:var(--font-ui);
+  font-size:16px;
+  line-height:1.6;
+  transition:background .25s,color .25s;
+}
+[data-font="serif"] body{font-family:var(--font-serif)}
+h1,h2,h3,h4,h5,h6{
+  color:var(--page-ink);
+  font-family:inherit;
+  font-weight:400;
+  line-height:1.3;
+  margin:0 0 .5em;
+  transition:color .25s;
+}
+a{color:var(--accent);text-decoration:none;transition:color .2s}
+a:hover{text-decoration:underline}
+hr{border:none;border-top:1px solid var(--line);margin:2em 0}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  @page{margin:12mm}
+  :root{
+    color-scheme:light!important;
+    --page-bg:var(--print-bg)!important;
+    --page-ink:var(--print-ink)!important;
+    --page-muted:var(--print-muted)!important;
+    --page-line:var(--print-line)!important;
+    --card:var(--print-bg)!important;
+    --accent:var(--print-ink)!important;
+    --pick-ink:var(--print-bg)!important;
+    --tb-ink:var(--print-muted)!important;
+    --tb-line:var(--print-line)!important;
+  }
+  #tb{display:none}
+  .wrap{max-width:none;padding:0}
+  body{background:var(--page-bg)!important;color:var(--page-ink)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  header,table,pre,.callout,.kicker,.lede,.rule{break-inside:avoid}
+}
+*{box-sizing:border-box}
+.wrap{max-width:990px;margin:0 auto;padding:64px 32px 96px}
+header{border-top:6px solid var(--accent);padding-top:28px;margin-bottom:8px;transition:border-color .25s}
+.kicker{font-family:var(--font-ui);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--page-muted);margin:0 0 14px;transition:color .25s}
+h1{font-size:38px;font-weight:400;line-height:1.2;color:var(--page-ink);margin:0 0 12px;letter-spacing:-.01em;transition:color .25s}
+h1 em{font-style:italic;color:var(--accent);transition:color .25s}
+.lede{font-family:var(--font-serif);font-size:18px;line-height:1.5;color:var(--accent);margin:0 0 4px;font-style:italic;transition:color .25s}
+.lede small{display:block;font-style:normal;font-family:var(--font-ui);font-size:12.5px;color:var(--page-muted);margin-top:10px;transition:color .25s}
+h2{font-size:26px;font-weight:400;color:var(--page-ink);margin:56px 0 6px;letter-spacing:-.01em;transition:color .25s}
+h2 .num{font-family:var(--font-ui);font-size:14px;color:var(--accent);vertical-align:super;margin-right:8px;transition:color .25s}
+h2+.rule{height:1px;background:var(--page-line);margin:0 0 22px;transition:background .25s}
+h3{font-weight:600;color:var(--page-ink);font-size:19px;margin:26px 0 6px;transition:color .25s}
+p{margin:0 0 16px}
+em{font-family:var(--font-serif);color:var(--accent);transition:color .25s}
+strong{color:var(--accent);font-weight:600;transition:color .25s}
+table{width:100%;border-collapse:collapse;margin:20px 0 28px;background:var(--card);border:1px solid var(--page-line);transition:background .25s,border-color .25s}
+th,td{text-align:left;padding:10px 14px;vertical-align:top}
+th{font-family:var(--font-ui);font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--page-muted);background:var(--card);border-bottom:2px solid var(--accent);font-weight:600;transition:background .25s,color .25s,border-color .25s}
+td{font-size:14.5px;border-bottom:1px solid var(--page-line);color:var(--page-ink);transition:background .25s,border-color .25s,color .25s}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:var(--page-bg)}
+.callout{border-left:4px solid var(--accent);background:var(--card);padding:16px 20px;margin:22px 0;font-family:var(--font-serif);font-style:italic;color:var(--page-muted);transition:background .25s,border-color .25s,color .25s}
+.callout strong{font-family:var(--font-ui);font-style:normal}
+ul,ol{margin:0 0 18px;padding-left:26px}
+li{margin:0 0 8px}
+li::marker{color:var(--accent)}
+code{font-family:var(--font-mono);font-size:13px;background:transparent;color:var(--page-ink);border:1px solid var(--page-line);padding:1px 5px;border-radius:3px;transition:background .25s,color .25s,border-color .25s}
+pre{background:var(--card);color:var(--page-ink);border:1px solid var(--page-line);padding:16px 20px;border-radius:4px;overflow-x:auto;margin:18px 0 24px;font-family:var(--font-mono);font-size:13px;line-height:1.6;transition:background .25s,color .25s,border-color .25s}
+pre code{background:none;color:inherit;border:0;padding:0}
+@media(max-width:620px){.wrap{padding:40px 18px 72px}h1{font-size:28px}}
+</style>
+<script>(function(){
+  var ua=navigator.userAgent;
+  var os='unknown';
+  if(/Android/i.test(ua))os='android';
+  else if(/iPhone|iPad|iPod/i.test(ua))os='ios';
+  else if(/Windows/i.test(ua))os='windows';
+  else if(/Macintosh|Mac OS X/i.test(ua))os='mac';
+  else if(/Linux/i.test(ua))os='linux';
+  document.documentElement.dataset.os=os;
+})();</script>
+<script>(function(){
+  var p=/[?&]mode=(dark|light)\b/.exec(window.location.search||'');
+  var mq=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');
+  var root=document.documentElement;
+  root.setAttribute('data-theme',p?p[1]:(mq&&mq.matches?'dark':'light'));
+  root.setAttribute('data-font','sans-serif');
+  root.setAttribute('data-print','off');
+})();</script>
+</head>
+<body>
+<div id="tb" role="group" aria-label="Page controls">
+  <button class="tb-btn" id="print" type="button" aria-pressed="false" aria-label="Print friendly" title="Print friendly">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 9V3h12v6"/>
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+      <rect x="6" y="14" width="12" height="8" rx="1"/>
+    </svg>
+    <span>print friendly</span>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <button class="toggle on" id="mode" type="button" role="switch" aria-checked="true" aria-label="Light mode" title="Light or dark mode">
+    <span class="toggle-thumb" aria-hidden="true"></span>
+    <svg class="ico-l" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    <svg class="ico-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  </button>
+  <button class="toggle on" id="font" type="button" role="switch" aria-checked="true" aria-label="Sans-serif" title="Serif or sans-serif">
+    <span class="toggle-thumb" aria-hidden="true"></span>
+    <svg class="ico-l" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <line x1="3" y1="3" x2="11" y2="3"/>
+      <line x1="7" y1="3" x2="7" y2="11"/>
+      <line x1="3" y1="11" x2="11" y2="11"/>
+    </svg>
+    <svg class="ico-r" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <line x1="7" y1="3" x2="7" y2="11"/>
+    </svg>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <div class="group">
+    <button class="tb-btn fold" id="dark-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="dark-menu" title="Dark theme">dark theme</button>
+    <div class="menu" id="dark-menu" role="menu" aria-label="Dark theme"></div>
+  </div>
+  <div class="group">
+    <button class="tb-btn fold" id="light-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="light-menu" title="Light theme">light theme</button>
+    <div class="menu" id="light-menu" role="menu" aria-label="Light theme"></div>
+  </div>
+  <span class="s" aria-hidden="true"></span>
+  <div class="sl">
+    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10"/>
+      <polygon points="1,1 11,1 1,11" fill="currentColor"/>
+    </svg>
+    <input type="range" id="brightness" min="-3" max="3" step="1" value="0" aria-label="Brightness">
+    <span class="v" id="brightness-value" aria-hidden="true">0</span>
+  </div>
+  <div class="sl">
+    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+      <circle cx="6" cy="3" r="1.8"/>
+      <circle cx="3.5" cy="7.5" r="1.8"/>
+      <circle cx="8.5" cy="7.5" r="1.8"/>
+    </svg>
+    <input type="range" id="saturation" min="-3" max="3" step="1" value="0" aria-label="Saturation">
+    <span class="v" id="saturation-value" aria-hidden="true">0</span>
+  </div>
+</div>
+<div class="wrap">
+  <header>
+    <h1>JS to Rust pitfalls: ntfy relay</h1>
+  </header>
+  <main>
+<p>Status: research input for the merge in <code>03-rust-relay-merge.md</code>. Not a decision record; open items still land in <code>04-rust-relay-decisions.md</code>. Most &quot;decision needed&quot; markers were resolved during the port; check <code>04</code> and the crate before treating one as open.</p>
+<p>Scope: behavioral semantics of the inbound relay, the patched outbound plugin, and the helpers both use. Syntax, crate selection, and workspace layout are out of scope.</p>
+<p>Method: read <code>ntfy-inbox-relay.mjs</code>, <code>relay-control.mjs</code>, <code>opencode-adapter.mjs</code>, <code>ntfy-topic.mjs</code>, <code>link-safe.mjs</code> and <code>dist/link-safe.js</code>, <code>phone-files.js</code>, <code>phone-outbound.js</code>, <code>ntfy-client.js</code>, <code>tests/*.mjs</code>, <code>tools/verify-ntfy-patch.mjs</code>, <code>03-rust-relay-merge.md</code>, and <code>04-rust-relay-decisions.md</code> on 2026-11-10. Counts rechecked 2026-11-11 with <code>npm test</code>: 94. At capture time the two <code>link-safe</code> JS copies were byte-identical; the plugin copy was deleted in 0.7.0. The Rust table is generated from the remaining list and checked by <code>npm run tlds</code>.</p>
+<h2><span class="num">1</span>How to use</h2>
+<div class="rule"></div>
+<p>Read the section for a module before porting that module. Each row is JS behavior, Rust trap, mitigation. Decisions live in <code>04</code>; this file records the behavior the port must preserve.</p>
+<h2><span class="num">2</span>Runtime model</h2>
+<div class="rule"></div>
+<p><code>Relay.enqueue</code> stamps <code>msg.receivedAt</code>, pushes onto a 1000-slot array, drops the oldest with <code>shift</code>, and calls <code>void this.drain()</code>. <code>Relay.drain</code> is single-flight through <code>drainPromise</code> and handles one message at a time, so a slow prompt blocks every topic. Both properties are pinned by &quot;drain: messages are handled serially in arrival order&quot; and &quot;queue: dropping the oldest message does not move the replay cursor&quot;.</p>
+<table><thead><tr><th>JS behavior</th><th>Rust trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td><code>Relay.stop</code> aborts only <code>currentAbort</code> (the SSE response) and then polls <code>draining</code> for 10 s in <code>finishStop</code>; the in-flight <code>handleMessage</code> keeps running.</td><td><code>JoinHandle::abort</code> on shutdown cancels a prompt mid-POST and loses the ack; waiting on the task can hang for a 30 s CLI call.</td><td>Cancel the reader with a <code>CancellationToken</code>, let the consumer finish under a hard deadline, then unlock.</td></tr>
+<tr><td>Timeouts are <code>AbortController</code> plus <code>setTimeout</code> in <code>publishNtfy</code> and <code>downloadAttachment</code>, and a kill timer in <code>runProcess</code>.</td><td><code>tokio::time::timeout</code> around a future that owns a <code>Child</code> drops the future but not the process.</td><td>Wrap the request future; set <code>kill_on_drop(true)</code> on <code>Command</code>, and on <code>reqwest</code> rely on the timeout covering the body.</td></tr>
+<tr><td><code>enqueue</code> is the only fire-and-forget call in the relay; <code>drain</code> catches per message, and the discovery interval attaches <code>.catch</code>.</td><td>A bare <code>tokio::spawn</code> without a stored handle hides panics and exits, so the supervisor in 03 section 8 never sees a reason.</td><td>Every task returns a typed reason through a <code>JoinHandle</code> the supervisor awaits; do not use <code>panic = &quot;abort&quot;</code> in the release profile.</td></tr>
+<tr><td>A throw in a <code>setInterval</code> callback in <code>Relay.run</code> is an unhandled rejection, which terminates Node by default.</td><td>A panic in a spawned Rust task is contained by default, so the process keeps serving with one direction dead.</td><td>Treat <code>JoinError</code> as a restart reason; log one line per restart as 03 section 8 requires.</td></tr>
+<tr><td><code>Logger.log</code> uses <code>fs.appendFileSync</code>; state reads and writes use <code>fsp</code>.</td><td>Any <code>std::fs</code> call inside an async task blocks a worker thread.</td><td>Use <code>spawn_blocking</code> only if the sync append ever becomes measurable; one line per event does not need it, so keep it sync and simple.</td></tr>
+</tbody></table>
+<h2><span class="num">3</span>SSE over HTTP</h2>
+<div class="rule"></div>
+<p><code>createSSEParser</code> buffers text, splits with <code>/\r\n|\n|(\r)(?!$)/</code>, joins <code>data</code> lines with <code>\n</code>, ignores comment lines, and drops frames whose <code>JSON.parse</code> fails. <code>Relay.subscribe</code> owns the reconnect state machine.</p>
+<table><thead><tr><th>JS behavior</th><th>Rust trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td>The <code>(?!$)</code> alternative holds a bare trailing <code>\r</code> until the next chunk, so a CRLF split at any byte is one event.</td><td><code>BufRead::lines</code>, <code>str::lines</code>, or a per-chunk split treats the trailing CR as a line end and emits an empty line or a second event.</td><td>Keep a byte buffer with the same lookahead; test &quot;sse parser: CRLF split at every byte&quot; as the acceptance case.</td></tr>
+<tr><td><code>TextDecoder</code> with <code>{stream:true}</code> carries a multi-byte code point across <code>push</code>, and <code>decode()</code> at <code>end</code> flushes it.</td><td><code>String::from_utf8</code> per chunk errors on a split code point; <code>from_utf8_lossy</code> emits U+FFFD and changes the payload.</td><td>Buffer bytes, decode only complete lines, and validate UTF-8 at dispatch.</td></tr>
+<tr><td>Only <code>data</code> fields are used; <code>event</code>, <code>id</code>, and <code>retry</code> are ignored, and a bad JSON frame is dropped silently.</td><td><code>serde_json</code> returns an error that aborts the read loop if the <code>?</code> is not handled.</td><td>Match on the parse result, log at debug, and continue; one malformed frame must not kill the subscription.</td></tr>
+<tr><td><code>subscribe</code> computes <code>since</code> as <code>lastProcessed - 60</code> when set, else <code>now/1000 - replayWindowMinutes*60</code>; <code>lastProcessed</code> is in-memory and advances only for accepted messages at handle time.</td><td>Persisting <code>lastProcessed</code> or deriving it from <code>state.topics[topic].lastTime</code> changes the replay window after restart.</td><td>Keep the global cursor for <code>since</code> and the per-topic <code>lastTime</code> for filtering; test &quot;queue: dropping the oldest message does not move the replay cursor&quot;.</td></tr>
+<tr><td>A 30 s <code>SSE_HEADER_TIMEOUT_MS</code> timer is cleared when <code>fetch</code> resolves; the body has no read timeout.</td><td><code>reqwest</code>&#39;s total timeout would also cut a healthy long-lived body if applied to the stream.</td><td>Time out only until headers; monitor <code>lastEventAge</code> for stalls, as the heartbeat does.</td></tr>
+<tr><td>Backoff starts at 1 s, doubles to 60 s, is jittered 0.8 to 1.2, and resets to 1 s only when the previous connection lasted <code>STABLE_CONNECTION_MS</code> (60 s), evaluated on the next failure.</td><td>Resetting on connect, or on a 200 response, makes a flapping server retry at 1 s forever.</td><td>Keep the reset on the failure path, guarded by <code>connectedAt</code>.</td></tr>
+<tr><td>Any status below 500 except 429 goes to a fixed 60 s pause with no backoff change; 429 and transport errors take the jittered path.</td><td>A generic &quot;retry 5xx&quot; helper retries 401 and 404 responses that will never succeed.</td><td>Match the JS classification, or record a deliberate change in <code>04</code>.</td></tr>
+<tr><td><code>discover</code> sets <code>resubscribe</code> and aborts when the sorted topic key list changes; the catch continues with no sleep. A project-ID-only change does not abort.</td><td>Comparing full entry signatures resubscribes on every project ID change and drops the stream.</td><td>Compare the sorted topic keys only; test &quot;discovery: a project ID change updates the map without a resubscribe&quot;.</td></tr>
+</tbody></table>
+<h2><span class="num">4</span>HTTP and retries</h2>
+<div class="rule"></div>
+<p>At capture time two publishers existed. <code>publishNtfy</code> in <code>ntfy-inbox-relay.mjs</code> POSTs to <code>${server}/${encodeURIComponent(topic)}</code> with <code>Title</code>, <code>Priority</code>, and <code>Tags</code> headers and a raw body. <code>createNtfyClient().publish</code> in <code>dist/ntfy-client.js</code> POSTs JSON to the base URL with <code>topic</code> in the body, and <code>publishFile</code> PUTs with query parameters. The plugin publisher was deleted in 0.7.0; the Rust <code>ntfy</code> crate now carries all three styles.</p>
+<table><thead><tr><th>JS behavior</th><th>Rust trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td>Header-style POST and JSON-style POST are not wire-compatible.</td><td>One <code>core</code> client cannot be byte-identical to both; 03 step 2 said &quot;compare wire bytes with the current client&quot; without naming which one.</td><td>Decided (04 row 11): header POST for relay acks, JSON POST for outbound text, PUT for files; <code>rust\crates\ntfy</code> exposes all three.</td></tr>
+<tr><td><code>withRetry</code> retries <code>status === undefined</code> (spawn failure, timeout, unparsed error) and <code>status &gt;= 500</code>, twice, with 1 s and 2 s delays; 4xx and 3xx are never retried.</td><td>A typed error enum with <code>Retryable</code> defaults retries a 401 or gives up on a transport error.</td><td>Classify explicitly: no status is retryable, 5xx retryable, everything else terminal. A no-status retry can duplicate a prompt whose response was lost; there is no idempotency key, so that duplicate risk is accepted.</td></tr>
+<tr><td><code>parseHttpStatus</code> extracts the status from <code>opencode api</code> output with <code>/HTTP\s+(\d{3})/i</code>.</td><td>Direct HTTP makes the parser unnecessary, but it also changes which failures were retried before.</td><td>The Rust client retries no-status and 5xx twice; the adapter tests pin it.</td></tr>
+<tr><td><code>opencode.timeoutMs</code> (30 s) is per CLI attempt; 3 attempts plus 3 s of sleeps bounds one prompt at about 93 s.</td><td>One timeout wrapped around the retry loop, or one around the whole prompt, cuts the budget differently.</td><td>Per attempt: <code>opencode.timeoutMs</code> wraps each request; retries add 1 s and 2 s, so one prompt is bounded at about 93 s.</td></tr>
+<tr><td><code>publishNtfy</code> has a 10 s <code>PUBLISH_TIMEOUT_MS</code> and no retry; a timeout is a lost ack, logged and swallowed by <code>ack</code>.</td><td>A retried publish can duplicate an ack on the phone.</td><td>Keep the publish path single-attempt unless 04 decides otherwise.</td></tr>
+<tr><td>Node <code>fetch</code> uses the bundled CA set and ignores <code>HTTP_PROXY</code>/<code>HTTPS_PROXY</code> unless <code>NODE_USE_ENV_PROXY</code> is set.</td><td><code>reqwest::Client::builder()</code> honors proxy environment variables and may use the platform verifier.</td><td>Call <code>.no_proxy()</code> or configure the proxy explicitly, and pin the TLS verifier.</td></tr>
+<tr><td><code>downloadAttachment</code> uses <code>redirect: &quot;manual&quot;</code>, at most 3 followed redirects (4 requests), re-validates HTTPS on each hop, and cancels the redirect body.</td><td><code>reqwest</code>&#39;s default policy follows 10 and does not re-check the scheme.</td><td>Custom redirect policy with the same cap and scheme check; test &quot;attachment: a redirect downgrade to HTTP is rejected&quot;.</td></tr>
+<tr><td><code>sendPrompt</code> rebuilds the JSON string per attempt inside <code>apiRequest</code>.</td><td><code>reqwest::Body</code> from a stream is consumed by the first attempt.</td><td>Serialize once to <code>Bytes</code> and clone per attempt.</td></tr>
+<tr><td>The SSE response holds one socket for the process lifetime.</td><td>A small shared connection pool can starve publishes behind the stream.</td><td>Use one client with a pool large enough for SSE plus publishes, or a separate client for the stream.</td></tr>
+</tbody></table>
+<h2><span class="num">5</span>Timers and clocks</h2>
+<div class="rule"></div>
+<p>Every window in <code>Relay</code> and <code>Control</code> uses <code>Date.now()</code> through the injected <code>now</code>: <code>confirmMs</code> 60 s, <code>CONFIRM_EXPIRED_GRACE_MS</code> 5 min, <code>cooldownMs</code> up to 1 h, the 10 s shutdown deadline, the 60 s stable window, and the replay window. A backward clock step extends a hold and a cooldown; a forward step expires them.</p>
+<table><thead><tr><th>JS behavior</th><th>Rust trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td>All windows are wall clock.</td><td><code>Instant</code> is monotonic and does not move with NTP or a manual clock change, so behavior diverges after a resume or a step.</td><td>Decided (04 row 10): wall time for replay and logs; monotonic for holds, cooldowns, and shutdown.</td></tr>
+<tr><td><code>setInterval</code> for discovery and heartbeat never catches up after a stall.</td><td><code>tokio::time::interval</code> defaults to <code>MissedTickBehavior::Burst</code> and fires back to back.</td><td>Set <code>Delay</code> or <code>Skip</code>; keep the heartbeat a log line, not a push.</td></tr>
+<tr><td>The discovery interval callback does not await the previous <code>discover()</code>, so two runs can overlap and both abort the SSE stream.</td><td>A spawned tick has the same race, and two aborts can interleave with a resubscribe.</td><td>Single-flight the discovery task, or run it in the same select loop as the stream.</td></tr>
+<tr><td><code>Relay.pause</code> sleeps in 250 ms slices and re-reads <code>this.now()</code>, so <code>stop()</code> interrupts it.</td><td>Plain <code>tokio::time::sleep</code> waits to the end.</td><td><code>select!</code> on a shutdown token in every backoff and pause.</td></tr>
+<tr><td><code>phone-outbound</code> calls <code>.unref?.()</code> on the debounce and TTL timers so the plugin process can exit.</td><td>Rust timers always keep the runtime alive; there is no unref.</td><td>Cancel turn timers on shutdown and cap the drain wait.</td></tr>
+<tr><td><code>jitter</code> reads <code>Math.random</code>.</td><td>A seeded global RNG makes retry tests order-dependent.</td><td>Inject a jitter source, as the relay injects <code>now</code> and <code>sleep</code>.</td></tr>
+<tr><td>Log lines use <code>toISOString()</code> (UTC, milliseconds); the lock uses the same; <code>corruptStatePath</code> and attachment names use epoch seconds, with a millisecond fallback on name collision.</td><td>Mixing second and millisecond precision shifts names and replay arithmetic.</td><td>Keep one helper per unit and test the exact string shape.</td></tr>
+</tbody></table>
+<h2><span class="num">6</span>Filesystem</h2>
+<div class="rule"></div>
+<p><code>acquireLock</code> creates with <code>wx</code>, <code>writeStateAtomic</code> writes a pid-suffixed temp then renames, and <code>phone-files</code> does a birthtime scan. These carry the most host-specific semantics in the port.</p>
+<table><thead><tr><th>JS behavior</th><th>Rust trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td><code>fsp.open(file, &quot;wx&quot;)</code> creates exclusively, then <code>writeFile</code> fills the body; a reader can see an empty file, so <code>acquireLock</code> retries the read 3 times with 20 ms sleeps.</td><td><code>create_new(true)</code> plus <code>write_all</code> has the same window; assuming the body is visible atomically makes a concurrent start fail as &quot;unreadable&quot;.</td><td>Keep the read retry; write the body through the already-open handle, not a second open.</td></tr>
+<tr><td>An unreadable lock fails closed and is not deleted; only a readable lock with a dead pid is removed, then one retry.</td><td><code>remove_file</code> on any parse error converts a corrupted lock into a takeover.</td><td>Return <code>unreadable</code> and leave the file; test &quot;lock: unreadable lock fails closed and is not deleted&quot;.</td></tr>
+<tr><td><code>pidAlive</code> uses <code>process.kill(pid, 0)</code> and treats <code>EPERM</code> as alive; the lock body&#39;s <code>started</code> field is never compared.</td><td><code>kill(pid, 0)</code> with EPERM maps to <code>alive</code>, but a recycled pid is still accepted.</td><td>Match EPERM as alive; do not start trusting <code>started</code> unless 04 decides to add a start-time check.</td></tr>
+<tr><td><code>writeStateAtomic</code> writes <code>${file}.${pid}.tmp</code>, renames over the target, and never fsyncs or sweeps.</td><td><code>fs::rename</code> matches the replace semantics on Windows, but a crash leaves a temp file that the Node code also leaves.</td><td>Keep the same temp name and cleanup behavior, or add a startup sweep and record the change.</td></tr>
+<tr><td><code>writeStateAtomic</code> serializes with <code>JSON.stringify</code>, so key order is insertion order, except integer-like topic names, which JS reorders numerically.</td><td><code>serde_json</code> on a <code>HashMap</code> reorders everything; a byte-golden on the state file breaks.</td><td>Use a struct with fixed field order; do not golden the state bytes.</td></tr>
+<tr><td><code>downloadAttachment</code> does <code>existsSync</code> then <code>open(target, &quot;w&quot;)</code>, so a collision is a TOCTOU that truncates the winner; the fallback name switches from epoch seconds to epoch milliseconds.</td><td><code>create_new</code> turns the race into an error and changes the name format.</td><td>Preserved: <code>exists</code> then <code>tokio::fs::write</code>, milliseconds fallback; the TOCTOU remains, as in Node.</td></tr>
+<tr><td><code>scanNewFiles</code> uses a LIFO stack and a <code>SCAN_MAX_ENTRIES</code> 20000 cap, so which files are found at the cap depends on traversal order.</td><td>A BFS or a sorted walk changes the attachment set for huge trees.</td><td>Keep the LIFO order; test &quot;PASS scan entry cap&quot;.</td></tr>
+<tr><td><code>stats.birthtimeMs &gt; 0</code> gates inclusion in the scan, but the later cutoff check is skipped when birthtime is 0, so watcher paths with unknown birthtime pass and scanned paths do not.</td><td><code>metadata.created()</code> returns <code>Err</code> on many Linux filesystems; substituting <code>now()</code> or <code>ctime</code> silently attaches old files.</td><td>Mirror the <code>&gt; 0</code> sentinel and keep the watcher path separate; test on a filesystem without birth time.</td></tr>
+<tr><td><code>isPathInside</code> lowercases both sides on win32; <code>canonicalKey</code> lowercases for dedupe; <code>normalizeKey</code> in <code>phone-files</code> lowercases only when <code>isWindowsPath</code>.</td><td><code>Path::starts_with</code> and <code>strip_prefix</code> are case-sensitive and component-wise; <code>pathdiff</code> is case-sensitive too.</td><td>Implement a component-wise compare with the same <code>toLowerCase</code> folding on win32; keep <code>platform</code> an explicit parameter, not <code>cfg!(windows)</code>.</td></tr>
+<tr><td><code>isInside</code> in <code>phone-files</code> rejects <code>rel === &quot;&quot;</code> and uses <code>relative()</code>, which is case-insensitive on win32.</td><td>Accepting the root itself, or a case mismatch, lets a path outside the project pass.</td><td>Port the same three rejections: empty, <code>..</code>, absolute.</td></tr>
+<tr><td><code>realpathSync</code> resolves symlinks and returns a normal Windows path.</td><td><code>fs::canonicalize</code> returns a <code>\\?\</code> verbatim path; it leaks into logs, <code>isInside</code>, and <code>pathToFileURL</code> output.</td><td>Use <code>dunce::canonicalize</code> or strip the verbatim prefix before any string use.</td></tr>
+<tr><td><code>pathToFileURL(file.uri).href</code> builds the <code>files[].uri</code> sent to OpenCode; <code>01-phone-continuation.md</code> records that an absolute path is rejected with HTTP 400.</td><td><code>Url::from_file_path</code> fails on a relative path, encodes <code>#</code>, <code>%</code>, and non-ASCII differently in edge cases, and cannot reproduce a Windows path when built on Linux.</td><td>Test exact strings for space, <code>#</code>, <code>%</code>, non-ASCII, and UNC; inject the platform base.</td></tr>
+</tbody></table>
+<h2><span class="num">7</span>JSON and config</h2>
+<div class="rule"></div>
+<p><code>loadConfigFromText</code> does a <code>deepMerge(DEFAULTS, raw)</code> and then a hand-written <code>validateConfig</code>; <code>validateControlTable</code> is strict per action but lax at the document top level; <code>normalizeState</code> accepts almost anything.</p>
+<table><thead><tr><th>JS behavior</th><th>Rust trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td>Unknown config keys survive the merge and are ignored; <code>enabled</code> is never type-checked, so <code>&quot;enabled&quot;: &quot;false&quot;</code> keeps the relay running.</td><td><code>#[serde(deny_unknown_fields)]</code> rejects files that work today; a <code>bool</code> field rejects the string that silently worked.</td><td>Match leniency or make strictness a <code>04</code> decision; do not let serde defaults decide silently.</td></tr>
+<tr><td>Arrays replace wholesale in <code>deepMerge</code>; <code>projectRoots</code> does not concatenate.</td><td><code>serde(default)</code> plus a merge helper that appends changes the root set.</td><td>Replace arrays; test the &quot;home expansion and relative roots&quot; case.</td></tr>
+<tr><td><code>requirePositive</code> accepts floats; <code>cooldownMs</code> requires <code>Number.isInteger</code>; no limit is an integer by type.</td><td><code>u64</code> rejects 0.5 and 16384.0; <code>f64</code> accepts NaN and infinity that <code>Number.isFinite</code> rejects.</td><td>A <code>PositiveF64</code> newtype with <code>is_finite</code> and <code>&gt; 0</code>, converted to the unit the code uses.</td></tr>
+<tr><td>A leading U+FEFF is stripped from config and control text; a BOM anywhere else is a parse error.</td><td><code>serde_json</code> rejects a BOM; <code>str::trim</code> does not remove U+FEFF, while JS <code>String.trim</code> does.</td><td>Strip exactly one leading BOM from bytes; audit every <code>.trim()</code> for FEFF parity.</td></tr>
+<tr><td>Duplicate JSON keys are last-wins in <code>JSON.parse</code>.</td><td>A serde derive errors with &quot;duplicate field&quot;.</td><td>Config pre-parses into <code>serde_json::Value</code>, so the last key wins; typed state rejects a duplicate field and quarantines the file.</td></tr>
+<tr><td><code>Number(msg.time)</code> accepts a numeric string; <code>?? 0</code> only covers null and undefined.</td><td><code>i64</code> deserialization rejects <code>&quot;1700000000&quot;</code> that the filter currently accepts.</td><td>Parse leniently at the wire boundary, strictly inside; test a string time.</td></tr>
+<tr><td>The control file is size-capped at <code>MAX_CONTROL_FILE_BYTES</code> 64 KiB using <code>stat</code> before <code>readFile</code>; the config file has no cap.</td><td><code>serde_json::from_reader</code> reads an unbounded config; a <code>stat</code> then read has the same TOCTOU.</td><td>Read into a bounded buffer for control; decide whether the config gets a cap; test &quot;control: the control file is size-capped&quot;.</td></tr>
+<tr><td><code>validateControlTable</code> rejects unknown fields inside an action but drops unknown top-level fields.</td><td>A derived struct with <code>deny_unknown_fields</code> at both levels changes the contract.</td><td>Keep the asymmetry, or change both and record it.</td></tr>
+<tr><td><code>helpText</code> iterates <code>Object.entries(actions)</code> in file order.</td><td><code>serde_json::Map</code> without <code>preserve_order</code> is a <code>BTreeMap</code> and sorts verbs alphabetically, so <code>/help</code> reorders.</td><td>Use <code>indexmap</code>/<code>preserve_order</code> or a <code>Vec</code> of actions.</td></tr>
+<tr><td><code>normalizeState</code> accepts a string <code>lastIds</code>, which turns into a character set in <code>new Set(topicStateEntry.lastIds)</code> and disables duplicate detection.</td><td>A typed state rejects the file; a lenient one may reproduce the character-set bug.</td><td>Reject a non-array <code>lastIds</code> and quarantine the file; record the recovery change.</td></tr>
+<tr><td><code>readState</code> quarantines only invalid JSON, not a wrong shape.</td><td>A typed <code>serde</code> error on shape sends every malformed state to the same path.</td><td>Split the error: parse failure quarantines, shape failure follows the current in-memory behavior or is quarantined by decision.</td></tr>
+</tbody></table>
+<h2><span class="num">8</span>Process model and lifecycle</h2>
+<div class="rule"></div>
+<p><code>main</code> acquires the lock before reading the token, quarantines corrupt state, registers <code>SIGINT</code> and <code>SIGTERM</code>, and releases the lock in the <code>finally</code> around <code>relay.run()</code>.</p>
+<table><thead><tr><th>JS behavior</th><th>Rust trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td><code>SIGINT</code> and <code>SIGTERM</code> call <code>shutdown</code>, which is idempotent through <code>stopPromise</code>.</td><td>The Windows launcher starts the relay detached and hidden, so no console Ctrl+C arrives and the handlers never run; <code>TerminateProcess</code> skips them.</td><td>Treat a leftover lock as the normal stop path; the next start must replace it via the dead-pid rule. <code>ctrlc</code> covers console events, not service stop.</td></tr>
+<tr><td>Exit code 1 for config, unreadable lock, token, and quarantine failures; 0 when already running, when disabled, and after a signal stop.</td><td>A Rust <code>main</code> returning <code>Result</code> exits 1 through the runtime message, and a panic exits 101.</td><td>Return an explicit <code>ExitCode</code>; match the four cases; test &quot;already running&quot; and &quot;disabled&quot;.</td></tr>
+<tr><td>The lock is released in <code>main</code>&#39;s <code>finally</code> after <code>relay.run()</code> returns, but a 30 s CLI child can outlive that point.</td><td>Unlocking before the consumer drains allows a second instance to write the same state while the first still holds it in memory.</td><td>Join the consumer under the 10 s deadline before unlocking, or keep the lock until the process exits.</td></tr>
+<tr><td><code>runProcess</code> spawns with <code>windowsHide: true</code> and <code>stdio: [&quot;ignore&quot;, &quot;pipe&quot;, &quot;pipe&quot;]</code>, and kills at a 4 MiB buffer cap.</td><td><code>Command::output()</code> inherits no window but buffers without a cap; <code>kill_on_drop</code> is not set by default.</td><td>Cap both pipes, set <code>kill_on_drop(true)</code>, and hide the window explicitly on Windows.</td></tr>
+<tr><td><code>isMainModule</code> compares <code>import.meta.url</code> with <code>pathToFileURL(realpathSync(argv[1]))</code>.</td><td>A binary has no equivalent and does not need one; porting the check as a startup condition adds a false failure mode.</td><td>Drop it.</td></tr>
+</tbody></table>
+<h2><span class="num">9</span>Logging</h2>
+<div class="rule"></div>
+<p><code>Logger</code> writes <code>${ISO} ${LEVEL} ${message}\n</code> with <code>appendFileSync</code>, rotates before a write when <code>size &gt;= maxBytes</code> to a single <code>.1</code>, and swallows rotation and write errors.</p>
+<table><thead><tr><th>JS behavior</th><th>Rust trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td><code>size</code> starts from <code>stat</code> at init and increments by the exact bytes appended; rotation can leave the file one line over <code>maxBytes</code>.</td><td>A <code>BufWriter</code> reports a different size and loses the tail on a crash.</td><td>Count bytes at the write call, flush per line or accept the same loss window.</td></tr>
+<tr><td>Rotation removes <code>.1</code>, renames the current file, and resets size even if the rename failed.</td><td>A failed rename in Rust returns an error that aborts the log path if unwrapped.</td><td>Swallow and reset exactly as <code>rotate</code> does; test &quot;logger: rotates at the size limit and keeps one old file&quot;.</td></tr>
+<tr><td><code>echo</code> sends warn and error to stderr, everything else to stdout; the default config sets <code>echo: false</code>.</td><td><code>tracing</code> to stderr by default changes what the launcher captures.</td><td>Match the stream split or make it config-driven.</td></tr>
+<tr><td>Heartbeat is a log line: <code>heartbeat topics=N lastEventAge=age queue=N</code>; <code>age</code> is -1 before the first event. <code>ntfy-relay status</code> prints the last log line.</td><td>A structured logger changes the field syntax and breaks the status report.</td><td>Keep the exact field names and the -1 sentinel.</td></tr>
+<tr><td>No prompt text is logged by convention: <code>deliverPrompt</code> logs <code>textBytes</code>, but failure paths interpolate <code>error.message</code>, which can contain CLI stderr.</td><td>A retry logger that dumps the request body leaks prompts to disk.</td><td>Keep payload logging out of the client; log byte counts and statuses only.</td></tr>
+<tr><td><code>clip</code> slices by UTF-16 code units and can split a surrogate pair.</td><td><code>str</code> slicing by chars cannot reproduce the replacement character.</td><td>Log a lossy, valid UTF-8 string; do not claim byte parity for clipped error text.</td></tr>
+</tbody></table>
+<h2><span class="num">10</span>Text and encoding</h2>
+<div class="rule"></div>
+<p>There are three byte budgets and three truncation behaviors. <code>clampBytes</code> reserves 3 bytes for <code>...</code> under <code>ACK_MAX_BYTES</code> 3400; <code>truncateUtf8</code> cuts at a UTF-8 boundary with no marker under <code>MAX_MESSAGE_BYTES</code> 4096; <code>boundQuestionMessage</code> appends <code>\n(truncated)</code> under the same 4096.</p>
+<table><thead><tr><th>JS behavior</th><th>Rust trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td><code>clampBytes</code> iterates code points with <code>for...of</code>, stops before <code>limit - 3</code>, and appends ASCII <code>...</code>; <code>ackBody</code> then runs <code>linkSafe</code>, which can grow the string past the clamp.</td><td>Clamping by bytes after <code>linkSafe</code>, or using <code>...</code> with a different width, changes the ack length.</td><td>Clamp first, then defang, as <code>ackBody</code> does; assert the multibyte case &quot;ack body is clamped to 3400 bytes&quot;.</td></tr>
+<tr><td><code>ackBody</code> clamps to <code>ACK_MAX_BYTES</code> 3400 and then runs <code>linkSafe</code>; each rewritten token grows by two bytes because <code>[.]</code> replaces <code>.</code>, so the sent body can exceed 3400.</td><td>Re-clamping after the filter drops characters, and clamping after the filter changes which text is cut.</td><td>Keep clamp-then-defang; assert the post-filter length can exceed 3400 and never re-clamp.</td></tr>
+<tr><td><code>firstCharacters</code> uses <code>Array.from</code> for the 500-character summary, so it counts code points and can split a grapheme cluster.</td><td><code>chars().take(500)</code> matches; <code>byte</code> slicing does not; <code>graphemes</code> changes the cut.</td><td>Use code points; keep the <code>.md</code> attachment body as <code>rawBody</code>, which is not defanged.</td></tr>
+<tr><td><code>cleanTitle</code> uses <code>.length</code> and <code>.slice(0, 200)</code>, so it can split a surrogate pair; <code>MAX_CREATED_TITLE_CHARS</code> is 200 UTF-16 units.</td><td>Rust <code>String</code> cannot hold a lone surrogate, so <code>chars().take(200)</code> allows more visible characters.</td><td>Accept the divergence in the safe direction and record it; do not truncate bytes.</td></tr>
+<tr><td><code>sanitizeFilename</code> keeps only <code>[A-Za-z0-9._-]</code>, cuts at 120 UTF-16 units, prefixes <code>_</code> to DOS device names, and drops non-ASCII letters; the test pins <code>Rsum.pdf</code> for an accented name.</td><td><code>Path::file_name</code> plus a Unicode sanitizer keeps characters the relay removes.</td><td>Port the exact regex and the reserved-name test.</td></tr>
+<tr><td><code>headerText</code> collapses CR and LF to spaces, returns <code>-</code> for empty, and RFC 2047 base64-encodes any non-ASCII; there is no byte cap.</td><td><code>HeaderValue::from_str</code> rejects non-ASCII and control characters; <code>from_bytes</code> does not produce the encoded-word.</td><td>Encode the same way and test &quot;header text: ascii passthrough, newlines collapsed, unicode encoded&quot;.</td></tr>
+<tr><td><code>normalizeTags</code> silently drops tags that do not match <code>[A-Za-z0-9_-]+</code> and omits the header when the list is empty.</td><td>A typed <code>Vec&lt;Tag&gt;</code> rejects the whole publish on one bad tag.</td><td>Filter, do not fail.</td></tr>
+<tr><td><code>linkSafe</code> returns non-string input unchanged, including <code>undefined</code>; <code>sendFile</code> passes <code>undefined</code> as the message when the user gave none.</td><td><code>&amp;str</code> cannot represent the absent message; <code>Some(&quot;&quot;)</code> sends an empty body instead of no body.</td><td>Keep <code>Option&lt;&amp;str&gt;</code> through the publish path; test the tool without a message.</td></tr>
+</tbody></table>
+<h2><span class="num">11</span>Byte parity</h2>
+<div class="rule"></div>
+<p>The generated table in <code>rust\crates\core\src\tlds.rs</code> is the only link-safety TLD list. <code>tools/link-safety/build-tlds.mjs --check</code> (wrapped by <code>npm run tlds</code>) fails when the generated <code>IANA_TLDS</code> literal is out of date. The Node copies and the plugin verifier were deleted with the publisher plugin in 0.7.0 and with the Node relay in 0.8.0.</p>
+<table><thead><tr><th>Concern</th><th>Trap</th><th>Mitigation</th></tr></thead><tbody>
+<tr><td>The TLD table is a generated literal inside <code>link-safe.js</code>, built from <code>tools/link-safety/tlds.txt</code>, ASCII 2 to 24 letters, punycode dropped.</td><td>The Rust table is generated from the same source; a manual edit drifts silently.</td><td><code>tools\link-safety\build-tlds.mjs --check</code>, wrapped by <code>npm run tlds</code>, fails when the Rust table drifts. The Node copy was deleted in 0.8.0.</td></tr>
+<tr><td><code>SCAN_PATTERN</code> uses the <code>g</code> and <code>i</code> flags and <code>String.replace</code> with a callback.</td><td>Rust <code>replace_all</code> is equivalent for this pattern, but <code>(?i)</code> in the regex crate uses Unicode folding; JS <code>/i</code> on <code>[A-Za-z]</code> also folds U+212A and U+017F.</td><td>Use <code>(?i-u)</code> or explicit ASCII classes, then prove it on a fixture with those code points.</td></tr>
+<tr><td><code>\s</code> and <code>\S</code> differ between JS and the regex crate at U+FEFF (JS whitespace, Unicode White_Space is not).</td><td>A prefix or verb separated by FEFF parses differently.</td><td><code>core::text::is_js_space</code> matches the ECMAScript set; the control parser uses it and tests FEFF.</td></tr>
+<tr><td>The JS parity check compared two Node files in one tree; the Rust table was a third copy.</td><td>A Rust port makes parity a multi-file problem, and a &quot;looks the same&quot; review does not scale.</td><td>Shared fixture corpus: tokens for every ALLOWED_TLD, unknown 2-letter, unknown long, scheme URL, plain dotted word, <code>readme.md</code>, <code>package.json</code>, and the unicode edge cases; assert identical output strings. Since 0.8.0 the Rust table is the only copy and <code>npm run tlds</code> checks it against the source.</td></tr>
+</tbody></table>
+<h2><span class="num">12</span>Testing</h2>
+<div class="rule"></div>
+<p>The 94 <code>node --test</code> cases pin exact reason strings, ack text, header names, byte caps, lock behavior, the queue cap, and the SSE split-by-byte case. They do not pin real ntfy frames, publish wire bytes beyond a fake <code>fetchImpl</code>, the reconnect schedule, or the backoff sequence.</p>
+<table><thead><tr><th>JS test shape</th><th>Rust equivalent</th><th>Note</th></tr></thead><tbody>
+<tr><td>Pure functions (<code>shouldAcceptMessage</code>, <code>parseControl</code>, <code>linkSafe</code>, <code>topicForProject</code>) called directly.</td><td>Unit tests on the same functions.</td><td>Keep the reason strings; the tests assert them.</td></tr>
+<tr><td>Injected <code>fetchImpl</code>, <code>sleep</code>, <code>now</code>, <code>apiRequest</code>, <code>writeState</code> through the <code>Relay</code> deps object.</td><td>Traits or function pointers for the clock and HTTP; <code>wiremock</code> for wire assertions.</td><td>Do not bind a port for parser tests; <code>createSSEParser</code> is exported for that reason.</td></tr>
+<tr><td><code>node --test</code> on <code>tests/*.mjs</code>, temp dirs under <code>tests/.tmp-*</code>.</td><td><code>cargo test</code>; <code>tempfile::Builder::tempdir_in(env!(&quot;CARGO_MANIFEST_DIR&quot;))</code>.</td><td>The repo rule bans system temp paths; keep test dirs in the workspace.</td></tr>
+<tr><td>Time is injected (<code>Control({now})</code>, <code>Relay({deps.now})</code>, <code>withRetry({sleep})</code>, <code>phone-outbound</code> <code>now</code> and <code>timers</code>).</td><td><code>tokio::time::pause</code> covers tokio timers only, not <code>SystemTime::now()</code> inside logic.</td><td>Decided (04 row 10): inject <code>Clock::now_ms</code>; replay uses wall time, control windows use the monotonic source.</td></tr>
+<tr><td>Concurrency: two <code>acquireLock</code> calls with different pids in one process.</td><td>Two tasks or two processes; the pid is a parameter in JS.</td><td>Keep <code>pid</code> injectable in the Rust signature.</td></tr>
+<tr><td>JS-only cases: <code>undefined</code> versus null, <code>Number(&quot;...&quot;)</code>, stable <code>sort</code>, <code>localeCompare</code>, <code>toISOString</code>, <code>for await</code> over a body.</td><td>Rust must choose an explicit behavior.</td><td>Add a test per case; do not rely on the type system to guess the old behavior.</td></tr>
+<tr><td>Outbound turn and file behavior lived in <code>tools/verify-ntfy-patch.mjs</code>, not in <code>tests/</code>.</td><td>The verifier was deleted with the publisher plugin in 0.7.0.</td><td>The contract is now held by the Rust suites: the 68 tests in <code>rust\crates\outbound</code>, the inbound suite, and the app MCP test.</td></tr>
+</tbody></table>
+<h2><span class="num">13</span>Per-module risk</h2>
+<div class="rule"></div>
+<table><thead><tr><th>Module</th><th>Hardest semantic to preserve</th><th>Test that proves it</th><th>Risk</th></tr></thead><tbody>
+<tr><td><code>ntfy-inbox-relay.mjs</code> <code>Relay.subscribe</code> and <code>createSSEParser</code></td><td>Incremental UTF-8 and CRLF parsing plus the reconnect and backoff state machine</td><td>&quot;sse parser: CRLF split at every byte&quot;, &quot;queue: dropping the oldest message does not move the replay cursor&quot;</td><td>high</td></tr>
+<tr><td><code>ntfy-inbox-relay.mjs</code> <code>Relay.handleMessage</code>, <code>shouldAcceptMessage</code>, <code>recordProcessed</code></td><td>Filter order, enqueue-time <code>now</code>, state written before delivery, per-topic dedupe</td><td>&quot;message: state is written before delivery and a failure pushes an error&quot;, &quot;filter: delayed message is judged at enqueue time&quot;</td><td>high</td></tr>
+<tr><td><code>relay-control.mjs</code> <code>Control</code> and <code>validateControlTable</code></td><td>Confirm hold per topic, expiry grace, cooldown consumed before the handler runs, exact validation messages</td><td>&quot;control: /yes executes the held action once&quot;, &quot;control: a held action expires and a late /yes reports expired&quot;, &quot;control: cooldown rejects a repeated run&quot;</td><td>medium</td></tr>
+<tr><td><code>opencode-adapter.mjs</code> <code>createOpenCodeAdapter</code></td><td>Capability list driven by <code>agent</code> and <code>model</code>; pin by id prefix; title cleaning</td><td>&quot;control: /help lists configured verbs&quot;, &quot;control: created session titles are cleaned and capped&quot;</td><td>medium</td></tr>
+<tr><td><code>ntfy-topic.mjs</code> <code>topicForProject</code></td><td>Host-independent Windows and POSIX parsing, 64-character ASCII topic, trailing separators</td><td>&quot;topic derivation: windows and posix&quot;, &quot;topic derivation: folder name length limit is 64&quot;</td><td>low</td></tr>
+<tr><td><code>link-safe.mjs</code> <code>linkSafe</code></td><td>Byte-identical table and token scan across two copies</td><td>&quot;PASS relay link-safe copy identical&quot;, &quot;PASS link-safe allowlist and defang&quot;</td><td>medium</td></tr>
+<tr><td><code>phone-outbound.js</code> <code>createTurnTracker</code></td><td>Debounce plus TTL, key dedupe, cap drops the tail once, partial flush, unref timers</td><td>&quot;PASS turn text assembled once&quot;, &quot;PASS late duplicate terminal suppressed&quot;, &quot;PASS turn text cap drops the tail once&quot;</td><td>high</td></tr>
+<tr><td><code>phone-files.js</code> <code>createFileOutbound</code></td><td>Birthtime sentinel, LIFO scan cap, allowlist versus tool, caps summary, read-time regrowth check</td><td>&quot;PASS terminal scan for nested files&quot;, &quot;PASS scan entry cap&quot;, &quot;PASS file allowlist, caps, tool contract&quot;</td><td>high</td></tr>
+<tr><td><code>ntfy-inbox-relay.mjs</code> <code>acquireLock</code> and <code>writeStateAtomic</code></td><td><code>wx</code> semantics, unreadable lock left in place, temp plus rename</td><td>&quot;lock: concurrent acquire yields exactly one winner&quot;, &quot;lock: unreadable lock fails closed and is not deleted&quot;</td><td>medium</td></tr>
+<tr><td><code>ntfy-inbox-relay.mjs</code> <code>downloadAttachment</code></td><td>HTTPS on every hop, 3 redirects, declared versus streamed size, filename sanitization</td><td>&quot;attachment: a redirect downgrade to HTTP is rejected&quot;, &quot;attachment: oversize download is rejected and removed&quot;</td><td>medium</td></tr>
+<tr><td><code>ntfy-inbox-relay.mjs</code> <code>Logger</code></td><td>Rotation at a byte size with one old file and UTC millisecond lines</td><td>&quot;logger: rotates at the size limit and keeps one old file&quot;</td><td>low</td></tr>
+<tr><td><code>ntfy-inbox-relay.mjs</code> <code>loadConfigFromText</code></td><td>Merge leniency, BOM, floats, and error text</td><td>&quot;config: invalid documents are rejected&quot;, &quot;config: home expansion and relative roots&quot;</td><td>medium</td></tr>
+</tbody></table>
+<h2><span class="num">14</span>Pre-port checklist</h2>
+<div class="rule"></div>
+<ul>
+<li>Which exact strings does this module emit, and which test or doc asserts them?</li>
+<li>Which clock does this window use, and does a clock step change the outcome?</li>
+<li>Where does the JS code accept <code>undefined</code>, null, a numeric string, or a float that a Rust type would reject?</li>
+<li>Is the cap in bytes or UTF-16 units, and does it add a marker?</li>
+<li>Does the code mutate state across an <code>await</code> that a second task could observe?</li>
+<li>What happens on Windows casing, a <code>\\?\</code> path, and a non-ASCII filename?</li>
+<li>Does this call retry, on which statuses, and with which timeout boundary?</li>
+<li>What did the run of <code>verify-ntfy-patch.mjs</code> print for this module, and is that assertion moving to <code>cargo test</code>?</li>
+</ul>
+<h2><span class="num">15</span>Anti-patterns from past conversions</h2>
+<div class="rule"></div>
+<p>General, from the Python and autocache ports; no artefact of those ports exists in this tree. Each row names where the same class of bug would bite this code.</p>
+<table><thead><tr><th>Pattern</th><th>Where it would bite here</th><th>Rust countermeasure</th></tr></thead><tbody>
+<tr><td>Truthiness and coercion</td><td><code>validateConfig</code> never checks <code>enabled</code>; <code>Number(msg.time)</code> accepts strings; <code>?? 0</code> only covers null.</td><td>Typed newtypes and explicit <code>Option</code>; parse at the wire boundary.</td></tr>
+<tr><td>Exceptions as control flow</td><td><code>ControlError</code> for cooldowns, <code>error.status</code> on <code>apiRequest</code> errors, <code>EINVALIDSTATE</code> for state.</td><td>An enum per failure class, matched exhaustively.</td></tr>
+<tr><td>Stringly-typed config</td><td><code>adapter.name</code>, <code>handler</code>, <code>logging.level</code>, <code>routing.delivery</code>.</td><td>Parse into enums at load time, not at use time.</td></tr>
+<tr><td>Implicit <code>this</code> and default arguments</td><td><code>Relay</code> deps defaults, <code>now = Date.now</code> passed unbound (works today because it is called as a function).</td><td>Explicit struct fields and injected trait objects; no method values passed as callbacks.</td></tr>
+<tr><td>Date arithmetic</td><td>Confirm, cooldown, replay, shutdown, and log timestamps all use <code>Date.now()</code>.</td><td>One clock abstraction per unit; never subtract a <code>SystemTime</code> from an <code>Instant</code>.</td></tr>
+<tr><td>Integer width and overflow</td><td><code>Number.isInteger</code> accepts values above 2^53; byte caps and queue lengths are floats in principle.</td><td><code>u64</code>/<code>usize</code> with checked conversions at parse, saturating at the cap.</td></tr>
+<tr><td>Mutation shared across async boundaries</td><td><code>Relay.projects</code> is replaced during discovery while <code>handleMessage</code> runs; <code>state</code> is mutated and written from <code>setPin</code> inside a command.</td><td>One owner task for state, or a mutex with a write-through API; no lock held across an await.</td></tr>
+<tr><td>Silent fallbacks that hide a misconfiguration</td><td><code>createSSEParser</code> drops bad JSON, <code>Logger</code> swallows rotation errors, <code>normalizeState</code> accepts a bad shape, <code>safeLog</code> swallows everything.</td><td>Keep the fallback but emit one log line with a stable field, and count it in tests.</td></tr>
+</tbody></table>
+<h2><span class="num">16</span>Evidence gaps</h2>
+<div class="rule"></div>
+<ul>
+<li>Test counts drifted during the port: <code>00-overview.md</code> said 69 and this file said 89 at the time of the audit; <code>npm test</code> reported 94 at that time. The inbound acceptance gate is the 52 <code>rust\crates\inbound</code> tests plus the wire and adapter fixtures, not a count in prose.</li>
+<li><code>01-phone-continuation.md</code> originally said every publish includes a &quot;heartbeat push&quot;; the heartbeat is a log line, which the status report shows. There is no heartbeat publish call in the tree.</li>
+<li><code>03</code> step 2 said &quot;compare wire bytes with the current client&quot;, but there are two clients: <code>publishNtfy</code> posts headers to <code>/{topic}</code>, <code>ntfy-client.js</code> posts JSON to the base URL and PUTs files with query parameters. <code>rust\crates\ntfy</code> implements all three and tests each style.</li>
+<li><code>03</code> says &quot;3400 UTF-8 bytes inline&quot;; the plugin also has <code>MAX_MESSAGE_BYTES</code> 4096 and <code>boundQuestionMessage</code> with a <code>(truncated)</code> marker. <code>core::text</code> carries the 3400 ack budget; <code>ntfy::header</code> carries the plugin 1024/4096 caps.</li>
+<li><code>04</code> covers the clock choice (row 10) and the wire format (row 11), but has no row for duplicate-key policy or unknown-field strictness. Config parses through <code>serde_json::Value</code>, so a duplicate key takes the last value; typed state rejects a duplicate field.</li>
+<li><code>03</code> section 6 says the OpenCode calls go through HTTP directly. The Rust adapter retries no-status and 5xx twice, 1 s then 2 s, matching the Node classifier; the parser is gone.</li>
+<li>The 94 Node tests cover inbound, control, and the inbox prune. Outbound turn, file, gap, and backfill behavior is pinned by the 68 tests in <code>rust\crates\outbound</code> and the app MCP test; outbound and the MCP tool are live, and the publisher plugin is deleted.</li>
+</ul>
+  </main>
+</div>
+<script>const ThemeEngine=(function(){
+
+  function hexToRgb(hex){
+    if(typeof hex!=='string'||hex[0]!=='#'){
+      throw new Error('hexToRgb: expected a hex color string starting with "#"');
+    }
+    const h=hex.substring(1);
+    if(h.length!==6||!/^[0-9a-fA-F]{6}$/.test(h)){
+      throw new Error('hexToRgb: expected 6 hex digits after "#" (got "'+hex+'")');
+    }
+    return[
+      parseInt(h.substring(0,2),16),
+      parseInt(h.substring(2,4),16),
+      parseInt(h.substring(4,6),16)
+    ];
+  }
+
+  function rgbToHex(r,g,b){
+    const c=v=>Math.max(0,Math.min(255,Math.round(v)));
+    return'#'+[c(r),c(g),c(b)].map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+
+  function rgbToHsl(r,g,b){
+    r/=255;g/=255;b/=255;
+    const max=Math.max(r,g,b),min=Math.min(r,g,b);
+    let h,s;
+    const l=(max+min)/2;
+    if(max===min){
+      h=s=0;
+    }else{
+      const d=max-min;
+      s=l>0.5?d/(2-max-min):d/(max+min);
+      switch(max){
+        case r:h=((g-b)/d+(g<b?6:0))/6;break;
+        case g:h=((b-r)/d+2)/6;break;
+        case b:h=((r-g)/d+4)/6;break;
+      }
+    }
+    return[h*360,s,l];
+  }
+
+  function hslToRgb(h,s,l){
+    h/=360;
+    let r,g,b;
+    if(s===0){
+      r=g=b=l;
+    }else{
+      const hue2rgb=(p,q,t)=>{
+        if(t<0)t+=1;
+        if(t>1)t-=1;
+        if(t<1/6)return p+(q-p)*6*t;
+        if(t<1/2)return q;
+        if(t<2/3)return p+(q-p)*(2/3-t)*6;
+        return p;
+      };
+      const q=l<0.5?l*(1+s):l+s-l*s;
+      const p=2*l-q;
+      r=hue2rgb(p,q,h+1/3);
+      g=hue2rgb(p,q,h);
+      b=hue2rgb(p,q,h-1/3);
+    }
+    return[Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+  }
+
+  function clampStep(step){
+    return Math.max(-3,Math.min(3,Number(step)||0));
+  }
+
+  function adjustBrightness(rgb,step){
+    step=clampStep(step);
+    if(!step)return rgb.slice();
+    const factor=1+step*0.08;
+    return rgb.map(v=>Math.max(0,Math.min(255,Math.round(v*factor))));
+  }
+
+  function adjustSaturation(rgb,step){
+    step=clampStep(step);
+    if(!step)return rgb.slice();
+    const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);
+    const newS=Math.max(0,Math.min(1,s*(1+step*0.15)));
+    return hslToRgb(h,newS,l);
+  }
+
+  function adjustColor(hex,brightness,saturation){
+    let rgb=hexToRgb(hex);
+    rgb=adjustBrightness(rgb,brightness);
+    rgb=adjustSaturation(rgb,saturation);
+    return rgbToHex(rgb[0],rgb[1],rgb[2]);
+  }
+
+  function inkOn(hex){
+    const rgb=hexToRgb(hex);
+    const c=rgb.map(v=>{
+      const p=v/255;
+      return p<=0.04045?p/12.92:Math.pow((p+0.055)/1.055,2.4);
+    });
+    const l=0.2126*c[0]+0.7152*c[1]+0.0722*c[2];
+    return l>0.179?'#000000':'#FFFFFF';
+  }
+
+  const THEMES={
+    dark:{
+      github:{bg:'#0D1117',card:'#010409',ink:'#C9D1D9',muted:'#8B949E',line:'#6E7681',accent:'#3B82F6'},
+      harbor:{bg:'#0F1A2B',card:'#212121',ink:'#C9C9C9',muted:'#999999',line:'#737373',accent:'#4FD1C5'},
+      solarized:{bg:'#002B36',card:'#073642',ink:'#9DB0B0',muted:'#8FA5AA',line:'#93A1A1',accent:'#D96F3C'},
+      oledblack:{bg:'#000000',card:'#1A1A1A',ink:'#EDEDED',muted:'#A8A8A8',line:'#6E6E6E',accent:'#D4D4D4'},
+      ayu:{bg:'#0B0E14',card:'#0F131A',ink:'#BFBDB6',muted:'#59C2FF',line:'#6C7380',accent:'#E6B450'}
+    },
+    light:{
+      vercel:{bg:'#F3F3F1',card:'#FFFFFF',ink:'#20242A',muted:'#4E545C',line:'#C9CCD1',accent:'#9A6400'},
+      tokyonight:{bg:'#F3F3F1',card:'#F0F4FC',ink:'#232A3D',muted:'#4B5468',line:'#C6CEDF',accent:'#2F5BB7'},
+      cursor:{bg:'#F3F3F1',card:'#F0F7F1',ink:'#212A24',muted:'#4C5850',line:'#C5D2C7',accent:'#2A6350'},
+      orng:{bg:'#F3F3F1',card:'#FFF6EE',ink:'#2A2420',muted:'#5C4F46',line:'#DBC8B9',accent:'#B4471E'}
+    }
+  };
+
+  const THUMB={
+    dark:{bg:'#2E2E2E',line:'#777777'},
+    light:{bg:'#CBCBCB',line:'#888888'}
+  };
+
+  function apply(state){
+    state=state||{};
+    const mode=state.mode==='dark'?'dark':'light';
+    const dark=THEMES.dark[state.dark]?state.dark:'github';
+    const light=THEMES.light[state.light]?state.light:'vercel';
+    const theme=THEMES[mode][mode==='dark'?dark:light];
+    const print=!!state.print;
+    const font=state.font==='serif'?'serif':'sans-serif';
+    const b=clampStep(state.brightness),s=clampStep(state.saturation);
+
+    const root=document.documentElement;
+    root.setAttribute('data-theme',mode);
+    root.setAttribute('data-font',font);
+    root.setAttribute('data-print',print?'on':'off');
+    root.setAttribute('data-dark',dark);
+    root.setAttribute('data-light',light);
+
+    const vars={};
+    if(print){
+      vars['--page-bg']='var(--print-bg)';
+      vars['--page-ink']='var(--print-ink)';
+      vars['--page-muted']='var(--print-muted)';
+      vars['--page-line']='var(--print-line)';
+      vars['--card']='var(--print-bg)';
+      vars['--accent']='var(--print-ink)';
+      vars['--pick-ink']='var(--print-bg)';
+      vars['--tb-ink']='var(--print-muted)';
+      vars['--tb-line']='var(--print-line)';
+      vars['--thumb']=THUMB.light.bg;
+      vars['--thumb-line']=THUMB.light.line;
+    }else{
+      const bg=adjustColor(theme.bg,b,s);
+      const card=adjustColor(theme.card,b,s);
+      const ink=adjustColor(theme.ink,b,s);
+      const muted=adjustColor(theme.muted,b,s);
+      const line=adjustColor(theme.line,b,s);
+      const accent=adjustColor(theme.accent,b,s);
+      vars['--page-bg']=bg;
+      vars['--page-ink']=ink;
+      vars['--page-muted']=muted;
+      vars['--page-line']=line;
+      vars['--card']=card;
+      vars['--accent']=accent;
+      vars['--pick-ink']=inkOn(accent);
+      vars['--tb-ink']=muted;
+      vars['--tb-line']=line;
+      vars['--thumb']=THUMB[mode].bg;
+      vars['--thumb-line']=THUMB[mode].line;
+    }
+    for(const[prop,value]of Object.entries(vars)){
+      root.style.setProperty(prop,value);
+    }
+  }
+
+  return{apply,THEMES,inkOn};
+})();</script>
+<script>const LinkState=(function(){
+  function readParams(){
+    var s=(window.location&&window.location.search)||'';
+    if(s.charAt(0)==='?')s=s.slice(1);
+    if(!s)return null;
+    var out={};
+    s.split('&').forEach(function(p){
+      var i=p.indexOf('=');
+      if(i>0)out[p.slice(0,i)]=p.slice(i+1);
+    });
+    var mode=(out.mode==='dark'||out.mode==='light')?out.mode:null;
+    var dark=ThemeEngine.THEMES.dark[out.dark]?out.dark:null;
+    var light=ThemeEngine.THEMES.light[out.light]?out.light:null;
+    if(!mode&&!dark&&!light)return null;
+    return{mode:mode,dark:dark,light:light};
+  }
+
+  function pickQuery(state){
+    return '?mode='+(state.mode==='dark'?'dark':'light')+
+           '&dark='+state.dark+'&light='+state.light;
+  }
+
+  function syncLinks(state){
+    var nodes=document.querySelectorAll?document.querySelectorAll('a[href]'):[];
+    for(var i=0;i<nodes.length;i++){
+      var a=nodes[i];
+      var href=a.getAttribute('href')||'';
+      if(href.charAt(0)==='#'||href.slice(0,2)==='//')continue;
+      if(/^[a-z][a-z0-9+.-]*:/i.test(href))continue;
+      var cut=href.search(/[?#]/);
+      var path=cut<0?href:href.slice(0,cut);
+      var hash=href.indexOf('#')<0?'':href.slice(href.indexOf('#'));
+      if(!/\.html$/.test(path))continue;
+      a.setAttribute('href',path+pickQuery(state)+hash);
+    }
+  }
+
+  return{readParams:readParams,syncLinks:syncLinks};
+})();</script>
+<script>const MenuBar=(function(){
+  let printBtn,modeBtn,fontBtn,bri,sat,briOut,satOut;
+  let state={mode:'light',dark:'github',light:'vercel',font:'sans-serif',print:false};
+  let onChange=null,manual=false,mq=null;
+
+  function init(opts){
+    opts=opts||{};
+    onChange=opts.onChange||null;
+    mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+
+    state.mode=opts.mode==='dark'||opts.mode==='light'
+      ?opts.mode
+      :(mq&&mq.matches?'dark':'light');
+    if(opts.dark&&ThemeEngine.THEMES.dark[opts.dark])state.dark=opts.dark;
+    if(opts.light&&ThemeEngine.THEMES.light[opts.light])state.light=opts.light;
+    if(opts.manual)manual=true;
+    if(opts.font)state.font=opts.font;
+
+    printBtn=document.getElementById('print');
+    modeBtn=document.getElementById('mode');
+    fontBtn=document.getElementById('font');
+    bri=document.getElementById('brightness');
+    briOut=document.getElementById('brightness-value');
+    sat=document.getElementById('saturation');
+    satOut=document.getElementById('saturation-value');
+
+    printBtn.addEventListener('click',()=>setPrint(!state.print));
+    modeBtn.addEventListener('click',()=>{
+      manual=true;
+      setPrint(false,true);
+      setMode(state.mode==='dark'?'light':'dark');
+    });
+    fontBtn.addEventListener('click',()=>setFont(state.font==='serif'?'sans-serif':'serif'));
+    bri.addEventListener('input',()=>{syncSliders();emit();});
+    sat.addEventListener('input',()=>{syncSliders();emit();});
+
+    buildMenu('dark-menu','dark');
+    buildMenu('light-menu','light');
+    document.getElementById('dark-theme').addEventListener('click',e=>{
+      e.stopPropagation();
+      toggleMenu('dark-theme','dark-menu');
+    });
+    document.getElementById('light-theme').addEventListener('click',e=>{
+      e.stopPropagation();
+      toggleMenu('light-theme','light-menu');
+    });
+    document.getElementById('dark-menu').addEventListener('keydown',menuKey);
+    document.getElementById('light-menu').addEventListener('keydown',menuKey);
+    document.addEventListener('click',e=>{
+      if(!e.target.closest||!e.target.closest('.group'))closeMenus();
+    });
+    document.addEventListener('keydown',e=>{
+      if(e.key!=='Escape')return;
+      let openBtn=null;
+      [['dark-theme','dark-menu'],['light-theme','light-menu']].forEach(pair=>{
+        if(document.getElementById(pair[1]).classList.contains('open')){
+          openBtn=document.getElementById(pair[0]);
+        }
+      });
+      closeMenus();
+      if(openBtn)openBtn.focus();
+    });
+
+    if(mq){
+      const follow=e=>{if(!manual)setMode(e.matches?'dark':'light');};
+      if(mq.addEventListener)mq.addEventListener('change',follow);
+      else if(mq.addListener)mq.addListener(follow);
+    }
+
+    bri.value='0';
+    sat.value='0';
+    syncUI();
+    emit();
+  }
+
+  function syncSliders(){
+    const b=stepOf(bri),s=stepOf(sat);
+    bri.value=String(b);
+    sat.value=String(s);
+    briOut.textContent=String(b);
+    satOut.textContent=String(s);
+  }
+
+  function syncMenus(){
+    [['dark','dark-menu'],['light','light-menu']].forEach(pair=>{
+      const menu=document.getElementById(pair[1]);
+      Array.prototype.forEach.call(menu.children,row=>{
+        row.setAttribute('aria-checked',String(row.textContent===state[pair[0]]));
+      });
+    });
+  }
+
+  function syncUI(){
+    const light=state.mode==='light';
+    const sans=state.font==='sans-serif';
+    modeBtn.classList.toggle('on',light);
+    modeBtn.setAttribute('aria-checked',String(light));
+    modeBtn.setAttribute('aria-label',light?'Light mode':'Dark mode');
+    fontBtn.classList.toggle('on',sans);
+    fontBtn.setAttribute('aria-checked',String(sans));
+    fontBtn.setAttribute('aria-label',sans?'Sans-serif':'Serif');
+    printBtn.classList.toggle('on',state.print);
+    printBtn.setAttribute('aria-pressed',String(state.print));
+    syncSliders();
+    syncMenus();
+  }
+
+  function stepOf(el){
+    const n=parseInt(el.value,10);
+    return isNaN(n)?0:Math.max(-3,Math.min(3,n));
+  }
+
+  function copy(){
+    return{
+      mode:state.mode,
+      dark:state.dark,
+      light:state.light,
+      font:state.font,
+      print:state.print,
+      brightness:stepOf(bri),
+      saturation:stepOf(sat)
+    };
+  }
+
+  function emit(){
+    if(onChange)onChange(copy());
+  }
+
+  function setMode(mode){
+    state.mode=mode==='dark'?'dark':'light';
+    syncUI();
+    emit();
+  }
+
+  function setTheme(mode,name){
+    if(!ThemeEngine.THEMES[mode]||!ThemeEngine.THEMES[mode][name])return;
+    manual=true;
+    setPrint(false,true);
+    state[mode]=name;
+    state.mode=mode;
+    syncUI();
+    emit();
+  }
+
+  function setFont(font){
+    state.font=font==='serif'?'serif':'sans-serif';
+    syncUI();
+    emit();
+  }
+
+  function setPrint(on,quiet){
+    state.print=!!on;
+    if(!quiet)syncUI();
+    if(!quiet)emit();
+  }
+
+  function buildMenu(id,mode){
+    const menu=document.getElementById(id);
+    Object.keys(ThemeEngine.THEMES[mode]).forEach(name=>{
+      const row=document.createElement('button');
+      row.type='button';
+      row.setAttribute('role','menuitemradio');
+      row.setAttribute('aria-checked',String(state[mode]===name));
+      row.textContent=name;
+      row.addEventListener('click',()=>{
+        setTheme(mode,name);
+        closeMenus();
+        document.getElementById(mode==='dark'?'dark-theme':'light-theme').focus();
+      });
+      menu.appendChild(row);
+    });
+  }
+
+  function closeMenus(){
+    [['dark-theme','dark-menu'],['light-theme','light-menu']].forEach(pair=>{
+      document.getElementById(pair[1]).classList.remove('open');
+      document.getElementById(pair[0]).setAttribute('aria-expanded','false');
+    });
+  }
+
+  function toggleMenu(btnId,menuId){
+    const btn=document.getElementById(btnId);
+    const menu=document.getElementById(menuId);
+    const open=!menu.classList.contains('open');
+    closeMenus();
+    if(open){
+      menu.classList.add('open');
+      btn.setAttribute('aria-expanded','true');
+      const rows=Array.prototype.slice.call(menu.children);
+      const pick=rows.filter(row=>row.getAttribute('aria-checked')==='true')[0]||rows[0];
+      if(pick)pick.focus();
+    }
+  }
+
+  function menuKey(e){
+    const rows=Array.prototype.slice.call(this.children);
+    const n=rows.length;
+    if(!n)return;
+    const i=rows.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();
+      rows[(i+(e.key==='ArrowDown'?1:-1)+n)%n].focus();
+    }else if(e.key==='Home'||e.key==='End'){
+      e.preventDefault();
+      rows[e.key==='Home'?0:n-1].focus();
+    }
+  }
+
+  function getValues(){
+    return copy();
+  }
+
+  function setValues(opts){
+    opts=opts||{};
+    if(opts.mode==='dark'||opts.mode==='light')state.mode=opts.mode;
+    if(opts.dark&&ThemeEngine.THEMES.dark[opts.dark])state.dark=opts.dark;
+    if(opts.light&&ThemeEngine.THEMES.light[opts.light])state.light=opts.light;
+    if(opts.font)state.font=opts.font;
+    if(opts.print!==undefined)state.print=!!opts.print;
+    if(opts.brightness!==undefined)bri.value=String(Math.max(-3,Math.min(3,Number(opts.brightness)||0)));
+    if(opts.saturation!==undefined)sat.value=String(Math.max(-3,Math.min(3,Number(opts.saturation)||0)));
+    syncUI();
+    emit();
+  }
+
+  return{init,getValues,setValues,setMode,setTheme,setFont,setPrint};
+})();</script>
+<script>(function(){
+  var params=LinkState.readParams()||{};
+  var manual=!!(params.mode||params.dark||params.light);
+  MenuBar.init({
+    mode:params.mode||undefined,
+    dark:params.dark||undefined,
+    light:params.light||undefined,
+    manual:manual,
+    onChange:function(state){
+      ThemeEngine.apply(state);
+      LinkState.syncLinks(state);
+    }
+  });
+  LinkState.syncLinks(MenuBar.getValues());
+})();</script>
+</body>
+</html>

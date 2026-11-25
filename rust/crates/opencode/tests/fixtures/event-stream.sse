@@ -1,0 +1,27 @@
+: frames captured from GET /api/event on OpenCode 2.2.7 (server.connected,
+: session.created, execution.started, text.ended, execution.succeeded,
+: session.deleted) plus one reasoning delta and one heartbeat from the same run.
+: Question/form frames are dropped by the parser and are not in this recording.
+
+data: {"id":"evt_1c7d58cc4001v9M4JhgmxONNTK","type":"server.connected","data":{}}
+
+: heartbeat
+
+data: {"id":"evt_1c7d6980d0019MImCubSpKzCrz","created":1794354092045,"type":"session.created","location":{"directory":"C:\\Users\\example\\projects\\ntfy-proj"},"data":{"sessionID":"ses_e382967f5ffe5zUw0VhEYnWu1m","slug":"tidy-nebula","version":"2.2.7","projectID":"57700ca0b8f94c5eb2f30eee3e0467cbe7c60e55","location":{"directory":"C:\\Users\\example\\projects\\ntfy-proj"},"subpath":"","title":"fixture capture","agent":"build","model":{"id":"deepseek-v4.1-flash","providerID":"opencode-go","variant":"max"}},"durable":{"aggregateID":"ses_e382967f5ffe5zUw0VhEYnWu1m","seq":0,"version":1}}
+
+data: {"id":"evt_1c7d5944b001NAJitkIvzThZEb","created":1794354025547,"type":"session.execution.started","data":{"sessionID":"ses_e382b0d8dffeOjsEVT3uTeZZ73"},"durable":{"aggregateID":"ses_e382b0d8dffeOjsEVT3uTeZZ73","seq":2,"version":1}}
+
+data: {"id":"evt_1c7c63b83001prIPCMcVJIzwZ9","created":1794353019779,"type":"session.reasoning.delta","location":{"directory":"C:\\Users\\example\\projects\\ntfy-proj"},"data":{"sessionID":"ses_e383f93edffeAyUFn7nbhl1JgR","assistantMessageID":"msg_1c7c613d3001Ok9EaQthnrb02E","ordinal":0,"delta":"OK"}}
+
+data: {"id":"evt_1c7d5ad14001ipA03GU86rv6Ln","created":1794354031892,"type":"session.text.started","location":{"directory":"C:\\Users\\example\\projects\\ntfy-proj"},"data":{"sessionID":"ses_e382b0d8dffeOjsEVT3uTeZZ73","assistantMessageID":"msg_1c7d594520016Dgk9pHtISwlAW","ordinal":0},"durable":{"aggregateID":"ses_e382b0d8dffeOjsEVT3uTeZZ73","seq":6,"version":1}}
+
+data: {"id":"evt_1c7d5ad3e002e9dEc2MElByhGH","created":1794354031934,"type":"session.text.ended","location":{"directory":"C:\\Users\\example\\projects\\ntfy-proj"},"data":{"sessionID":"ses_e382b0d8dffeOjsEVT3uTeZZ73","assistantMessageID":"msg_1c7d594520016Dgk9pHtISwlAW","ordinal":0,"text":"OK"},"durable":{"aggregateID":"ses_e382b0d8dffeOjsEVT3uTeZZ73","seq":7,"version":1}}
+
+data: {"id":"evt_1c7d5ad6d001p2vsvn59AvEPih","created":1794354031981,"type":"session.execution.succeeded","data":{"sessionID":"ses_e382b0d8dffeOjsEVT3uTeZZ73"},"durable":{"aggregateID":"ses_e382b0d8dffeOjsEVT3uTeZZ73","seq":10,"version":1}}
+
+data: {"id":"evt_1c7d6a3e50013B5Argx9mML9pG","created":1794354095077,"type":"session.deleted","data":{"sessionID":"ses_e382967f5ffe5zUw0VhEYnWu1m"},"durable":{"aggregateID":"ses_e382967f5ffe5zUw0VhEYnWu1m","seq":1,"version":2}}
+
+data: not-json
+
+data: {"id":"evt_1c7d6b9580018l8xxfwChaT1l5","created":1794354100568,"type":"session.deleted","data":{"sessionID":"ses_e382b0d8dffeOjsEVT3uTeZZ73"},"durable":{"aggregateID":"ses_e382b0d8dffeOjsEVT3uTeZZ73","seq":11,"version":2}}
+

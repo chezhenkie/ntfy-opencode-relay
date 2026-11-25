@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rust relay merge plan</title>
+<style>
+#tb{
+  position:fixed;top:0;left:0;right:0;height:24px;z-index:10;
+  display:flex;align-items:center;justify-content:flex-end;gap:7px;
+  padding:0 28px;background:var(--page-bg);color:var(--tb-ink);
+  font:10px/1 var(--font-ui);
+  user-select:none;transition:background .25s,color .25s;
+}
+#tb .s{width:1px;height:12px;background:var(--tb-line)}
+#tb .tb-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  height:18px;padding:0 6px 3px;cursor:pointer;
+  color:inherit;background:transparent;
+  border:1px solid var(--tb-line);border-radius:2px;
+  white-space:nowrap;
+}
+#tb .tb-btn svg{width:13px;height:13px}
+#tb .tb-btn.on{background:var(--tb-ink);color:var(--page-bg);border-color:var(--tb-ink)}
+#tb .tb-btn.fold{min-width:68px}
+#tb .tb-btn.fold::after{
+  content:"";width:0;height:0;margin-left:4px;
+  border-left:3px solid transparent;border-right:3px solid transparent;
+  border-top:4px solid currentColor;
+}
+#tb .group{position:relative;display:inline-flex}
+#tb .menu{
+  display:none;position:absolute;top:21px;right:0;z-index:20;
+  flex-direction:column;min-width:100%;padding:2px;
+  background:var(--page-bg);border:1px solid var(--tb-line);border-radius:2px;
+}
+#tb .menu.open{display:flex}
+#tb .menu button{
+  height:16px;padding:0 6px;cursor:pointer;text-align:left;
+  font:inherit;color:inherit;background:transparent;border:0;border-radius:1px;
+  white-space:nowrap;
+}
+#tb .menu button:hover,#tb .menu button:focus-visible{background:var(--tb-line)}
+#tb .menu button[aria-checked="true"]{background:var(--accent);color:var(--pick-ink)}
+#tb .toggle{
+  position:relative;width:44px;height:20px;padding:0;cursor:pointer;
+  background:transparent;border:0;color:inherit;
+}
+#tb .toggle-thumb{
+  position:absolute;top:2px;left:5px;width:16px;height:16px;
+  border-radius:2px;background:var(--thumb);border:1px solid var(--thumb-line);
+  transition:transform .25s cubic-bezier(.4,0,.2,1),background .25s,border-color .25s;
+}
+#tb .toggle.on .toggle-thumb{transform:translateX(17px)}
+#tb .toggle svg{
+  position:absolute;top:50%;width:12px;height:12px;
+  transform:translateY(-50%);pointer-events:none;
+  transition:opacity .25s;
+}
+#tb .toggle .ico-l{left:7px;opacity:1}
+#tb .toggle .ico-r{right:8px;opacity:.45}
+#tb .toggle.on .ico-l{opacity:.45}
+#tb .toggle.on .ico-r{opacity:1}
+#tb .sl{display:inline-flex;align-items:center;gap:4px}
+#tb .sl svg{width:10px;height:10px;flex-shrink:0}
+#tb .sl input[type=range]{
+  -webkit-appearance:none;appearance:none;width:48px;height:3px;
+  padding:0;margin:0;cursor:pointer;outline:none;
+  background:var(--tb-line);border:1px solid var(--tb-line);border-radius:2px;
+}
+#tb .sl input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:10px;height:10px;
+  background:var(--page-bg);border:1px solid var(--tb-ink);border-radius:2px;
+  cursor:pointer;
+}
+#tb .sl input[type=range]::-moz-range-thumb{
+  width:10px;height:10px;background:var(--page-bg);
+  border:1px solid var(--tb-ink);border-radius:2px;cursor:pointer;
+}
+#tb .sl .v{min-width:14px;text-align:center;font-variant-numeric:tabular-nums}
+#tb .tb-btn:focus-visible,#tb .toggle:focus-visible,#tb .sl input:focus-visible,#tb .menu button:focus-visible{
+  outline:2px solid var(--tb-ink);outline-offset:1px;
+}
+@media(prefers-reduced-motion:reduce){
+  #tb *{transition:none!important}
+}
+:root{
+  color-scheme:light;
+  --page-bg:#F3F3F1;
+  --page-ink:#20242A;
+  --page-muted:#4E545C;
+  --page-line:#C9CCD1;
+  --card:#FFFFFF;
+  --accent:#9A6400;
+  --pick-ink:#000000;
+  --tb-ink:#4E545C;
+  --tb-line:#C9CCD1;
+  --thumb:#CBCBCB;
+  --thumb-line:#888888;
+  --print-bg:#FFFFFF;
+  --print-ink:#000000;
+  --print-muted:#333333;
+  --print-line:#9A9A9A;
+  --font-serif:Georgia,'Times New Roman',serif;
+  --font-ui:'Segoe UI',Helvetica,Arial,sans-serif;
+  --font-mono:'Cascadia Code',Consolas,monospace;
+}
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --page-bg:#0D1117;
+  --page-ink:#C9D1D9;
+  --page-muted:#8B949E;
+  --page-line:#6E7681;
+  --card:#010409;
+  --accent:#3B82F6;
+  --pick-ink:#000000;
+  --tb-ink:#8B949E;
+  --tb-line:#6E7681;
+  --thumb:#2E2E2E;
+  --thumb-line:#777777;
+}
+html[data-print="on"]{color-scheme:light}
+[data-os="windows"]{
+  --font-ui:"Segoe UI Variable Text","Segoe UI",sans-serif;
+  --font-serif:Georgia,"Times New Roman",serif;
+  --font-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace;
+}
+[data-os="mac"]{
+  --font-ui:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;
+  --font-serif:"New York","Times New Roman",Times,serif;
+  --font-mono:"SF Mono",Menlo,Monaco,monospace;
+}
+[data-os="ios"]{
+  --font-ui:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;
+  --font-serif:"New York",Georgia,"Times New Roman",serif;
+  --font-mono:"SF Mono",Menlo,monospace;
+}
+[data-os="android"]{
+  --font-ui:Roboto,"Noto Sans",sans-serif;
+  --font-serif:"Noto Serif",serif;
+  --font-mono:"Roboto Mono","Droid Sans Mono","Noto Sans Mono",monospace;
+}
+[data-os="linux"]{
+  --font-ui:Ubuntu,"Cantarell","Noto Sans",sans-serif;
+  --font-serif:"Liberation Serif","Noto Serif",serif;
+  --font-mono:"Ubuntu Mono","DejaVu Sans Mono",monospace;
+}
+body{
+  margin:0;
+  background:var(--page-bg);
+  color:var(--page-ink);
+  font-family:var(--font-ui);
+  font-size:16px;
+  line-height:1.6;
+  transition:background .25s,color .25s;
+}
+[data-font="serif"] body{font-family:var(--font-serif)}
+h1,h2,h3,h4,h5,h6{
+  color:var(--page-ink);
+  font-family:inherit;
+  font-weight:400;
+  line-height:1.3;
+  margin:0 0 .5em;
+  transition:color .25s;
+}
+a{color:var(--accent);text-decoration:none;transition:color .2s}
+a:hover{text-decoration:underline}
+hr{border:none;border-top:1px solid var(--line);margin:2em 0}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  @page{margin:12mm}
+  :root{
+    color-scheme:light!important;
+    --page-bg:var(--print-bg)!important;
+    --page-ink:var(--print-ink)!important;
+    --page-muted:var(--print-muted)!important;
+    --page-line:var(--print-line)!important;
+    --card:var(--print-bg)!important;
+    --accent:var(--print-ink)!important;
+    --pick-ink:var(--print-bg)!important;
+    --tb-ink:var(--print-muted)!important;
+    --tb-line:var(--print-line)!important;
+  }
+  #tb{display:none}
+  .wrap{max-width:none;padding:0}
+  body{background:var(--page-bg)!important;color:var(--page-ink)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  header,table,pre,.callout,.kicker,.lede,.rule{break-inside:avoid}
+}
+*{box-sizing:border-box}
+.wrap{max-width:990px;margin:0 auto;padding:64px 32px 96px}
+header{border-top:6px solid var(--accent);padding-top:28px;margin-bottom:8px;transition:border-color .25s}
+.kicker{font-family:var(--font-ui);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--page-muted);margin:0 0 14px;transition:color .25s}
+h1{font-size:38px;font-weight:400;line-height:1.2;color:var(--page-ink);margin:0 0 12px;letter-spacing:-.01em;transition:color .25s}
+h1 em{font-style:italic;color:var(--accent);transition:color .25s}
+.lede{font-family:var(--font-serif);font-size:18px;line-height:1.5;color:var(--accent);margin:0 0 4px;font-style:italic;transition:color .25s}
+.lede small{display:block;font-style:normal;font-family:var(--font-ui);font-size:12.5px;color:var(--page-muted);margin-top:10px;transition:color .25s}
+h2{font-size:26px;font-weight:400;color:var(--page-ink);margin:56px 0 6px;letter-spacing:-.01em;transition:color .25s}
+h2 .num{font-family:var(--font-ui);font-size:14px;color:var(--accent);vertical-align:super;margin-right:8px;transition:color .25s}
+h2+.rule{height:1px;background:var(--page-line);margin:0 0 22px;transition:background .25s}
+h3{font-weight:600;color:var(--page-ink);font-size:19px;margin:26px 0 6px;transition:color .25s}
+p{margin:0 0 16px}
+em{font-family:var(--font-serif);color:var(--accent);transition:color .25s}
+strong{color:var(--accent);font-weight:600;transition:color .25s}
+table{width:100%;border-collapse:collapse;margin:20px 0 28px;background:var(--card);border:1px solid var(--page-line);transition:background .25s,border-color .25s}
+th,td{text-align:left;padding:10px 14px;vertical-align:top}
+th{font-family:var(--font-ui);font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--page-muted);background:var(--card);border-bottom:2px solid var(--accent);font-weight:600;transition:background .25s,color .25s,border-color .25s}
+td{font-size:14.5px;border-bottom:1px solid var(--page-line);color:var(--page-ink);transition:background .25s,border-color .25s,color .25s}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:var(--page-bg)}
+.callout{border-left:4px solid var(--accent);background:var(--card);padding:16px 20px;margin:22px 0;font-family:var(--font-serif);font-style:italic;color:var(--page-muted);transition:background .25s,border-color .25s,color .25s}
+.callout strong{font-family:var(--font-ui);font-style:normal}
+ul,ol{margin:0 0 18px;padding-left:26px}
+li{margin:0 0 8px}
+li::marker{color:var(--accent)}
+code{font-family:var(--font-mono);font-size:13px;background:transparent;color:var(--page-ink);border:1px solid var(--page-line);padding:1px 5px;border-radius:3px;transition:background .25s,color .25s,border-color .25s}
+pre{background:var(--card);color:var(--page-ink);border:1px solid var(--page-line);padding:16px 20px;border-radius:4px;overflow-x:auto;margin:18px 0 24px;font-family:var(--font-mono);font-size:13px;line-height:1.6;transition:background .25s,color .25s,border-color .25s}
+pre code{background:none;color:inherit;border:0;padding:0}
+@media(max-width:620px){.wrap{padding:40px 18px 72px}h1{font-size:28px}}
+</style>
+<script>(function(){
+  var ua=navigator.userAgent;
+  var os='unknown';
+  if(/Android/i.test(ua))os='android';
+  else if(/iPhone|iPad|iPod/i.test(ua))os='ios';
+  else if(/Windows/i.test(ua))os='windows';
+  else if(/Macintosh|Mac OS X/i.test(ua))os='mac';
+  else if(/Linux/i.test(ua))os='linux';
+  document.documentElement.dataset.os=os;
+})();</script>
+<script>(function(){
+  var p=/[?&]mode=(dark|light)\b/.exec(window.location.search||'');
+  var mq=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');
+  var root=document.documentElement;
+  root.setAttribute('data-theme',p?p[1]:(mq&&mq.matches?'dark':'light'));
+  root.setAttribute('data-font','sans-serif');
+  root.setAttribute('data-print','off');
+})();</script>
+</head>
+<body>
+<div id="tb" role="group" aria-label="Page controls">
+  <button class="tb-btn" id="print" type="button" aria-pressed="false" aria-label="Print friendly" title="Print friendly">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 9V3h12v6"/>
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+      <rect x="6" y="14" width="12" height="8" rx="1"/>
+    </svg>
+    <span>print friendly</span>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <button class="toggle on" id="mode" type="button" role="switch" aria-checked="true" aria-label="Light mode" title="Light or dark mode">
+    <span class="toggle-thumb" aria-hidden="true"></span>
+    <svg class="ico-l" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    <svg class="ico-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  </button>
+  <button class="toggle on" id="font" type="button" role="switch" aria-checked="true" aria-label="Sans-serif" title="Serif or sans-serif">
+    <span class="toggle-thumb" aria-hidden="true"></span>
+    <svg class="ico-l" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <line x1="3" y1="3" x2="11" y2="3"/>
+      <line x1="7" y1="3" x2="7" y2="11"/>
+      <line x1="3" y1="11" x2="11" y2="11"/>
+    </svg>
+    <svg class="ico-r" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <line x1="7" y1="3" x2="7" y2="11"/>
+    </svg>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <div class="group">
+    <button class="tb-btn fold" id="dark-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="dark-menu" title="Dark theme">dark theme</button>
+    <div class="menu" id="dark-menu" role="menu" aria-label="Dark theme"></div>
+  </div>
+  <div class="group">
+    <button class="tb-btn fold" id="light-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="light-menu" title="Light theme">light theme</button>
+    <div class="menu" id="light-menu" role="menu" aria-label="Light theme"></div>
+  </div>
+  <span class="s" aria-hidden="true"></span>
+  <div class="sl">
+    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10"/>
+      <polygon points="1,1 11,1 1,11" fill="currentColor"/>
+    </svg>
+    <input type="range" id="brightness" min="-3" max="3" step="1" value="0" aria-label="Brightness">
+    <span class="v" id="brightness-value" aria-hidden="true">0</span>
+  </div>
+  <div class="sl">
+    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+      <circle cx="6" cy="3" r="1.8"/>
+      <circle cx="3.5" cy="7.5" r="1.8"/>
+      <circle cx="8.5" cy="7.5" r="1.8"/>
+    </svg>
+    <input type="range" id="saturation" min="-3" max="3" step="1" value="0" aria-label="Saturation">
+    <span class="v" id="saturation-value" aria-hidden="true">0</span>
+  </div>
+</div>
+<div class="wrap">
+  <header>
+    <h1>Rust relay merge plan</h1>
+  </header>
+  <main>
+<p>Status: the Rust daemon is the live path in both directions. Steps 2 to 6 are implemented, plus the wire (<code>ntfy</code>) and OpenCode API (<code>opencode</code>) crates and the <code>app</code> composition root: 485 tests at the 0.14.0 gate. Service discovery reads <code>~/.local/state/opencode/service.json</code> and re-reads it after a transport error or HTTP 401; <code>opencode.baseUrl</code> remains an override. Outbound is live (<code>outbound.enabled: true</code>); the patched publisher plugin is removed and its vendored copy was deleted in 0.7.0. A reconnect or start backfills completed assistant text from the message API, so an <code>/api/event</code> gap does not lose turn text and there is no event forwarder. The Node relay was deleted in 0.8.0, so it is not an inbound rollback. Path note: since 0.10.0 the relay reads its config, tokens, state, asks, and journal from the install root, <code>%LOCALAPPDATA%\ntfy-relay\</code> on Windows; the config examples below record the earlier layout. See <code>10-deploy-mode.md</code>.</p>
+<h2><span class="num">1</span>Phase status</h2>
+<div class="rule"></div>
+<table><thead><tr><th>Step</th><th>State</th><th>Evidence</th></tr></thead><tbody>
+<tr><td>1. Freeze and fixtures</td><td>done</td><td>seven fixtures under <code>rust\crates\opencode\tests\fixtures</code>; permission responses are not captured</td></tr>
+<tr><td>2. Core</td><td>done</td><td><code>rust\crates\core</code>, 33 tests</td></tr>
+<tr><td>Wire and API clients</td><td>done</td><td><code>rust\crates\ntfy</code> 40 tests, <code>rust\crates\opencode</code> 53 tests</td></tr>
+<tr><td>3. Inbound</td><td>done</td><td><code>rust\crates\inbound</code>, 52 tests</td></tr>
+<tr><td>App composition</td><td>done</td><td><code>rust\crates\app</code>, 49 tests; <code>run</code>, <code>mcp</code>, <code>status</code>, and the task supervisor</td></tr>
+<tr><td>4. Outbound</td><td>done</td><td><code>rust\crates\outbound</code>, 68 tests; question asks map from <code>form.created</code>; the MCP loop ships in <code>rust\crates\app</code></td></tr>
+<tr><td>5. Cutover</td><td>done</td><td>inbound live since 0.4.2; outbound, plugin removal, and MCP live since 0.5.0; restart dedupe and lock fix in 0.6.1; reconnect backfill in 0.7.4; gates in <code>docs\operations.md</code> 7.4</td></tr>
+<tr><td>6. Cleanup</td><td>done</td><td>plugin and verifier deleted in 0.7.0; forwarder and loopback ingest deleted in 0.7.4; the Node relay was deleted in 0.8.0</td></tr>
+</tbody></table>
+<h2><span class="num">2</span>1. Goal</h2>
+<div class="rule"></div>
+<p>One Rust application owns both directions of the phone channel:</p>
+<ul>
+<li>It subscribes to ntfy and delivers phone messages into OpenCode sessions.</li>
+<li>It subscribes to OpenCode&#39;s event stream and publishes assistant text, files, permission asks, and errors to ntfy.</li>
+</ul>
+<p>OpenCode, its config, and its plugins never hold the ntfy token again. The patched third-party plugin and the patch script left the tree as the migration completed; the Node relay was deleted in 0.8.0. Inbound and outbound stay separate crates inside one Cargo workspace, so they can evolve and fail independently while sharing one config, one topic rule, and one link filter.</p>
+<h2><span class="num">3</span>2. Current state</h2>
+<div class="rule"></div>
+<ul>
+<li>Outbound: <code>rust\crates\outbound</code> subscribes to <code>/api/event</code> and publishes turn text, files, permission asks, question forms, and idle and error notices. On a reconnect or a start it reads completed assistant messages from <code>GET /api/session/{id}/message</code> and publishes text the live stream missed; one seen journal dedupes event ids and assistant message ids. The patched publisher plugin <code>opencode-ntfy-with-questions@0.2.1</code> is removed from <code>opencode.jsonc</code>; its vendored copy was deleted in 0.7.0. <code>ntfy_send_file</code> is the MCP tool from <code>ntfy-relay mcp</code>.</li>
+<li>Inbound: the Rust daemon owns the ntfy SSE subscription, filter, routing, control table, attachments, and state. <code>rust\crates\inbound</code> and <code>rust\crates\app</code> are live since 0.4.2. The Node relay <code>ntfy-opencode-incoming-relay</code> was the rollback until 0.8.0, when it was deleted.</li>
+<li>The split existed because a plugin runs per location and dies with it: an inbound listener there would duplicate prompts with two locations loaded and stop when no location is open. Outbound in the plugin got exact in-process events with no polling. The Rust outbound keeps the exact-event model through the API event stream and recovers completed text from the message API after a gap.</li>
+<li>Shared behavior that survived the merge: folder-name topic, deny-all auth, <code>oc-out</code> tag, link safety, auto-attach rules, permission grace, turn text assembly.</li>
+</ul>
+<h2><span class="num">4</span>3. Feasibility evidence</h2>
+<div class="rule"></div>
+<p>The running server exposes <code>GET /api/event</code>, operation <code>event.subscribe</code>: a <code>text/event-stream</code> of native and plugin RPC events across all server locations, with a <code>types</code> query filter and an initial <code>server.connected</code> event.</p>
+<p>Relevant event types:</p>
+<ul>
+<li><code>session.text.started</code>, <code>session.text.delta</code>, <code>session.text.ended</code></li>
+<li><code>session.execution.started</code>, <code>session.execution.succeeded</code>, <code>session.execution.failed</code>, <code>session.execution.interrupted</code></li>
+<li><code>session.status</code>, <code>session.idle</code></li>
+<li><code>permission.asked</code>, <code>permission.replied</code></li>
+<li><code>filesystem.changed</code></li>
+<li><code>session.created</code>, <code>session.updated</code>-class events for session metadata</li>
+<li><code>rpc.*</code> for plugin RPC</li>
+</ul>
+<p>The OpenAPI surface is marked experimental and the stream is volatile by contract: a slow consumer overflows and fails the stream, and events during a disconnect are missed. Both points drive the failure model in section 8.</p>
+<h2><span class="num">5</span>4. Target shape</h2>
+<div class="rule"></div>
+<p>The target shape is one Cargo workspace, one binary, and two tasks.</p>
+<pre><code>rust/
+  Cargo.toml, Cargo.lock, rust-toolchain.toml
+  crates/
+    core/       config, topic derivation, link filter, state, text budgets, adapter traits
+    ntfy/       wire client: publish, SSE parser, attachment fetch
+    opencode/   API client, event types, adapter
+    inbound/    ntfy SSE, filter, routing, prompting, permission replies, file download
+    outbound/   OpenCode event subscription, turn buffer, file scan, send_file library
+    app/        binary: config load, supervision, logging, lock file</code></pre>
+<ul>
+<li><code>core</code> has no async task of its own. It owns the topic rule, <code>linkSafe</code>, the config schema, the state file, and the text budgets. The wire client is <code>ntfy</code>; the OpenCode client is <code>opencode</code>.</li>
+<li><code>inbound</code> ports the current relay semantics one to one. The Node inbound suite in <code>ntfy-opencode-incoming-relay\tests\</code> was the porting gate and was deleted in 0.8.0; the Rust suites in <code>rust\crates\inbound</code> and <code>rust\crates\app</code> are the acceptance gate.</li>
+<li><code>outbound</code> replaces the plugin. It needs no location gate because one subscriber sees every location; the topic comes from the session&#39;s project canonical.</li>
+<li><code>app</code> is the composition root. It starts the inbound task with one token, one config, one log, and the outbound task. It also serves the MCP stdio server. The supervisor restarts a failed task in place since 0.6.0.</li>
+</ul>
+<h2><span class="num">6</span>5. Outbound design</h2>
+<div class="rule"></div>
+<p>Subscribe with <code>types</code> set to the minimum: <code>session.text.ended</code>, <code>session.execution.*</code>, <code>session.status</code>, <code>session.idle</code>, <code>permission.*</code>, <code>session.created</code>, <code>filesystem.changed</code>. Deltas are not needed if <code>session.text.ended</code> carries the complete part text, which the current plugin already relies on.</p>
+<p>Mapping, carried over from patches 1 to 5:</p>
+<table><thead><tr><th>Event</th><th>Push</th></tr></thead><tbody>
+<tr><td><code>session.execution.succeeded</code></td><td>idle</td></tr>
+<tr><td><code>session.status</code> with idle</td><td>idle, debounced against the success</td></tr>
+<tr><td><code>session.execution.failed</code></td><td>error, plus buffered partial text</td></tr>
+<tr><td><code>session.execution.interrupted</code></td><td>partial text with an <code>(interrupted)</code> marker</td></tr>
+<tr><td><code>session.text.ended</code> parts</td><td>buffered per session, sorted by time then ordinal, one push per turn</td></tr>
+<tr><td><code>permission.asked</code></td><td>permission push after 15 s, cancelled by <code>permission.replied</code></td></tr>
+<tr><td>question tool</td><td>one push with the question text and options</td></tr>
+</tbody></table>
+<p>Turn text rules stay: 3400 UTF-8 bytes inline, longer text as a <code>.md</code> attachment with a 500-character summary, 10-minute buffer expiry, at most 256 tracked turn states, single push at the terminal, subagent suppression.</p>
+<p>Files stay: terminal scan of files whose birthtime falls inside the turn, allowlist and caps, <code>oc-out,oc-attach</code> tags, one PUT per file, never modified files, never source files. The terminal scan costs one project walk per turn, capped at 20000 entries. Eight auto-attach files publish as sequential PUTs and can hold the worker about 90 seconds; the 256-slot event channel drops and counts during that time.</p>
+<p><code>ntfy_send_file</code> moved to the Rust app: <code>ntfy-relay mcp</code> serves one <code>send_file</code> tool over stdio with the same contract (project-confined path from the process working directory, 15 MB cap, <code>oc-out,oc-manual</code>, link-safe message, never throws). The live registration is <code>mcp.servers.ntfy</code> with <code>codemode: false</code>; OpenCode renders the tool as <code>ntfy_send_file</code>. A live agent call returned the plugin&#39;s <code>Sent ...</code> text and one file push. The plugin fallback was not needed.</p>
+<h2><span class="num">7</span>6. Inbound design</h2>
+<div class="rule"></div>
+<p>Behavior is unchanged: one SSE subscription to ntfy, <code>oc-out</code> filter, replay window, duplicate-ID state, routing hints, queue and steer delivery, the JSON control table (<code>new</code>, <code>sessions</code>, <code>to</code>, <code>auto</code>, <code>help</code>, <code>status</code>) with its capability gate and confirm hold, <code>/steer</code>, <code>/allow</code>, <code>/always</code>, <code>/deny</code>, attachment download to <code>.ntfy-inbox</code>, link-safe acks and error pushes. Since 0.11.0 the routing hint replaces the pin; spec 01 section 6.7 defines the order.</p>
+<p>Two changes:</p>
+<ul>
+<li>The OpenCode calls go through HTTP directly instead of the <code>opencode api</code> CLI, so the process needs no child shell and no PATH assumptions.</li>
+<li>The state file and locks move into <code>core</code>, with the same atomic-write and single-instance rules.</li>
+</ul>
+<h2><span class="num">8</span>7. Configuration</h2>
+<div class="rule"></div>
+<p>One file, one token, both directions. The implemented file keeps the Node shape so existing configs load unchanged:</p>
+<pre><code class="language-json">{
+  &quot;enabled&quot;: true,
+  &quot;ntfy&quot;: {
+    &quot;server&quot;: &quot;https://ntfy.example.ts.net&quot;,
+    &quot;tokenFile&quot;: &quot;~/.config/opencode/ntfy-token.txt&quot;,
+    &quot;replayWindowMinutes&quot;: 60,
+    &quot;maxMessageBytes&quot;: 16384
+  },
+  &quot;projectRoots&quot;: [&quot;C:\\work\\ntfy-proj&quot;],
+  &quot;opencode&quot;: { &quot;baseUrl&quot;: &quot;http://127.0.0.1:4096&quot;, &quot;timeoutMs&quot;: 30000 },
+  &quot;adapter&quot;: {
+    &quot;name&quot;: &quot;opencode&quot;,
+    &quot;agent&quot;: &quot;build&quot;,
+    &quot;model&quot;: { &quot;providerID&quot;: &quot;provider&quot;, &quot;id&quot;: &quot;model&quot;, &quot;variant&quot;: &quot;max&quot; }
+  },
+  &quot;routing&quot;: { &quot;preferRunning&quot;: true, &quot;delivery&quot;: &quot;queue&quot; },
+  &quot;files&quot;: { &quot;inboxDir&quot;: &quot;.ntfy-inbox&quot;, &quot;maxFileBytes&quot;: 15728640 },
+  &quot;logging&quot;: {
+    &quot;file&quot;: &quot;~/.local/state/opencode/ntfy-relay.log&quot;,
+    &quot;heartbeatMinutes&quot;: 5,
+    &quot;level&quot;: &quot;info&quot;,
+    &quot;echo&quot;: false
+  },
+  &quot;stateFile&quot;: &quot;~/.local/state/opencode/ntfy-relay-state.json&quot;
+}</code></pre>
+<p><code>projectRoots</code> serves discovery and bounds outbound: a session whose project is outside the roots is skipped. Any number of entries are allowed since 0.3.0, including none; each folder name is a topic, a duplicate folder name keeps the more recently active project with a warning, and the topic-ownership map guarantees one owner per topic. The daemon discovers the shared service from <code>~/.local/state/opencode/service.json</code> and re-reads it after a transport error or HTTP 401; <code>opencode.baseUrl</code> is an optional override, and the port is dynamic. <code>opencode.command</code> is accepted and ignored: the client talks HTTP with Basic auth. The <code>outbound</code> block carries the plugin defaults; the live config enables it after the plugin was removed. Server discovery is decided in <code>04</code> row 5.</p>
+<h2><span class="num">9</span>8. Failure model</h2>
+<div class="rule"></div>
+<ul>
+<li>Reader and publisher are separate tasks joined by a bounded channel. The reader never awaits ntfy.</li>
+<li>Channel overflow on the outbound side drops queued pushes and logs once, then publishes a single <code>outbound overflow</code> notice. It never blocks the event stream.</li>
+<li>On event-stream failure, reconnect with backoff. Both event streams close and reconnect after 90 seconds with no bytes, twice the ntfy 45-second keepalive. After the subscription is back, the daemon reads completed assistant messages for the open turns, the last text session, and the sessions the state file remembers, and publishes any unseen text. A cold start reads the newest 20 sessions per project root inside the 15-minute seen window, capped at 200 messages. A message id and a live text part share one dedupe key, so a part delivered live is not published again from backfill; permission asks and question forms remain uncovered and the log records the gap.</li>
+<li>On ntfy SSE failure, keep the current replay-window and duplicate-ID recovery.</li>
+<li>Task supervision: each task returns a reason, the supervisor restarts with capped backoff and writes one log line per restart.</li>
+<li>Everything in memory is bounded: turn buffers, processed IDs, queue depth, attachment count.</li>
+</ul>
+<p>Current implementation: the app supervisor restarts a failed SSE or outbound task with 1 s to 60 s backoff and one log line per restart; a panicking outbound worker aborts its reader. The outbound worker tracks connection generations in <code>FeedState</code>; a new generation triggers one backfill inside the worker, so live frames wait in the 256-slot channel and can be dropped under a long backfill. <code>seen</code> holds event ids and assistant message ids in one 15-minute, 8192-id journal, and a message id is marked before its push and committed after it. Permission asks and question forms have no history endpoint and are not recovered. The forwarder and the loopback ingest were deleted in 0.7.4. See <code>07-reconnect-backfill.md</code>.</p>
+<h2><span class="num">10</span>9. Migration plan</h2>
+<div class="rule"></div>
+<ol>
+<li>Freeze. No new plugin patches beyond link safety. Record real <code>/api/event</code> captures for fixtures.</li>
+<li><code>core</code> and <code>ntfy</code>. Config, topic, <code>linkSafe</code> (port the existing allowlist and tests), wire client with text, file, tags, priority, auth. Parity test: publish from Rust, compare wire bytes with the current client.</li>
+<li><code>inbound</code> and <code>opencode</code>. Port the relay with the inbound test suite; the OpenCode client talks HTTP directly. Run it beside the Node relay only in offline tests. Live gate: one scripted session on <code>ntfy-proj</code> during a quiet window, same commands and acks.</li>
+<li><code>outbound</code>. Replay the recorded fixtures through the new assembler and compare pushes field by field with the plugin output. Live gate: one turn, one long turn, one file set, one permission ask, one question.</li>
+<li>Cutover. Remove the plugin from <code>opencode.jsonc</code>, stop the Node relay, start the Rust binary, verify turn text, files, permissions, and phone replies. Keep the Node relay in the last known good commit as rollback at the time; it was deleted in 0.8.0.</li>
+<li>Cleanup. Delete <code>ntfy-opencode-modified-plugin</code> and the patch script (done in 0.7.0). The Node relay was deleted in 0.8.0; keep the docs history.</li>
+</ol>
+<p>Steps 1 to 6 are executed: the plugin and verifier are deleted, and the Node relay was deleted in 0.8.0. The live gate ran on 2026-11-11: turn text, one long turn (11361-byte attachment), a three-file set, a permission ask with the 15 s grace, a question form, and child-session suppression. The MCP tool was called by an agent and returned the plugin text.</p>
+<p>Rollback at any phase: run a previous <code>ntfy-relay.exe</code> build, or check out the last known good commit and rebuild. The Node relay was deleted in 0.8.0, so there is no implementation switch.</p>
+<h2><span class="num">11</span>10. Testing</h2>
+<div class="rule"></div>
+<ul>
+<li>Unit: topic derivation, filter, dedupe, routing, turn assembly, link safety, config parsing, path confinement.</li>
+<li>Contract: parse recorded real events; fail when a required field disappears after an OpenCode upgrade.</li>
+<li>Golden pushes: serialized expected pushes per scenario, compared field by field.</li>
+<li>Live scripted: one session per scenario on a scratch project, same as the phase 3 close-out harness.</li>
+<li>Link safety: one live push containing <code>readme.md</code>, checked on the phone.</li>
+</ul>
+<h2><span class="num">12</span>11. Open questions</h2>
+<div class="rule"></div>
+<p>Tracked in <code>04-rust-relay-decisions.md</code>, one row per question with a lean, a status, and the decision. The sections above give the context for each: stream gaps in section 3 and 8, the tool replacement in section 5, event mapping in section 5, discovery and process model in section 7 and 9, state in section 4.</p>
+<h2><span class="num">13</span>12. Non-goals</h2>
+<div class="rule"></div>
+<ul>
+<li>No ntfy server changes, no APK fork, no ACL changes.</li>
+<li>No change to the topic contract, the <code>oc-out</code> tag, or the link-safety allowlist.</li>
+<li>No change to the phone command set or routing rules.</li>
+<li>No project root is discovered outside <code>projectRoots</code>; the list stays explicit.</li>
+</ul>
+  </main>
+</div>
+<script>const ThemeEngine=(function(){
+
+  function hexToRgb(hex){
+    if(typeof hex!=='string'||hex[0]!=='#'){
+      throw new Error('hexToRgb: expected a hex color string starting with "#"');
+    }
+    const h=hex.substring(1);
+    if(h.length!==6||!/^[0-9a-fA-F]{6}$/.test(h)){
+      throw new Error('hexToRgb: expected 6 hex digits after "#" (got "'+hex+'")');
+    }
+    return[
+      parseInt(h.substring(0,2),16),
+      parseInt(h.substring(2,4),16),
+      parseInt(h.substring(4,6),16)
+    ];
+  }
+
+  function rgbToHex(r,g,b){
+    const c=v=>Math.max(0,Math.min(255,Math.round(v)));
+    return'#'+[c(r),c(g),c(b)].map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+
+  function rgbToHsl(r,g,b){
+    r/=255;g/=255;b/=255;
+    const max=Math.max(r,g,b),min=Math.min(r,g,b);
+    let h,s;
+    const l=(max+min)/2;
+    if(max===min){
+      h=s=0;
+    }else{
+      const d=max-min;
+      s=l>0.5?d/(2-max-min):d/(max+min);
+      switch(max){
+        case r:h=((g-b)/d+(g<b?6:0))/6;break;
+        case g:h=((b-r)/d+2)/6;break;
+        case b:h=((r-g)/d+4)/6;break;
+      }
+    }
+    return[h*360,s,l];
+  }
+
+  function hslToRgb(h,s,l){
+    h/=360;
+    let r,g,b;
+    if(s===0){
+      r=g=b=l;
+    }else{
+      const hue2rgb=(p,q,t)=>{
+        if(t<0)t+=1;
+        if(t>1)t-=1;
+        if(t<1/6)return p+(q-p)*6*t;
+        if(t<1/2)return q;
+        if(t<2/3)return p+(q-p)*(2/3-t)*6;
+        return p;
+      };
+      const q=l<0.5?l*(1+s):l+s-l*s;
+      const p=2*l-q;
+      r=hue2rgb(p,q,h+1/3);
+      g=hue2rgb(p,q,h);
+      b=hue2rgb(p,q,h-1/3);
+    }
+    return[Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+  }
+
+  function clampStep(step){
+    return Math.max(-3,Math.min(3,Number(step)||0));
+  }
+
+  function adjustBrightness(rgb,step){
+    step=clampStep(step);
+    if(!step)return rgb.slice();
+    const factor=1+step*0.08;
+    return rgb.map(v=>Math.max(0,Math.min(255,Math.round(v*factor))));
+  }
+
+  function adjustSaturation(rgb,step){
+    step=clampStep(step);
+    if(!step)return rgb.slice();
+    const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);
+    const newS=Math.max(0,Math.min(1,s*(1+step*0.15)));
+    return hslToRgb(h,newS,l);
+  }
+
+  function adjustColor(hex,brightness,saturation){
+    let rgb=hexToRgb(hex);
+    rgb=adjustBrightness(rgb,brightness);
+    rgb=adjustSaturation(rgb,saturation);
+    return rgbToHex(rgb[0],rgb[1],rgb[2]);
+  }
+
+  function inkOn(hex){
+    const rgb=hexToRgb(hex);
+    const c=rgb.map(v=>{
+      const p=v/255;
+      return p<=0.04045?p/12.92:Math.pow((p+0.055)/1.055,2.4);
+    });
+    const l=0.2126*c[0]+0.7152*c[1]+0.0722*c[2];
+    return l>0.179?'#000000':'#FFFFFF';
+  }
+
+  const THEMES={
+    dark:{
+      github:{bg:'#0D1117',card:'#010409',ink:'#C9D1D9',muted:'#8B949E',line:'#6E7681',accent:'#3B82F6'},
+      harbor:{bg:'#0F1A2B',card:'#212121',ink:'#C9C9C9',muted:'#999999',line:'#737373',accent:'#4FD1C5'},
+      solarized:{bg:'#002B36',card:'#073642',ink:'#9DB0B0',muted:'#8FA5AA',line:'#93A1A1',accent:'#D96F3C'},
+      oledblack:{bg:'#000000',card:'#1A1A1A',ink:'#EDEDED',muted:'#A8A8A8',line:'#6E6E6E',accent:'#D4D4D4'},
+      ayu:{bg:'#0B0E14',card:'#0F131A',ink:'#BFBDB6',muted:'#59C2FF',line:'#6C7380',accent:'#E6B450'}
+    },
+    light:{
+      vercel:{bg:'#F3F3F1',card:'#FFFFFF',ink:'#20242A',muted:'#4E545C',line:'#C9CCD1',accent:'#9A6400'},
+      tokyonight:{bg:'#F3F3F1',card:'#F0F4FC',ink:'#232A3D',muted:'#4B5468',line:'#C6CEDF',accent:'#2F5BB7'},
+      cursor:{bg:'#F3F3F1',card:'#F0F7F1',ink:'#212A24',muted:'#4C5850',line:'#C5D2C7',accent:'#2A6350'},
+      orng:{bg:'#F3F3F1',card:'#FFF6EE',ink:'#2A2420',muted:'#5C4F46',line:'#DBC8B9',accent:'#B4471E'}
+    }
+  };
+
+  const THUMB={
+    dark:{bg:'#2E2E2E',line:'#777777'},
+    light:{bg:'#CBCBCB',line:'#888888'}
+  };
+
+  function apply(state){
+    state=state||{};
+    const mode=state.mode==='dark'?'dark':'light';
+    const dark=THEMES.dark[state.dark]?state.dark:'github';
+    const light=THEMES.light[state.light]?state.light:'vercel';
+    const theme=THEMES[mode][mode==='dark'?dark:light];
+    const print=!!state.print;
+    const font=state.font==='serif'?'serif':'sans-serif';
+    const b=clampStep(state.brightness),s=clampStep(state.saturation);
+
+    const root=document.documentElement;
+    root.setAttribute('data-theme',mode);
+    root.setAttribute('data-font',font);
+    root.setAttribute('data-print',print?'on':'off');
+    root.setAttribute('data-dark',dark);
+    root.setAttribute('data-light',light);
+
+    const vars={};
+    if(print){
+      vars['--page-bg']='var(--print-bg)';
+      vars['--page-ink']='var(--print-ink)';
+      vars['--page-muted']='var(--print-muted)';
+      vars['--page-line']='var(--print-line)';
+      vars['--card']='var(--print-bg)';
+      vars['--accent']='var(--print-ink)';
+      vars['--pick-ink']='var(--print-bg)';
+      vars['--tb-ink']='var(--print-muted)';
+      vars['--tb-line']='var(--print-line)';
+      vars['--thumb']=THUMB.light.bg;
+      vars['--thumb-line']=THUMB.light.line;
+    }else{
+      const bg=adjustColor(theme.bg,b,s);
+      const card=adjustColor(theme.card,b,s);
+      const ink=adjustColor(theme.ink,b,s);
+      const muted=adjustColor(theme.muted,b,s);
+      const line=adjustColor(theme.line,b,s);
+      const accent=adjustColor(theme.accent,b,s);
+      vars['--page-bg']=bg;
+      vars['--page-ink']=ink;
+      vars['--page-muted']=muted;
+      vars['--page-line']=line;
+      vars['--card']=card;
+      vars['--accent']=accent;
+      vars['--pick-ink']=inkOn(accent);
+      vars['--tb-ink']=muted;
+      vars['--tb-line']=line;
+      vars['--thumb']=THUMB[mode].bg;
+      vars['--thumb-line']=THUMB[mode].line;
+    }
+    for(const[prop,value]of Object.entries(vars)){
+      root.style.setProperty(prop,value);
+    }
+  }
+
+  return{apply,THEMES,inkOn};
+})();</script>
+<script>const LinkState=(function(){
+  function readParams(){
+    var s=(window.location&&window.location.search)||'';
+    if(s.charAt(0)==='?')s=s.slice(1);
+    if(!s)return null;
+    var out={};
+    s.split('&').forEach(function(p){
+      var i=p.indexOf('=');
+      if(i>0)out[p.slice(0,i)]=p.slice(i+1);
+    });
+    var mode=(out.mode==='dark'||out.mode==='light')?out.mode:null;
+    var dark=ThemeEngine.THEMES.dark[out.dark]?out.dark:null;
+    var light=ThemeEngine.THEMES.light[out.light]?out.light:null;
+    if(!mode&&!dark&&!light)return null;
+    return{mode:mode,dark:dark,light:light};
+  }
+
+  function pickQuery(state){
+    return '?mode='+(state.mode==='dark'?'dark':'light')+
+           '&dark='+state.dark+'&light='+state.light;
+  }
+
+  function syncLinks(state){
+    var nodes=document.querySelectorAll?document.querySelectorAll('a[href]'):[];
+    for(var i=0;i<nodes.length;i++){
+      var a=nodes[i];
+      var href=a.getAttribute('href')||'';
+      if(href.charAt(0)==='#'||href.slice(0,2)==='//')continue;
+      if(/^[a-z][a-z0-9+.-]*:/i.test(href))continue;
+      var cut=href.search(/[?#]/);
+      var path=cut<0?href:href.slice(0,cut);
+      var hash=href.indexOf('#')<0?'':href.slice(href.indexOf('#'));
+      if(!/\.html$/.test(path))continue;
+      a.setAttribute('href',path+pickQuery(state)+hash);
+    }
+  }
+
+  return{readParams:readParams,syncLinks:syncLinks};
+})();</script>
+<script>const MenuBar=(function(){
+  let printBtn,modeBtn,fontBtn,bri,sat,briOut,satOut;
+  let state={mode:'light',dark:'github',light:'vercel',font:'sans-serif',print:false};
+  let onChange=null,manual=false,mq=null;
+
+  function init(opts){
+    opts=opts||{};
+    onChange=opts.onChange||null;
+    mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+
+    state.mode=opts.mode==='dark'||opts.mode==='light'
+      ?opts.mode
+      :(mq&&mq.matches?'dark':'light');
+    if(opts.dark&&ThemeEngine.THEMES.dark[opts.dark])state.dark=opts.dark;
+    if(opts.light&&ThemeEngine.THEMES.light[opts.light])state.light=opts.light;
+    if(opts.manual)manual=true;
+    if(opts.font)state.font=opts.font;
+
+    printBtn=document.getElementById('print');
+    modeBtn=document.getElementById('mode');
+    fontBtn=document.getElementById('font');
+    bri=document.getElementById('brightness');
+    briOut=document.getElementById('brightness-value');
+    sat=document.getElementById('saturation');
+    satOut=document.getElementById('saturation-value');
+
+    printBtn.addEventListener('click',()=>setPrint(!state.print));
+    modeBtn.addEventListener('click',()=>{
+      manual=true;
+      setPrint(false,true);
+      setMode(state.mode==='dark'?'light':'dark');
+    });
+    fontBtn.addEventListener('click',()=>setFont(state.font==='serif'?'sans-serif':'serif'));
+    bri.addEventListener('input',()=>{syncSliders();emit();});
+    sat.addEventListener('input',()=>{syncSliders();emit();});
+
+    buildMenu('dark-menu','dark');
+    buildMenu('light-menu','light');
+    document.getElementById('dark-theme').addEventListener('click',e=>{
+      e.stopPropagation();
+      toggleMenu('dark-theme','dark-menu');
+    });
+    document.getElementById('light-theme').addEventListener('click',e=>{
+      e.stopPropagation();
+      toggleMenu('light-theme','light-menu');
+    });
+    document.getElementById('dark-menu').addEventListener('keydown',menuKey);
+    document.getElementById('light-menu').addEventListener('keydown',menuKey);
+    document.addEventListener('click',e=>{
+      if(!e.target.closest||!e.target.closest('.group'))closeMenus();
+    });
+    document.addEventListener('keydown',e=>{
+      if(e.key!=='Escape')return;
+      let openBtn=null;
+      [['dark-theme','dark-menu'],['light-theme','light-menu']].forEach(pair=>{
+        if(document.getElementById(pair[1]).classList.contains('open')){
+          openBtn=document.getElementById(pair[0]);
+        }
+      });
+      closeMenus();
+      if(openBtn)openBtn.focus();
+    });
+
+    if(mq){
+      const follow=e=>{if(!manual)setMode(e.matches?'dark':'light');};
+      if(mq.addEventListener)mq.addEventListener('change',follow);
+      else if(mq.addListener)mq.addListener(follow);
+    }
+
+    bri.value='0';
+    sat.value='0';
+    syncUI();
+    emit();
+  }
+
+  function syncSliders(){
+    const b=stepOf(bri),s=stepOf(sat);
+    bri.value=String(b);
+    sat.value=String(s);
+    briOut.textContent=String(b);
+    satOut.textContent=String(s);
+  }
+
+  function syncMenus(){
+    [['dark','dark-menu'],['light','light-menu']].forEach(pair=>{
+      const menu=document.getElementById(pair[1]);
+      Array.prototype.forEach.call(menu.children,row=>{
+        row.setAttribute('aria-checked',String(row.textContent===state[pair[0]]));
+      });
+    });
+  }
+
+  function syncUI(){
+    const light=state.mode==='light';
+    const sans=state.font==='sans-serif';
+    modeBtn.classList.toggle('on',light);
+    modeBtn.setAttribute('aria-checked',String(light));
+    modeBtn.setAttribute('aria-label',light?'Light mode':'Dark mode');
+    fontBtn.classList.toggle('on',sans);
+    fontBtn.setAttribute('aria-checked',String(sans));
+    fontBtn.setAttribute('aria-label',sans?'Sans-serif':'Serif');
+    printBtn.classList.toggle('on',state.print);
+    printBtn.setAttribute('aria-pressed',String(state.print));
+    syncSliders();
+    syncMenus();
+  }
+
+  function stepOf(el){
+    const n=parseInt(el.value,10);
+    return isNaN(n)?0:Math.max(-3,Math.min(3,n));
+  }
+
+  function copy(){
+    return{
+      mode:state.mode,
+      dark:state.dark,
+      light:state.light,
+      font:state.font,
+      print:state.print,
+      brightness:stepOf(bri),
+      saturation:stepOf(sat)
+    };
+  }
+
+  function emit(){
+    if(onChange)onChange(copy());
+  }
+
+  function setMode(mode){
+    state.mode=mode==='dark'?'dark':'light';
+    syncUI();
+    emit();
+  }
+
+  function setTheme(mode,name){
+    if(!ThemeEngine.THEMES[mode]||!ThemeEngine.THEMES[mode][name])return;
+    manual=true;
+    setPrint(false,true);
+    state[mode]=name;
+    state.mode=mode;
+    syncUI();
+    emit();
+  }
+
+  function setFont(font){
+    state.font=font==='serif'?'serif':'sans-serif';
+    syncUI();
+    emit();
+  }
+
+  function setPrint(on,quiet){
+    state.print=!!on;
+    if(!quiet)syncUI();
+    if(!quiet)emit();
+  }
+
+  function buildMenu(id,mode){
+    const menu=document.getElementById(id);
+    Object.keys(ThemeEngine.THEMES[mode]).forEach(name=>{
+      const row=document.createElement('button');
+      row.type='button';
+      row.setAttribute('role','menuitemradio');
+      row.setAttribute('aria-checked',String(state[mode]===name));
+      row.textContent=name;
+      row.addEventListener('click',()=>{
+        setTheme(mode,name);
+        closeMenus();
+        document.getElementById(mode==='dark'?'dark-theme':'light-theme').focus();
+      });
+      menu.appendChild(row);
+    });
+  }
+
+  function closeMenus(){
+    [['dark-theme','dark-menu'],['light-theme','light-menu']].forEach(pair=>{
+      document.getElementById(pair[1]).classList.remove('open');
+      document.getElementById(pair[0]).setAttribute('aria-expanded','false');
+    });
+  }
+
+  function toggleMenu(btnId,menuId){
+    const btn=document.getElementById(btnId);
+    const menu=document.getElementById(menuId);
+    const open=!menu.classList.contains('open');
+    closeMenus();
+    if(open){
+      menu.classList.add('open');
+      btn.setAttribute('aria-expanded','true');
+      const rows=Array.prototype.slice.call(menu.children);
+      const pick=rows.filter(row=>row.getAttribute('aria-checked')==='true')[0]||rows[0];
+      if(pick)pick.focus();
+    }
+  }
+
+  function menuKey(e){
+    const rows=Array.prototype.slice.call(this.children);
+    const n=rows.length;
+    if(!n)return;
+    const i=rows.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();
+      rows[(i+(e.key==='ArrowDown'?1:-1)+n)%n].focus();
+    }else if(e.key==='Home'||e.key==='End'){
+      e.preventDefault();
+      rows[e.key==='Home'?0:n-1].focus();
+    }
+  }
+
+  function getValues(){
+    return copy();
+  }
+
+  function setValues(opts){
+    opts=opts||{};
+    if(opts.mode==='dark'||opts.mode==='light')state.mode=opts.mode;
+    if(opts.dark&&ThemeEngine.THEMES.dark[opts.dark])state.dark=opts.dark;
+    if(opts.light&&ThemeEngine.THEMES.light[opts.light])state.light=opts.light;
+    if(opts.font)state.font=opts.font;
+    if(opts.print!==undefined)state.print=!!opts.print;
+    if(opts.brightness!==undefined)bri.value=String(Math.max(-3,Math.min(3,Number(opts.brightness)||0)));
+    if(opts.saturation!==undefined)sat.value=String(Math.max(-3,Math.min(3,Number(opts.saturation)||0)));
+    syncUI();
+    emit();
+  }
+
+  return{init,getValues,setValues,setMode,setTheme,setFont,setPrint};
+})();</script>
+<script>(function(){
+  var params=LinkState.readParams()||{};
+  var manual=!!(params.mode||params.dark||params.light);
+  MenuBar.init({
+    mode:params.mode||undefined,
+    dark:params.dark||undefined,
+    light:params.light||undefined,
+    manual:manual,
+    onChange:function(state){
+      ThemeEngine.apply(state);
+      LinkState.syncLinks(state);
+    }
+  });
+  LinkState.syncLinks(MenuBar.getValues());
+})();</script>
+</body>
+</html>

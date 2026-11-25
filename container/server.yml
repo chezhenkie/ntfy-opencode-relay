@@ -1,0 +1,18 @@
+# ntfy server config - baked keys. Deployment values stay out of the image:
+# ntfy-deploy supplies NTFY_BASE_URL and NTFY_BEHIND_PROXY at container
+# creation. A mode switch recreates the container and never rebuilds.
+listen-http: ":8080"
+
+# Zero Google: no iOS/APNS relay, no Firebase key. Empty disables forwarding.
+upstream-base-url: ""
+
+# Auth: users and tokens live on the cache volume; anonymous access is denied.
+auth-file: /var/cache/ntfy/auth.db
+auth-default-access: deny-all
+# No self-service accounts. One user and one wildcard row, set with the container CLI.
+enable-signup: false
+
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 72h
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-expiry-duration: 72h

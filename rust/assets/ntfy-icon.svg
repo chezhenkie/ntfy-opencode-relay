@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Banded sunset across dark hills">
+  <defs>
+    <clipPath id="frame">
+      <rect width="256" height="256" rx="6" ry="6"/>
+    </clipPath>
+    <clipPath id="hill1clip">
+      <path d="M0 161 L7.7 157.9 L15.3 157.6 L22.7 154.7 L29.9 154.9 L36.9 148.2 L43.8 152 L50.6 148.4 L57.4 146.2 L64 146.3 L70.5 152.2 L77.1 153 L83.5 151.6 L90 152.7 L96.9 155.2 L103.8 157.2 L110.8 159.6 L117.7 160.6 L124.6 159.2 L131.5 159.9 L138.5 162.2 L145.4 159 L152.3 159.1 L159.2 155.8 L166.2 158.3 L173.1 157.1 L180 152.1 L188.1 148.6 L196 151.4 L203.6 144.7 L211 145.6 L218.2 144.9 L225.2 142.6 L231.9 142.7 L238.3 146 L244.5 147.1 L250.4 146.9 L256 149 L256 256 L0 256 Z"/>
+    </clipPath>
+    <clipPath id="moonclip">
+      <circle cx="92" cy="48" r="22"/>
+    </clipPath>
+    <clipPath id="shadowclip">
+      <circle cx="86" cy="42.8" r="22"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="256" height="10" fill="#1f2c47"/>
+    <rect y="10" width="256" height="10" fill="#25334f"/>
+    <rect y="20" width="256" height="10" fill="#2c3b57"/>
+    <rect y="30" width="256" height="10" fill="#35425f"/>
+    <rect y="40" width="256" height="10" fill="#3f4b65"/>
+    <rect y="50" width="256" height="10" fill="#4a536c"/>
+    <rect y="60" width="256" height="10" fill="#575b73"/>
+    <rect y="70" width="256" height="10" fill="#63637a"/>
+    <rect y="80" width="256" height="10" fill="#726e7f"/>
+    <rect y="90" width="256" height="10" fill="#817884"/>
+    <rect y="100" width="256" height="10" fill="#918288"/>
+    <rect y="110" width="256" height="10" fill="#a18c8c"/>
+    <rect y="120" width="256" height="10" fill="#b2968f"/>
+    <rect y="130" width="256" height="10" fill="#c5a190"/>
+    <rect y="140" width="256" height="10" fill="#d7ac92"/>
+    <circle cx="92" cy="48" r="22" fill="#edc99b"/>
+    <g clip-path="url(#moonclip)">
+      <circle cx="86" cy="42.8" r="22" fill="#ab9170"/>
+      <g clip-path="url(#shadowclip)">
+        <path d="M84.1 39.6 L83.5 43.1 L80.6 45.6 L77.7 44.8 L74.6 42.6 L75.6 38.9 L76.6 35.7 L80.3 36.4 L83.6 36.3 Z" fill="#8a7357"/>
+        <path d="M78.3 53.8 L78.8 56.2 L76.3 58.6 L74.1 56.8 L73.2 54.7 L72.9 53.4 L74.5 50.5 L76.6 50.9 L79.1 50.7 Z" fill="#9c8465"/>
+        <path d="M90.2 32.9 L91.1 35.9 L89 36.1 L86.3 36 L85.7 33.4 L84.9 32.2 L85.8 30.2 L88.8 28.9 L90 30.7 Z" fill="#8a7357"/>
+        <path d="M86 49.8 L86.2 52 L84.8 52.5 L82.8 53.2 L82.3 50.9 L81.6 48.7 L83.3 48.1 L84 46.9 L86.5 47.6 Z" fill="#9c8465"/>
+        <path d="M76.6 45.9 L76.4 49 L73.6 50.5 L71.3 50.2 L70.3 47.1 L68.8 44.8 L72 43.4 L73.8 42.6 L74.7 44.2 Z" fill="#8a7357"/>
+        <path d="M77 38 L75.5 36.4 L74.5 34.3 L71.6 34.2 L71.3 31.2 L69.2 30.3" fill="none" stroke="#8a7357" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M74 52 L72.5 51 L70.8 51.3 L69.2 50.6 L67.3 51.4 L66.1 49.4" fill="none" stroke="#8a7357" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M89 35 L87.7 33.5 L88.3 31.5 L86.4 30.2 L86.8 28.2 L86.8 26.3" fill="none" stroke="#8a7357" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M85 47 L83.7 45 L81.8 43.4 L80.7 41.2 L78.5 40 L77.1 38" fill="none" stroke="#8a7357" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M90 58 L90.7 59.2 L91.9 60.3 L91.4 61.9 L91.3 63.5 L91.6 64.8" fill="none" stroke="#8a7357" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </g>
+    <circle cx="198" cy="140" r="20" fill="#f7e5b4"/>
+    <rect y="150" width="256" height="106" fill="#63637a"/>
+    <path d="M0 161 L7.7 157.9 L15.3 157.6 L22.7 154.7 L29.9 154.9 L36.9 148.2 L43.8 152 L50.6 148.4 L57.4 146.2 L64 146.3 L70.5 152.2 L77.1 153 L83.5 151.6 L90 152.7 L96.9 155.2 L103.8 157.2 L110.8 159.6 L117.7 160.6 L124.6 159.2 L131.5 159.9 L138.5 162.2 L145.4 159 L152.3 159.1 L159.2 155.8 L166.2 158.3 L173.1 157.1 L180 152.1 L188.1 148.6 L196 151.4 L203.6 144.7 L211 145.6 L218.2 144.9 L225.2 142.6 L231.9 142.7 L238.3 146 L244.5 147.1 L250.4 146.9 L256 149 L256 256 L0 256 Z" fill="#9c6757"/>
+    <g clip-path="url(#hill1clip)">
+      <rect y="140.0" width="256" height="6.5" fill="#9c6757"/>
+      <rect y="146.5" width="256" height="6.5" fill="#86584b"/>
+      <rect y="153.0" width="256" height="6.5" fill="#6f4a3e"/>
+      <rect y="159.5" width="256" height="6.5" fill="#593b32"/>
+      <rect y="166.0" width="256" height="6.5" fill="#432c25"/>
+      <rect y="172.5" width="256" height="6.5" fill="#2d1d19"/>
+      <rect y="179.0" width="256" height="6.5" fill="#160f0c"/>
+      <rect y="185.5" width="256" height="6.5" fill="#000000"/>
+    </g>
+    <path d="M0 185 L10 181.2 L20 178.1 L29.9 176 L39.7 172.8 L49.4 174.7 L59 174.5 L68.4 170.3 L77.6 173.5 L86.6 170.9 L95.4 172.4 L103.8 176.6 L112 175.9 L121.5 178.6 L131.1 180.6 L140.8 183 L150.4 184.9 L160 184.6 L169.5 185.5 L179 186.6 L188.3 184.9 L197.5 182.9 L206.5 184.8 L215.4 183.4 L224 177.7 L232.9 177.3 L241.5 176.4 L249.3 177.6 L256 178 L256 256 L0 256 Z" fill="#6d463c"/>
+    <rect y="212.000" width="256" height="7.34" fill="#6d463c"/>
+    <rect y="219.333" width="256" height="7.34" fill="#573830"/>
+    <rect y="226.667" width="256" height="7.34" fill="#412a24"/>
+    <rect y="234.000" width="256" height="7.34" fill="#2c1c18"/>
+    <rect y="241.333" width="256" height="7.34" fill="#160e0c"/>
+    <rect y="248.667" width="256" height="7.34" fill="#000000"/>
+  </g>
+</svg>

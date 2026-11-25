@@ -1,0 +1,15 @@
+# local artifacts and runtime data
+resources/
+bin/
+logs/
+temp/
+.scratch/
+.ntfy-inbox/
+
+# local planning and audit
+PLAN.md
+audit/
+agents.md
+
+# rust build output
+target/

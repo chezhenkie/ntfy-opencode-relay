@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone Continuation Spec</title>
+<style>
+#tb{
+  position:fixed;top:0;left:0;right:0;height:24px;z-index:10;
+  display:flex;align-items:center;justify-content:flex-end;gap:7px;
+  padding:0 28px;background:var(--page-bg);color:var(--tb-ink);
+  font:10px/1 var(--font-ui);
+  user-select:none;transition:background .25s,color .25s;
+}
+#tb .s{width:1px;height:12px;background:var(--tb-line)}
+#tb .tb-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  height:18px;padding:0 6px 3px;cursor:pointer;
+  color:inherit;background:transparent;
+  border:1px solid var(--tb-line);border-radius:2px;
+  white-space:nowrap;
+}
+#tb .tb-btn svg{width:13px;height:13px}
+#tb .tb-btn.on{background:var(--tb-ink);color:var(--page-bg);border-color:var(--tb-ink)}
+#tb .tb-btn.fold{min-width:68px}
+#tb .tb-btn.fold::after{
+  content:"";width:0;height:0;margin-left:4px;
+  border-left:3px solid transparent;border-right:3px solid transparent;
+  border-top:4px solid currentColor;
+}
+#tb .group{position:relative;display:inline-flex}
+#tb .menu{
+  display:none;position:absolute;top:21px;right:0;z-index:20;
+  flex-direction:column;min-width:100%;padding:2px;
+  background:var(--page-bg);border:1px solid var(--tb-line);border-radius:2px;
+}
+#tb .menu.open{display:flex}
+#tb .menu button{
+  height:16px;padding:0 6px;cursor:pointer;text-align:left;
+  font:inherit;color:inherit;background:transparent;border:0;border-radius:1px;
+  white-space:nowrap;
+}
+#tb .menu button:hover,#tb .menu button:focus-visible{background:var(--tb-line)}
+#tb .menu button[aria-checked="true"]{background:var(--accent);color:var(--pick-ink)}
+#tb .toggle{
+  position:relative;width:44px;height:20px;padding:0;cursor:pointer;
+  background:transparent;border:0;color:inherit;
+}
+#tb .toggle-thumb{
+  position:absolute;top:2px;left:5px;width:16px;height:16px;
+  border-radius:2px;background:var(--thumb);border:1px solid var(--thumb-line);
+  transition:transform .25s cubic-bezier(.4,0,.2,1),background .25s,border-color .25s;
+}
+#tb .toggle.on .toggle-thumb{transform:translateX(17px)}
+#tb .toggle svg{
+  position:absolute;top:50%;width:12px;height:12px;
+  transform:translateY(-50%);pointer-events:none;
+  transition:opacity .25s;
+}
+#tb .toggle .ico-l{left:7px;opacity:1}
+#tb .toggle .ico-r{right:8px;opacity:.45}
+#tb .toggle.on .ico-l{opacity:.45}
+#tb .toggle.on .ico-r{opacity:1}
+#tb .sl{display:inline-flex;align-items:center;gap:4px}
+#tb .sl svg{width:10px;height:10px;flex-shrink:0}
+#tb .sl input[type=range]{
+  -webkit-appearance:none;appearance:none;width:48px;height:3px;
+  padding:0;margin:0;cursor:pointer;outline:none;
+  background:var(--tb-line);border:1px solid var(--tb-line);border-radius:2px;
+}
+#tb .sl input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:10px;height:10px;
+  background:var(--page-bg);border:1px solid var(--tb-ink);border-radius:2px;
+  cursor:pointer;
+}
+#tb .sl input[type=range]::-moz-range-thumb{
+  width:10px;height:10px;background:var(--page-bg);
+  border:1px solid var(--tb-ink);border-radius:2px;cursor:pointer;
+}
+#tb .sl .v{min-width:14px;text-align:center;font-variant-numeric:tabular-nums}
+#tb .tb-btn:focus-visible,#tb .toggle:focus-visible,#tb .sl input:focus-visible,#tb .menu button:focus-visible{
+  outline:2px solid var(--tb-ink);outline-offset:1px;
+}
+@media(prefers-reduced-motion:reduce){
+  #tb *{transition:none!important}
+}
+:root{
+  color-scheme:light;
+  --page-bg:#F3F3F1;
+  --page-ink:#20242A;
+  --page-muted:#4E545C;
+  --page-line:#C9CCD1;
+  --card:#FFFFFF;
+  --accent:#9A6400;
+  --pick-ink:#000000;
+  --tb-ink:#4E545C;
+  --tb-line:#C9CCD1;
+  --thumb:#CBCBCB;
+  --thumb-line:#888888;
+  --print-bg:#FFFFFF;
+  --print-ink:#000000;
+  --print-muted:#333333;
+  --print-line:#9A9A9A;
+  --font-serif:Georgia,'Times New Roman',serif;
+  --font-ui:'Segoe UI',Helvetica,Arial,sans-serif;
+  --font-mono:'Cascadia Code',Consolas,monospace;
+}
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --page-bg:#0D1117;
+  --page-ink:#C9D1D9;
+  --page-muted:#8B949E;
+  --page-line:#6E7681;
+  --card:#010409;
+  --accent:#3B82F6;
+  --pick-ink:#000000;
+  --tb-ink:#8B949E;
+  --tb-line:#6E7681;
+  --thumb:#2E2E2E;
+  --thumb-line:#777777;
+}
+html[data-print="on"]{color-scheme:light}
+[data-os="windows"]{
+  --font-ui:"Segoe UI Variable Text","Segoe UI",sans-serif;
+  --font-serif:Georgia,"Times New Roman",serif;
+  --font-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace;
+}
+[data-os="mac"]{
+  --font-ui:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;
+  --font-serif:"New York","Times New Roman",Times,serif;
+  --font-mono:"SF Mono",Menlo,Monaco,monospace;
+}
+[data-os="ios"]{
+  --font-ui:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;
+  --font-serif:"New York",Georgia,"Times New Roman",serif;
+  --font-mono:"SF Mono",Menlo,monospace;
+}
+[data-os="android"]{
+  --font-ui:Roboto,"Noto Sans",sans-serif;
+  --font-serif:"Noto Serif",serif;
+  --font-mono:"Roboto Mono","Droid Sans Mono","Noto Sans Mono",monospace;
+}
+[data-os="linux"]{
+  --font-ui:Ubuntu,"Cantarell","Noto Sans",sans-serif;
+  --font-serif:"Liberation Serif","Noto Serif",serif;
+  --font-mono:"Ubuntu Mono","DejaVu Sans Mono",monospace;
+}
+body{
+  margin:0;
+  background:var(--page-bg);
+  color:var(--page-ink);
+  font-family:var(--font-ui);
+  font-size:16px;
+  line-height:1.6;
+  transition:background .25s,color .25s;
+}
+[data-font="serif"] body{font-family:var(--font-serif)}
+h1,h2,h3,h4,h5,h6{
+  color:var(--page-ink);
+  font-family:inherit;
+  font-weight:400;
+  line-height:1.3;
+  margin:0 0 .5em;
+  transition:color .25s;
+}
+a{color:var(--accent);text-decoration:none;transition:color .2s}
+a:hover{text-decoration:underline}
+hr{border:none;border-top:1px solid var(--line);margin:2em 0}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  @page{margin:12mm}
+  :root{
+    color-scheme:light!important;
+    --page-bg:var(--print-bg)!important;
+    --page-ink:var(--print-ink)!important;
+    --page-muted:var(--print-muted)!important;
+    --page-line:var(--print-line)!important;
+    --card:var(--print-bg)!important;
+    --accent:var(--print-ink)!important;
+    --pick-ink:var(--print-bg)!important;
+    --tb-ink:var(--print-muted)!important;
+    --tb-line:var(--print-line)!important;
+  }
+  #tb{display:none}
+  .wrap{max-width:none;padding:0}
+  body{background:var(--page-bg)!important;color:var(--page-ink)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  header,table,pre,.callout,.kicker,.lede,.rule{break-inside:avoid}
+}
+*{box-sizing:border-box}
+.wrap{max-width:990px;margin:0 auto;padding:64px 32px 96px}
+header{border-top:6px solid var(--accent);padding-top:28px;margin-bottom:8px;transition:border-color .25s}
+.kicker{font-family:var(--font-ui);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--page-muted);margin:0 0 14px;transition:color .25s}
+h1{font-size:38px;font-weight:400;line-height:1.2;color:var(--page-ink);margin:0 0 12px;letter-spacing:-.01em;transition:color .25s}
+h1 em{font-style:italic;color:var(--accent);transition:color .25s}
+.lede{font-family:var(--font-serif);font-size:18px;line-height:1.5;color:var(--accent);margin:0 0 4px;font-style:italic;transition:color .25s}
+.lede small{display:block;font-style:normal;font-family:var(--font-ui);font-size:12.5px;color:var(--page-muted);margin-top:10px;transition:color .25s}
+h2{font-size:26px;font-weight:400;color:var(--page-ink);margin:56px 0 6px;letter-spacing:-.01em;transition:color .25s}
+h2 .num{font-family:var(--font-ui);font-size:14px;color:var(--accent);vertical-align:super;margin-right:8px;transition:color .25s}
+h2+.rule{height:1px;background:var(--page-line);margin:0 0 22px;transition:background .25s}
+h3{font-weight:600;color:var(--page-ink);font-size:19px;margin:26px 0 6px;transition:color .25s}
+p{margin:0 0 16px}
+em{font-family:var(--font-serif);color:var(--accent);transition:color .25s}
+strong{color:var(--accent);font-weight:600;transition:color .25s}
+table{width:100%;border-collapse:collapse;margin:20px 0 28px;background:var(--card);border:1px solid var(--page-line);transition:background .25s,border-color .25s}
+th,td{text-align:left;padding:10px 14px;vertical-align:top}
+th{font-family:var(--font-ui);font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--page-muted);background:var(--card);border-bottom:2px solid var(--accent);font-weight:600;transition:background .25s,color .25s,border-color .25s}
+td{font-size:14.5px;border-bottom:1px solid var(--page-line);color:var(--page-ink);transition:background .25s,border-color .25s,color .25s}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:var(--page-bg)}
+.callout{border-left:4px solid var(--accent);background:var(--card);padding:16px 20px;margin:22px 0;font-family:var(--font-serif);font-style:italic;color:var(--page-muted);transition:background .25s,border-color .25s,color .25s}
+.callout strong{font-family:var(--font-ui);font-style:normal}
+ul,ol{margin:0 0 18px;padding-left:26px}
+li{margin:0 0 8px}
+li::marker{color:var(--accent)}
+code{font-family:var(--font-mono);font-size:13px;background:transparent;color:var(--page-ink);border:1px solid var(--page-line);padding:1px 5px;border-radius:3px;transition:background .25s,color .25s,border-color .25s}
+pre{background:var(--card);color:var(--page-ink);border:1px solid var(--page-line);padding:16px 20px;border-radius:4px;overflow-x:auto;margin:18px 0 24px;font-family:var(--font-mono);font-size:13px;line-height:1.6;transition:background .25s,color .25s,border-color .25s}
+pre code{background:none;color:inherit;border:0;padding:0}
+@media(max-width:620px){.wrap{padding:40px 18px 72px}h1{font-size:28px}}
+</style>
+<script>(function(){
+  var ua=navigator.userAgent;
+  var os='unknown';
+  if(/Android/i.test(ua))os='android';
+  else if(/iPhone|iPad|iPod/i.test(ua))os='ios';
+  else if(/Windows/i.test(ua))os='windows';
+  else if(/Macintosh|Mac OS X/i.test(ua))os='mac';
+  else if(/Linux/i.test(ua))os='linux';
+  document.documentElement.dataset.os=os;
+})();</script>
+<script>(function(){
+  var p=/[?&]mode=(dark|light)\b/.exec(window.location.search||'');
+  var mq=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');
+  var root=document.documentElement;
+  root.setAttribute('data-theme',p?p[1]:(mq&&mq.matches?'dark':'light'));
+  root.setAttribute('data-font','sans-serif');
+  root.setAttribute('data-print','off');
+})();</script>
+</head>
+<body>
+<div id="tb" role="group" aria-label="Page controls">
+  <button class="tb-btn" id="print" type="button" aria-pressed="false" aria-label="Print friendly" title="Print friendly">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 9V3h12v6"/>
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+      <rect x="6" y="14" width="12" height="8" rx="1"/>
+    </svg>
+    <span>print friendly</span>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <button class="toggle on" id="mode" type="button" role="switch" aria-checked="true" aria-label="Light mode" title="Light or dark mode">
+    <span class="toggle-thumb" aria-hidden="true"></span>
+    <svg class="ico-l" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    <svg class="ico-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  </button>
+  <button class="toggle on" id="font" type="button" role="switch" aria-checked="true" aria-label="Sans-serif" title="Serif or sans-serif">
+    <span class="toggle-thumb" aria-hidden="true"></span>
+    <svg class="ico-l" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <line x1="3" y1="3" x2="11" y2="3"/>
+      <line x1="7" y1="3" x2="7" y2="11"/>
+      <line x1="3" y1="11" x2="11" y2="11"/>
+    </svg>
+    <svg class="ico-r" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <line x1="7" y1="3" x2="7" y2="11"/>
+    </svg>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <div class="group">
+    <button class="tb-btn fold" id="dark-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="dark-menu" title="Dark theme">dark theme</button>
+    <div class="menu" id="dark-menu" role="menu" aria-label="Dark theme"></div>
+  </div>
+  <div class="group">
+    <button class="tb-btn fold" id="light-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="light-menu" title="Light theme">light theme</button>
+    <div class="menu" id="light-menu" role="menu" aria-label="Light theme"></div>
+  </div>
+  <span class="s" aria-hidden="true"></span>
+  <div class="sl">
+    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10"/>
+      <polygon points="1,1 11,1 1,11" fill="currentColor"/>
+    </svg>
+    <input type="range" id="brightness" min="-3" max="3" step="1" value="0" aria-label="Brightness">
+    <span class="v" id="brightness-value" aria-hidden="true">0</span>
+  </div>
+  <div class="sl">
+    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+      <circle cx="6" cy="3" r="1.8"/>
+      <circle cx="3.5" cy="7.5" r="1.8"/>
+      <circle cx="8.5" cy="7.5" r="1.8"/>
+    </svg>
+    <input type="range" id="saturation" min="-3" max="3" step="1" value="0" aria-label="Saturation">
+    <span class="v" id="saturation-value" aria-hidden="true">0</span>
+  </div>
+</div>
+<div class="wrap">
+  <header>
+    <h1>Phone Continuation Spec</h1>
+  </header>
+  <main>
+<p>Status: phases 1 to 4 implemented and verified. Phase 4 close-out includes the detached startup wrapper, the reboot and wake tests, and the startup check. Control and inbox retention were added after phase 4. The live path is the Rust daemon; the Node relay was deleted in 0.8.0. The plugin sections below are historical: the patched publisher plugin was deleted in 0.7.0. Path note: since 0.10.0 the relay reads its config, tokens, state, asks, and journal from the install root, <code>%LOCALAPPDATA%\ntfy-relay\</code> on Windows; the paths in the bodies below record the earlier layout. Routing note: since 0.11.0 there is no pin. Section 6.7 and the command table carry the current rule: a one-shot target, a 10-minute continuity hint, then the newest activity from <code>time.viewed</code> and <code>time.updated</code>. Auth note: since 0.14.0 there is one principal, one wildcard row, and one token file, created by <code>ntfy-auth</code>. See <code>10-deploy-mode.md</code> and <code>11-auth-bootstrap.md</code>.</p>
+<p>Goal: use the phone as a second client for an existing OpenCode session. The phone reads assistant text and files and sends text and files back into the same session, over one ntfy topic per project.</p>
+<h2><span class="num">1</span>1. Locked decisions</h2>
+<div class="rule"></div>
+<ul>
+<li>One topic per project. The topic is the project folder name exactly. No prefix, no slug, no hash, no random suffix. Folder names must match <code>[-_A-Za-z0-9]{1,64}</code>; other names are skipped with a warning.</li>
+<li>Duplicate folder names are unsupported. Two project paths with the same folder name share a topic; the relay logs a warning. Do not build machinery for it.</li>
+<li>Outbound is the Rust daemon since 0.5.0; the OpenCode notification plugin is historical. Inbound is a standalone process, the Rust daemon live since 0.4.2; the Node relay was deleted in 0.8.0. The plugin was never used for inbound.</li>
+<li>The relay routes free text into an existing session only. A declared control action such as <code>new</code> may create one.</li>
+<li>Default delivery is queue. <code>/steer</code> interrupts with steer delivery.</li>
+<li>Turn text up to 3400 bytes is sent inline. Longer text becomes a <code>.md</code> attachment with a short inline summary.</li>
+<li>Auto-attach newly created media and document files only. Never source code. Never modified existing files.</li>
+<li>Permission requests can be answered from the phone with <code>/allow</code>, <code>/always</code>, <code>/deny</code>.</li>
+<li>Outgoing text is link-safe. The phone client linkifies any domain-shaped token, so a file name such as <code>readme.md</code> opened the <code>.md</code> country domain and a scam site. Only allowlisted top-level domains stay linkable; every other domain-shaped token is defanged to <code>readme[.]md</code>. This is a security rule.</li>
+<li>Portable code only. No hardcoded user paths, drive letters, OS names, or machine names. Local scope comes from configuration.</li>
+</ul>
+<h2><span class="num">2</span>2. Components</h2>
+<div class="rule"></div>
+<pre><code>OpenCode server  &lt;--HTTP--&gt;  ntfy-relay (Rust app: inbound and outbound tasks)
+                                   |
+                                   | publish and SSE
+                                   v
+                             ntfy topic &lt;folder&gt;  &lt;--push and publish--&gt;  phone app</code></pre>
+<table><thead><tr><th>Component</th><th>Runs in</th><th>Role</th></tr></thead><tbody>
+<tr><td>Rust outbound task</td><td><code>ntfy-relay</code> daemon</td><td>Outbound: turn text, auto-attached files, permission and error pushes</td></tr>
+<tr><td>Rust inbound task</td><td><code>ntfy-relay</code> daemon</td><td>Inbound: subscribe, filter, route, prompt, download files, answer permissions</td></tr>
+<tr><td>Node inbox relay</td><td>Standalone Node.js process</td><td>Removed in 0.8.0; no rollback exists</td></tr>
+<tr><td>ntfy server</td><td>Podman container</td><td>Transport and cache</td></tr>
+<tr><td>Phone app</td><td>Android</td><td>Subscribe to project topics, read pushes, publish text and files</td></tr>
+</tbody></table>
+<p>The split follows from how plugins run. A plugin runs per loaded location, so an inbound listener there would duplicate prompts with two locations open and die when a location unloads. The relay is exactly one process, independent of which locations are open; the Rust daemon runs both directions as two supervised tasks.</p>
+<h2><span class="num">3</span>3. Topic contract</h2>
+<div class="rule"></div>
+<p>Input is the project canonical path:</p>
+<ul>
+<li>Plugin: <code>ctx.location.project.canonical</code>.</li>
+<li>Relay: <code>canonical</code> field from <code>GET /api/project</code>.</li>
+</ul>
+<p>Algorithm:</p>
+<ol>
+<li>Trim trailing path separators, except for a filesystem root.</li>
+<li>Take the last path segment using the host path rules.</li>
+<li>Reject the project when the name is empty or does not match <code>[-_A-Za-z0-9]{1,64}</code>.</li>
+<li>Use the name unchanged as the topic.</li>
+</ol>
+<p>No prefix, no lowercasing, no character replacement, no truncation.</p>
+<p>Examples:</p>
+<table><thead><tr><th>Canonical</th><th>Topic</th></tr></thead><tbody>
+<tr><td><code>C:\Users\me\ocdev\ntfy-proj</code></td><td><code>ntfy-proj</code></td></tr>
+<tr><td><code>/home/me/ocdev/ntfy-proj</code></td><td><code>ntfy-proj</code></td></tr>
+<tr><td><code>C:\Users\me\ocdev\MyApp</code></td><td><code>MyApp</code></td></tr>
+<tr><td><code>C:\Users\me\ocdev\My App</code></td><td>rejected, not a valid ntfy topic</td></tr>
+</tbody></table>
+<p>Topic names are case-sensitive in ntfy. A folder rename changes the topic. Messages on the old topic stay until cache expiry.</p>
+<h2><span class="num">4</span>4. Auth and ACL</h2>
+<div class="rule"></div>
+<p>Users:</p>
+<ul>
+<li><code>phone</code>: the only principal since 0.14.0, with one row, <code>*</code> read-write. Any topic works from the phone; anonymous stays denied. The <code>admin</code> and <code>system</code> users and the per-topic rows were removed on 2026-11-18.</li>
+</ul>
+<p>Setup, no container rebuild, is <code>ntfy-auth apply</code> (<code>11-auth-bootstrap.md</code>). The equivalent commands are:</p>
+<pre><code class="language-powershell">podman exec -e &quot;NTFY_PASSWORD=&lt;random&gt;&quot; ntfy ntfy user add --role=user phone
+podman exec ntfy ntfy access phone &quot;*&quot; rw
+podman exec ntfy ntfy token add --label=owner phone</code></pre>
+<p>The token is written to <code>%LOCALAPPDATA%\ntfy-relay\ntfy-token.txt</code> on Windows, or the install directory on Linux, 32 characters, never in git. No password is stored or used; the web UI is out of scope. Tokens inherit user access, and the wildcard row covers every topic.</p>
+<p>Tokens for <code>phone</code> never expire; the issue phase fails unless <code>ntfy token list</code> reports <code>never expires</code>. Expiry is only for a temporary token: a test device, a demo, or a one-off client. <code>-Expires</code> issues it, writes no consumer file, and refuses a relay restart or the consumer path. Remove a temporary token by prefix when it is no longer needed; an expired token stays listed and returns <code>401</code>.</p>
+<p>A destructive handler needs its own user, token, topic, and local activation. Nothing on a project topic can destroy state with the phone token alone, and the control registry stays closed.</p>
+<p>Verification:</p>
+<ul>
+<li><code>phone</code> can publish and subscribe on an arbitrary topic.</li>
+<li>Anonymous publish and subscribe return 403.</li>
+<li>No other principal exists.</li>
+</ul>
+<h2><span class="num">5</span>5. Outbound plugin</h2>
+<div class="rule"></div>
+<p>Base: pinned <code>opencode-ntfy-with-questions@0.2.1</code> with patches 1 to 3. Add patches 4 to 6.</p>
+<h3>5.1 Patch 4: per-project topic</h3>
+<ul>
+<li>Derive the topic from <code>ctx.location.project.canonical</code>.</li>
+<li>Use the project folder name unchanged as the topic.</li>
+<li>Publish nothing when the canonical is missing or the folder name is not a valid ntfy topic.</li>
+<li>Every published message gets tag <code>oc-out</code>.</li>
+<li>Keep the session-directory gate from patch 3. A terminal frame may only publish from the instance that owns the session.</li>
+<li>Keep subagent suppression.</li>
+</ul>
+<h3>5.2 Patch 5: turn text</h3>
+<p>Events:</p>
+<ul>
+<li><code>session.execution.started</code>: reset the text buffer for the session, mark the turn window.</li>
+<li><code>session.text.ended</code>: append <code>{assistantMessageID, ordinal, text}</code>. Sort by event time, then ordinal.</li>
+<li><code>session.execution.succeeded</code>, <code>session.idle</code>: terminal. If text exists and no publish happened for this turn, publish.</li>
+<li><code>session.execution.failed</code>: publish the existing error notification, plus buffered partial text when present.</li>
+<li><code>session.execution.interrupted</code>: publish buffered partial text with an <code>(interrupted)</code> marker.</li>
+</ul>
+<p>Rules:</p>
+<ul>
+<li>Debounce terminal events per session for 3 seconds so <code>session.idle</code> plus <code>session.execution.succeeded</code> cannot publish twice.</li>
+<li>Clear the buffer after publish or after 10 minutes without a terminal event.</li>
+<li>Suppress subagent sessions.</li>
+<li>Cap the buffered text per turn at 2 MB of UTF-8. Once the cap is reached, drop later parts and log one line per turn.</li>
+</ul>
+<p>Payload:</p>
+<ul>
+<li>Inline: title <code>&lt;project&gt;</code>, body the assembled text, priority default, tags <code>oc-out</code>.</li>
+<li>Long: if UTF-8 length exceeds 3400 bytes, publish one PUT:</li>
+<li>File body: full text as UTF-8.</li>
+<li><code>Filename</code>: <code>turn-&lt;session-short&gt;-&lt;unix&gt;.md</code>.</li>
+<li><code>Message</code>: first 500 characters plus <code>Full response attached.</code></li>
+<li><code>Title</code>: <code>&lt;project&gt;</code>.</li>
+<li>Tags: <code>oc-out</code>.</li>
+<li>The attachment carries the buffered text up to the 2 MB turn cap; nothing else is cut.</li>
+</ul>
+<h3>5.3 Patch 6: files</h3>
+<p>Auto-attach:</p>
+<ul>
+<li>Subscribe to <code>filesystem.changed</code> events.</li>
+<li>Collect events with <code>event: add</code> inside the current turn window for the session location.</li>
+<li>At terminal, filter:</li>
+<li>File exists and is a regular file.</li>
+<li>Resolved path is inside the project canonical.</li>
+<li>Extension is in the allowlist.</li>
+<li>No excluded directory segment.</li>
+<li>Size at most the configured per-file cap: default 10 MB, accepted range 1 to 20 MB.</li>
+<li>At most the configured files and total bytes per turn: defaults 8 files and 30 MB, accepted range 1 to 16 files and 1 to 40 MB, with the total at least the per-file cap.</li>
+<li>Deduplicate by resolved path. Sort by modification time, then path.</li>
+<li>Publish one message per file with a PUT, tags <code>oc-out,oc-attach</code>, priority low, title <code>&lt;project&gt; - &lt;filename&gt;</code>, message <code>&lt;bytes&gt; bytes</code>.</li>
+<li>If files were skipped by caps, publish one summary line at min priority. Do not list every excluded source file.</li>
+<li>In the Rust path, eight sequential PUTs can hold the outbound worker about 90 seconds; the bounded event channel drops and counts frames during that time.</li>
+<li>Never attach <code>.ntfy-inbox</code> content.</li>
+</ul>
+<p>Allowlist, configurable:</p>
+<pre><code>png jpg jpeg webp gif bmp tiff svg avif heic
+mp3 wav ogg flac m4a aac opus
+mp4 webm mov mkv
+pdf txt md csv docx xlsx pptx epub
+zip 7z tar gz</code></pre>
+<p>Excluded directory segments:</p>
+<pre><code>.git node_modules .cache .ntfy-inbox .opencode logs dist build bin target venv .venv __pycache__ temp resources .scratch</code></pre>
+<p>Explicit tool:</p>
+<ul>
+<li>Add <code>ntfy_send_file</code> through <code>ctx.tool.transform</code> and <code>ToolEditor.add</code>.</li>
+<li>Input: <code>path</code> string, optional <code>message</code> string.</li>
+<li>Description: send a local file to the user&#39;s phone only when the user explicitly asks for it.</li>
+<li>Resolve relative paths against <code>ctx.location.directory</code>; reject paths outside the project canonical; reject non-regular files and files over 15 MB.</li>
+<li>Project-confined is the contract: an absolute path outside the project canonical is rejected, including a Desktop or user-home path, and there is no configuration override.</li>
+<li>Publish with <code>oc-out,oc-manual</code>, title <code>&lt;project&gt; - &lt;filename&gt;</code>, message the optional text.</li>
+<li>Return a short success or failure string to the model. Never throw.</li>
+</ul>
+<p>Existing permission, question, and error notifications retarget to the project topic and keep their current behavior.</p>
+<h3>5.4 Patch 7: link safety</h3>
+<p>The phone client linkifies any token that looks like a domain. <code>.md</code> is Moldova&#39;s top-level domain, so <code>readme.md</code> in a turn push opened a scam site in the browser. Extensions must never be read as links.</p>
+<ul>
+<li>Every outgoing turn text body, file title, and file message passes through <code>core::link_safe</code>. The same filter covers acks and error pushes.</li>
+<li>A token stays as written when its last label is on the allowlist: com net org edu gov mil int info biz app dev io ai co cloud tech blog site online shop store, plus the common country domains nl de be uk ie fr es pt it ch at dk se no fi is pl cz sk hu ro bg gr hr si ee lv lt lu ua ca us mx br au nz jp kr cn hk tw sg in za il ae eu.</li>
+<li>Any other token that ends in a real IANA top-level domain, or in any two-letter suffix, gets its last dot replaced with <code>[.]</code>. <code>readme.md</code> is published as <code>readme[.]md</code>.</li>
+<li>Scheme URLs and dotted names that are not top-level domains, such as <code>package.json</code> or <code>main.mjs</code>, pass through unchanged.</li>
+<li>The long-text attachment keeps the raw turn text, so attachment content is never rewritten.</li>
+<li>The Rust table is generated from <code>tools\link-safety\tlds.txt</code>; <code>npm run tlds</code> fails when it drifts. The Node copy was deleted with the relay in 0.8.0.</li>
+</ul>
+<h3>5.5 Plugin configuration (historical)</h3>
+<p>This section records the plugin that was deleted in 0.7.0. Nothing reads these files and no install step needs them; outbound is the Rust task.</p>
+<p>Add to <code>~/.config/opencode/notification-ntfy-with-questions.json</code>:</p>
+<pre><code class="language-json">{
+  &quot;turnText&quot;: { &quot;inlineMaxBytes&quot;: 3400, &quot;attachmentPrefix&quot;: &quot;turn&quot; },
+  &quot;autoAttach&quot;: {
+    &quot;enabled&quot;: true,
+    &quot;extensions&quot;: [&quot;png&quot;, &quot;jpg&quot;, &quot;jpeg&quot;, &quot;webp&quot;, &quot;gif&quot;, &quot;bmp&quot;, &quot;tiff&quot;, &quot;svg&quot;, &quot;avif&quot;, &quot;heic&quot;, &quot;mp3&quot;, &quot;wav&quot;, &quot;ogg&quot;, &quot;flac&quot;, &quot;m4a&quot;, &quot;aac&quot;, &quot;opus&quot;, &quot;mp4&quot;, &quot;webm&quot;, &quot;mov&quot;, &quot;mkv&quot;, &quot;pdf&quot;, &quot;txt&quot;, &quot;md&quot;, &quot;csv&quot;, &quot;docx&quot;, &quot;xlsx&quot;, &quot;pptx&quot;, &quot;epub&quot;, &quot;zip&quot;, &quot;7z&quot;, &quot;tar&quot;, &quot;gz&quot;],
+    &quot;maxFiles&quot;: 8,
+    &quot;maxFileBytes&quot;: 10485760,
+    &quot;maxTotalBytes&quot;: 31457280
+  },
+  &quot;tools&quot;: { &quot;sendFile&quot;: true }
+}</code></pre>
+<p>Change <code>ntfy.token</code> to <code>{file:~/.config/opencode/ntfy-token.txt}</code>.</p>
+<h2><span class="num">6</span>6. Inbound relay</h2>
+<div class="rule"></div>
+<h3>6.1 Process</h3>
+<ul>
+<li>Process <code>ntfy-relay run</code>, built from <code>rust\crates\app</code>. The Node relay this section originally specified was deleted in 0.8.0.</li>
+<li>Single instance. Lock file in the state directory with PID and start time. The lock is created atomically with <code>open(&#39;wx&#39;)</code>. On <code>EEXIST</code> the relay reads the owner: a live PID exits with code 0, an unreadable lock fails closed, and only a readable lock with a dead PID is removed before one retry.</li>
+<li>Signals abort the SSE stream, wait up to 10 seconds for the drain, log the number of dropped queued messages, then release the lock.</li>
+<li>Writes its own log with timestamp, level, message. Default level <code>info</code>, console echo off. Prompt text is never logged; decision lines carry the message ID and byte count instead. Rotate at 5 MB, keep one old file. <code>logging.echo</code> may be enabled for a manual console run.</li>
+<li>Heartbeat every 5 minutes with <code>topics=</code>, <code>lastEventAge=</code>, and <code>queue=</code>. A large age is a warning, not a restart condition.</li>
+<li>Config load failures and fatal errors exit non-zero with a clear log line.</li>
+<li>A corrupt state file is renamed to <code>.corrupt-&lt;unix&gt;</code> and the relay starts with empty state instead of crash-looping.</li>
+<li>Network errors never exit. Reconnect with exponential backoff, 1 second to 60 seconds, jitter. Reset the backoff only after a connection stayed up for 60 seconds, and time out the response headers after 30 seconds.</li>
+</ul>
+<h3>6.2 Configuration</h3>
+<p><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay.json</code>, no secrets committed. Relative paths resolve inside the install root (spec <code>10</code>); the live config names the token, log, and state there.</p>
+<pre><code class="language-json">{
+  &quot;enabled&quot;: true,
+  &quot;ntfy&quot;: {
+    &quot;server&quot;: &quot;https://ntfy.example.com&quot;,
+    &quot;tokenFile&quot;: &quot;ntfy-token.txt&quot;,
+    &quot;replayWindowMinutes&quot;: 60,
+    &quot;maxMessageBytes&quot;: 16384
+  },
+  &quot;projectRoots&quot;: [&quot;~/projects&quot;],
+  &quot;opencode&quot;: { &quot;command&quot;: [&quot;opencode&quot;], &quot;timeoutMs&quot;: 30000 },
+  &quot;routing&quot;: { &quot;preferRunning&quot;: true, &quot;delivery&quot;: &quot;queue&quot; },
+  &quot;files&quot;: { &quot;inboxDir&quot;: &quot;.ntfy-inbox&quot;, &quot;maxFileBytes&quot;: 15728640 },
+  &quot;logging&quot;: {
+    &quot;file&quot;: &quot;ntfy-relay.log&quot;,
+    &quot;heartbeatMinutes&quot;: 5,
+    &quot;level&quot;: &quot;info&quot;,
+    &quot;echo&quot;: false
+  },
+  &quot;stateFile&quot;: &quot;ntfy-relay-state.json&quot;
+}</code></pre>
+<ul>
+<li>Example values only. The local config supplies the real server, token file, and roots.</li>
+<li><code>~</code> expands to the home directory. Relative roots resolve against the config file.</li>
+<li><code>projectRoots</code> matches with a path boundary. Case-insensitive only on Windows. Since 0.14.0 the Rust path accepts several roots; each folder name is a topic, discovery keeps the newest 150, and a duplicate folder name keeps the more recently active project with a warning.</li>
+<li>The Rust path uses rustls and its public root store. There is no custom CA and no native certificate store, so the ntfy endpoint must present a publicly trusted certificate.</li>
+<li><code>opencode.command</code> is an argv array. On Windows configure the real <code>opencode.exe</code>, not the <code>.cmd</code> shim. No shell is used.</li>
+<li>The relay must also honor <code>OPENCODE_BIN</code> as an override, for tests.</li>
+<li><code>logging.level</code> is <code>debug</code>, <code>info</code>, <code>warn</code>, or <code>error</code>. <code>logging.echo</code> defaults to false because stdout is redirected to a non-rotating file; enable it only for a manual console run.</li>
+</ul>
+<h3>6.3 Project discovery</h3>
+<ul>
+<li>Every 60 seconds and at startup, run <code>opencode api get /api/project</code>.</li>
+<li>Keep projects whose canonical is inside a configured root.</li>
+<li>Skip a project without a string id, with a warning.</li>
+<li>Deduplicate by canonical. A canonical may have more than one project ID; keep all IDs for routing.</li>
+<li>Build a map topic -&gt; <code>{canonical, projectIDs, lastActivity}</code>.</li>
+<li>Skip a project whose folder name is not a valid ntfy topic, with a warning.</li>
+<li>On duplicate folder name, log <code>WARN duplicate topic</code> with both canonicals and keep the project with the newest <code>time.active</code>. Re-evaluate the winner on every refresh.</li>
+<li>Compare the full map on every refresh, including project IDs and <code>lastActivity</code>, and update it in place.</li>
+<li>Close and reopen the subscription only when the subscribed topic set changes.</li>
+<li>Keep at most 150 topics: above that, subscribe to the 150 with the newest <code>lastActivity</code> and log each skipped topic.</li>
+</ul>
+<h3>6.4 Subscription</h3>
+<ul>
+<li>One multi-topic SSE connection: <code>GET &lt;server&gt;/&lt;topic1&gt;,&lt;topic2&gt;/sse?since=&lt;unix&gt;</code>.</li>
+<li>Header <code>Authorization: Bearer &lt;token&gt;</code>.</li>
+<li>Up to 150 topics. Above that, subscribe to the 150 topics with the newest <code>lastActivity</code> and log every skipped topic. Do not refuse all.</li>
+<li>First start: <code>since</code> is now minus <code>replayWindowMinutes</code>.</li>
+<li>Reconnect: <code>since</code> is the last processed message time minus 60 seconds.</li>
+<li>The Rust path drops and resubscribes after 90 seconds with no bytes; the ntfy keepalive is 45 seconds.</li>
+<li>Parse SSE <code>data:</code> lines into JSON. Ignore <code>open</code>, <code>keepalive</code>, and non-message events.</li>
+</ul>
+<h3>6.5 Message filter</h3>
+<p>Accept only when all are true:</p>
+<ul>
+<li><code>event</code> is <code>message</code>.</li>
+<li>Topic is in the project map.</li>
+<li>Tags do not contain <code>oc-out</code>.</li>
+<li>Body is non-empty, or an attachment exists.</li>
+<li>Body is at most <code>maxMessageBytes</code>.</li>
+<li>Message time is at least now minus <code>replayWindowMinutes</code>, measured against the enqueue time (<code>receivedAt</code>), not the drain time, so a backlog does not make accepted messages stale.</li>
+<li>Message ID has not been processed.</li>
+</ul>
+<p>Reject silently with a debug log line. Keep a bounded processed set of the last 500 IDs per topic. The replay cursor (<code>lastProcessed</code>) advances only after a message is handled; a queue drop never moves it, so a dropped message can be replayed.</p>
+<h3>6.6 State</h3>
+<p><code>~/.local/state/opencode/ntfy-relay-state.json</code>, now <code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay-state.json</code>:</p>
+<pre><code class="language-json">{
+  &quot;version&quot;: 1,
+  &quot;targets&quot;: { &quot;ntfy-proj&quot;: { &quot;last&quot;: &quot;ses_...&quot;, &quot;lastAt&quot;: 1794662225371, &quot;pending&quot;: &quot;ses_...&quot;, &quot;pendingAt&quot;: 1794662300000 } },
+  &quot;topics&quot;: { &quot;ntfy-proj&quot;: { &quot;lastTime&quot;: 1794166767, &quot;lastIds&quot;: [&quot;abc123&quot;] } }
+}</code></pre>
+<ul>
+<li>Atomic writes: write a temp file in the same directory, then rename.</li>
+<li>The file is compact JSON, no pretty printing.</li>
+<li>On restart, do not execute a message that is already in <code>lastIds</code> or older than <code>lastTime</code> minus 60 seconds.</li>
+<li>Hints are advisory: <code>last</code> and <code>pending</code> are validated against the live snapshot on every message, and both expire. There is no pin. A 0.10.0 <code>pins</code> field is ignored and dropped on the first write.</li>
+<li>Both paths keep 500 IDs per topic. Target rows and topic rows are capped at 512. A temporarily missing project must not replay its messages.</li>
+<li>A corrupt file is quarantined as <code>&lt;name&gt;.corrupt-&lt;unix&gt;</code> and the relay starts empty. Backups older than 7 days are removed at startup.</li>
+</ul>
+<h3>6.7 Session routing</h3>
+<p>For each message:</p>
+<ol>
+<li>Resolve project IDs for the topic.</li>
+<li>Read the hints: <code>last</code>/<code>lastAt</code> and <code>pending</code>/<code>pendingAt</code>.</li>
+<li>Fetch the snapshot: <code>/api/session?project=&lt;id&gt;&amp;limit=20&amp;order=desc&amp;archived=false</code> for each project ID, merged, carrying <code>time.updated</code>, <code>time.viewed</code>, and <code>parentID</code>; plus <code>/api/session/active</code> for the running flag.</li>
+<li>Drop child sessions; a subagent is never a target.</li>
+<li>If <code>pending</code> is at most 10 minutes old and its id is in the snapshot, use it.</li>
+<li>Else if <code>last</code> is at most 10 minutes old and its id is in the snapshot, use it.</li>
+<li>Else use the highest activity, where activity is <code>max(time.viewed, time.updated)</code>. Ties break on running, then <code>last</code>, then id.</li>
+<li>If there is no session, publish an error push and stop. Never create one for free text.</li>
+</ol>
+<p>Resolution failures are delivery failures: a failed lookup publishes an error push and a log line with the message ID, so the phone sees the problem.</p>
+<p>Default use needs no command, and no stored target can outlive the desktop&#39;s newer activity. <code>/to</code> lists five numbered titles; <code>/sessions</code> lists twenty. A number or title fragment sets the one-shot target. Hints are per topic.</p>
+<p>A new session is created only by <code>/new [title]</code>, which targets it; free text never creates one. <code>/new</code> needs <code>adapter.agent</code> and <code>adapter.model</code> in the config.</p>
+<p>The selected session title is used in acks and titles. Fall back to the first 8 characters of the ID.</p>
+<h3>6.8 Prompt delivery</h3>
+<ul>
+<li>Default: <code>POST /api/session/&lt;id&gt;/prompt</code> with <code>{&quot;text&quot;: &quot;...&quot;, &quot;delivery&quot;: &quot;queue&quot;}</code>.</li>
+<li><code>/steer &lt;text&gt;</code>: same call with <code>delivery: &quot;steer&quot;</code>.</li>
+<li>With files: add <code>files: [{&quot;uri&quot;: &quot;file:///C:/...&quot;, &quot;name&quot;: &quot;&lt;original name&gt;&quot;}]</code> and append <code>Attached file: &lt;absolute path&gt;</code> to the text. Always send a <code>file://</code> URI, built from the saved absolute path.</li>
+<li>If only a file is sent, use <code>Please inspect the attached file.</code> as the text.</li>
+<li>Timeout 30 seconds per attempt. Retry network errors and 5xx twice, 1 second then 2 seconds. Never retry 4xx.</li>
+<li>Ack on success with min priority, title <code>&lt;project&gt; - queued</code>, body <code>queued to &lt;session title&gt;</code> or <code>steering &lt;session title&gt;</code>, tags <code>oc-out</code>. Ack bodies are capped at 3400 bytes.</li>
+<li>On failure, publish an error push with the HTTP status and a short message; log stderr in full.</li>
+<li>A retry can repeat a prompt whose response was lost: the request may have reached OpenCode even though the relay saw a network error. There is no idempotency key, so prompt delivery is at-least-once in that case, not at-most-once.</li>
+<li>Inbound handling stays at-most-once: the message is marked processed before delivery, every failure produces one error push and one log line with the message ID, and there is no outbox.</li>
+<li>The Rust path limits prompts to 30 per minute per topic with a burst of 10; <code>/steer</code> counts. Above that it publishes one <code>rate limited</code> error push and sends no prompt.</li>
+<li>Every relay publish call (ack, error) has a 10 second application timeout via <code>AbortController</code>. A stalled POST must not block the serial drain.</li>
+</ul>
+<p>Verified 2026-11-08 on Windows: an absolute path in <code>files[].uri</code> is rejected with HTTP 400; <code>file:///C:/...</code> is accepted and the prompt is queued. The relay always sends <code>file://</code> URIs. Recorded in <code>docs/operations.md</code> and the handoff.</p>
+<p>Observed 2026-11-08: the prompt renderer shows the attachment path itself, so the appended <code>Attached file:</code> line appears twice in the session. Cosmetic only; keep the appended line as specified.</p>
+<h3>6.9 Inbound attachments</h3>
+<ul>
+<li>Use <code>attachment.url</code>, <code>attachment.name</code>, <code>attachment.size</code>.</li>
+<li>Download over HTTPS without a token. Cap at 15 MB and verify the size when present.</li>
+<li>Reject HTTP URLs. Follow redirects manually, at most 3, and require HTTPS on every hop. The deleted Node relay had no host allowlist; the Rust path also requires the URL host to equal the <code>ntfy.server</code> host on every hop.</li>
+<li>Sanitize the name: basename only, strip control characters, keep <code>[A-Za-z0-9._-]</code>, limit to 120 characters, fallback <code>file</code>.</li>
+<li>Save to <code>&lt;project canonical&gt;/&lt;inboxDir&gt;/&lt;unix&gt;-&lt;name&gt;</code>. Create the directory.</li>
+<li>On collision, prefix with unix milliseconds.</li>
+<li>If download fails, publish an error push and do not send the prompt.</li>
+<li>The inbox directory is local working data. Add it to a global git ignore; do not edit project files automatically.</li>
+<li>Retention: prune <code>&lt;inboxDir&gt;</code> at startup and every 6 hours, deleting regular files whose name matches <code>^[0-9]{10}([0-9]{3})?-</code> and whose modification time is older than 7 days. Seven days clears the 72-hour server cache and attachment expiry with room for a paused multi-day session. Skip symlinks, directories, and anything that does not match the name pattern. Log one line per run with roots, removed count, and bytes; a per-root failure is logged and does not stop the relay.</li>
+<li>The Rust inbound path also holds a 200 MB per-project byte budget. At prune time and when a file arrives, the oldest matching <code>&lt;epoch&gt;-&lt;name&gt;</code> files are removed first; if the new file still does not fit, it publishes one error push and sends no prompt.</li>
+</ul>
+<h3>6.10 Permission replies</h3>
+<ul>
+<li><code>/allow</code>: reply <code>{&quot;decision&quot;: &quot;once&quot;}</code>.</li>
+<li><code>/always</code>: reply <code>{&quot;decision&quot;: &quot;always&quot;}</code>.</li>
+<li><code>/deny</code>: reply <code>{&quot;decision&quot;: &quot;reject&quot;}</code>.</li>
+<li>Resolve the target session, then <code>GET /api/session/&lt;id&gt;/permission</code> for pending requests.</li>
+<li>The Rust path replies to the first pending request in server order; the deleted Node relay sorted by id. The id is opaque and is not an age order. If more remain, say so in the ack.</li>
+<li>Replies are scoped to the routed session. Other sessions in the project are out of scope; the ack names the session.</li>
+<li>No pending request: publish an error push.</li>
+</ul>
+<h3>6.11 Commands</h3>
+<p>A command is a known name, matched case-insensitively after trim. Any other leading-slash text is delivered as a prompt, not swallowed.</p>
+<table><thead><tr><th>Command</th><th>Action</th></tr></thead><tbody>
+<tr><td><code>/help</code></td><td>List commands</td></tr>
+<tr><td><code>/status</code></td><td>Relay status: topics, queue, target, uptime</td></tr>
+<tr><td><code>/new [title]</code></td><td>Create a session in the project and target it; requires <code>adapter.agent</code> and <code>adapter.model</code>; title capped at 200 characters</td></tr>
+<tr><td><code>/sessions [count]</code></td><td>List up to 20 sessions with number, running flag, title</td></tr>
+<tr><td><code>/to</code></td><td>List five numbered sessions for the next message</td></tr>
+<tr><td><code>/to &lt;number&gt;</code></td><td>Target entry <code>&lt;number&gt;</code> of the last list, within 10 minutes</td></tr>
+<tr><td><code>/to &lt;title fragment&gt;</code></td><td>Target the single session whose title contains the fragment</td></tr>
+<tr><td><code>/auto</code></td><td>Drop the pending target</td></tr>
+<tr><td><code>/steer &lt;text&gt;</code></td><td>Prompt with steer delivery</td></tr>
+<tr><td><code>/allow</code></td><td>Approve the first pending permission once</td></tr>
+<tr><td><code>/always</code></td><td>Approve the first pending permission for the session</td></tr>
+<tr><td><code>/deny</code></td><td>Reject the first pending permission</td></tr>
+<tr><td><code>/yes</code></td><td>Confirm a held action</td></tr>
+<tr><td><code>/no</code></td><td>Cancel a held action</td></tr>
+</tbody></table>
+<p><code>/usr/bin/env is missing</code> is a prompt. <code>/nope</code> is a prompt. A command without its required argument gets a usage ack.</p>
+<h2><span class="num">7</span>7. Message formats</h2>
+<div class="rule"></div>
+<table><thead><tr><th>Source</th><th>Tag</th><th>Priority</th><th>Title</th><th>Body</th></tr></thead><tbody>
+<tr><td>Turn text</td><td><code>oc-out</code></td><td>default</td><td><code>&lt;project&gt;</code></td><td>assistant text</td></tr>
+<tr><td>Long text</td><td><code>oc-out</code></td><td>default</td><td><code>&lt;project&gt;</code></td><td>summary plus <code>.md</code></td></tr>
+<tr><td>Auto file</td><td><code>oc-out,oc-attach</code></td><td>low</td><td><code>&lt;project&gt; - &lt;filename&gt;</code></td><td><code>&lt;bytes&gt; bytes</code></td></tr>
+<tr><td>Manual file</td><td><code>oc-out,oc-manual</code></td><td>default</td><td><code>&lt;project&gt; - &lt;filename&gt;</code></td><td>optional message</td></tr>
+<tr><td>Permission ask</td><td><code>oc-out</code></td><td>high</td><td><code>&lt;project&gt; - permission</code></td><td>existing payload</td></tr>
+<tr><td>Session error</td><td><code>oc-out</code></td><td>high</td><td><code>&lt;project&gt; - session error</code></td><td>error type and message</td></tr>
+<tr><td>Relay ack</td><td><code>oc-out</code></td><td>min</td><td><code>&lt;project&gt; - queued</code></td><td>target session</td></tr>
+<tr><td>Relay error</td><td><code>oc-out</code></td><td>high</td><td><code>&lt;project&gt; - relay error</code></td><td>short failure</td></tr>
+</tbody></table>
+<p>The relay ignores every message with <code>oc-out</code>. That is the only direction marker. Phone messages never carry it.</p>
+<h2><span class="num">8</span>8. Portability rules</h2>
+<div class="rule"></div>
+<ul>
+<li>No absolute paths in source. Paths come from config, <code>os.homedir()</code>, or OpenCode data.</li>
+<li>Use <code>node:path</code> for every join, resolve, relative, and basename.</li>
+<li>Case-insensitive path comparison only when <code>process.platform === &quot;win32&quot;</code>.</li>
+<li>Use <code>node:fs/promises</code>, <code>node:child_process</code>, <code>global fetch</code>, <code>AbortController</code>. No npm dependencies.</li>
+<li>Config and state live in the relay install root: <code>%LOCALAPPDATA%\ntfy-relay\</code> on Windows, the install directory on Linux. No relay file lives under the OpenCode config or state directories. The XDG paths were the design target before 0.10.0.</li>
+<li>Startup wrappers are deployment artifacts per OS, separate from the relay code:</li>
+<li>Windows: <code>.vbs</code> or shortcut in the Startup folder, running <code>node.exe</code> hidden.</li>
+<li>Windows wrappers resolve node from <code>NTFY_RELAY_NODE</code>, then <code>Get-Command node.exe</code>, then fail with a clear log line. The state path comes from the relay config through a shared <code>relay-config.ps1</code> helper, never from a hardcoded default.</li>
+<li>Linux: systemd user unit.</li>
+<li>macOS: launchd plist is untested and not a supported target. Case folding is Windows-only, so a case-insensitive macOS filesystem can fail containment.</li>
+<li>The plugin change uses only <code>node:path</code> and the existing ntfy client.</li>
+<li>Unit tests run on Windows and WSL. Fixtures cover both path styles.</li>
+</ul>
+<h2><span class="num">9</span>9. Errors and limits</h2>
+<div class="rule"></div>
+<ul>
+<li>Relay log line per decision: accepted, filtered, routed, prompted, failed.</li>
+<li>Never log the token, full headers, or prompt text. Decision lines carry the message ID and byte count. A short failure reason is capped at 200 characters.</li>
+<li>API failures produce one error push, not a retry storm. Subprocess stderr is logged in full to the rotating file.</li>
+<li>Bound every in-memory structure: 500 processed IDs per topic, 20 sessions per query, 8 attachments per turn.</li>
+<li>Attachment expiry is 72 hours, capped by cache duration.</li>
+<li>The phone must have the VPN client connected. The host must be awake. The relay cannot wake a sleeping host.</li>
+</ul>
+<h2><span class="num">10</span>10. Testing</h2>
+<div class="rule"></div>
+<p>Unit, <code>node --test</code>, no dependencies:</p>
+<ul>
+<li>Topic derivation: Windows and POSIX paths, trailing separators, invalid characters, length limit, empty basename, duplicate folder names.</li>
+<li>Filter: <code>oc-out</code>, stale, oversized, empty, attachment-only, duplicate ID.</li>
+<li>State: atomic write, restart dedupe, stale hint.</li>
+<li>Routing: activity order, pending target, continuity window, child exclusion, missing session, multiple project IDs.</li>
+<li>Text assembly: order, multiple assistant messages, debounce, interrupted.</li>
+<li>Auto-attach: add versus change, allowlist, excluded dirs, caps, missing file, symlink, path outside project.</li>
+<li>Filename sanitization and path traversal.</li>
+<li>Config validation and <code>~</code> expansion.</li>
+<li>Lock: two concurrent acquires yield one winner; an unreadable lock fails closed; a stale readable lock is replaced.</li>
+<li>Queue: a dropped message does not advance the replay cursor; a delayed message is accepted against its enqueue time.</li>
+<li>State: corrupt JSON is quarantined; writes are compact.</li>
+<li>Publish: application timeout aborts a stalled request; ack bodies are clamped to 3400 bytes.</li>
+<li>Attachments: HTTP, HTTPS-to-HTTP redirect, and more than 3 redirects are rejected.</li>
+<li>Commands: case-insensitive known names; unknown leading-slash text becomes a prompt.</li>
+<li>Discovery: changed project IDs refresh without a resubscribe; more than 150 topics keeps the newest 150.</li>
+<li>SSE: CRLF split across chunk boundaries still produces one event.</li>
+</ul>
+<p>The plugin verifier and its assertions were deleted with the plugin in 0.7.0. The Rust outbound suite covers turn assembly, the byte threshold, attachment naming, link safety, and the file filter.</p>
+<p>Live acceptance:</p>
+<ol>
+<li>Phone text to an idle session starts a turn in that session, no new session.</li>
+<li>Phone text to a running session is queued, then runs.</li>
+<li><code>/steer</code> interrupts the running turn.</li>
+<li><code>/sessions</code>, <code>/to</code>, <code>/auto</code> select a one-shot target.</li>
+<li>Long answer arrives as one <code>.md</code> attachment, content complete.</li>
+<li>New PNG and MP3 auto-attach; new <code>.ts</code> and modified files do not.</li>
+<li>Phone PNG arrives in <code>.ntfy-inbox</code> and the session can read it.</li>
+<li><code>ntfy_send_file</code> delivers an existing file.</li>
+<li>Permission ask answered with <code>/allow</code>, <code>/always</code>, <code>/deny</code>; the turn continues or stops.</li>
+<li>Two locations loaded produce exactly one push per turn and one prompt per phone message.</li>
+<li>Relay restart does not re-execute an already processed message.</li>
+<li>Reboot with no TUI: first phone message still reaches the session.</li>
+<li>Unit tests pass on Windows and WSL.</li>
+</ol>
+<p>Acceptance criteria:</p>
+<ul>
+<li>One topic per project, both directions, no loop.</li>
+<li>No source code auto-attached.</li>
+<li>No new session created by the relay.</li>
+<li>No duplicate pushes or prompts.</li>
+<li>Deny-all auth preserved; private network only; no Google components.</li>
+<li>Portable code and config-driven roots.</li>
+</ul>
+<h2><span class="num">11</span>11. Rollout</h2>
+<div class="rule"></div>
+<p>Phase 1, auth and relay text:</p>
+<ol>
+<li>Create <code>phone</code>, the token, and the <code>*</code> row.</li>
+<li>Start <code>ntfy-relay run</code> from <code>rust\crates\app</code>. The Node files this step originally named were deleted in 0.8.0.</li>
+<li>Run the relay in the foreground against <code>ntfy-proj</code>.</li>
+<li>Send text with the phone token; confirm the prompt lands in the existing session and the relay logs one accepted message.</li>
+</ol>
+<p>Phase 2, plugin outbound (historical, superseded in 0.5.0 and deleted in 0.7.0):</p>
+<ol>
+<li>The plugin, its patch script, and its offline verifier are gone from the tree; do not restore them.</li>
+<li>The Rust outbound task publishes one push per turn; see <code>03-rust-relay-merge.md</code> and operations 7.9.</li>
+</ol>
+<p>Phase 3, files and permissions:</p>
+<ol>
+<li>Patch 6 and <code>ntfy_send_file</code>.</li>
+<li>Inbound attachment download and prompt <code>files</code>.</li>
+<li>Permission commands.</li>
+<li>Run the live acceptance matrix.</li>
+</ol>
+<p>Phase 4, lifecycle and docs:</p>
+<ol>
+<li>Startup wrapper and single-instance lock.</li>
+<li>Startup-check integration: relay alive and heartbeating.</li>
+<li>Reboot and wake tests.</li>
+<li>Update the manual under <code>docs\</code> and the changelog.</li>
+<li>Update the handoff.</li>
+</ol>
+<p>Rollback:</p>
+<ul>
+<li>Stop the relay. Outbound notifications continue.</li>
+<li>Restore a previous <code>ntfy-relay.exe</code> build for the Rust path, or check out the last known good commit and rebuild. The deleted plugin and patch script are not restored.</li>
+<li>Auth changes are additive. A wiped token file is restored by <code>ntfy-auth apply</code>, and the phone token never changes, so the app stays as it is. Re-adding <code>system</code> and <code>admin</code> is not a rollback: it restores the dual-token model that was removed.</li>
+</ul>
+<h2><span class="num">12</span>12. Out of scope</h2>
+<div class="rule"></div>
+<ul>
+<li>Answering the question tool&#39;s multiple-choice prompts.</li>
+<li>Token-by-token streaming.</li>
+<li>Multi-host arbitration when two machines run the relay for the same topics.</li>
+<li>Waking a sleeping host.</li>
+<li>Public exposure, a public tunnel, Google push, or PWA background delivery.</li>
+</ul>
+<h2><span class="num">13</span>13. Risks</h2>
+<div class="rule"></div>
+<ul>
+<li>The plugin patch surface grows to seven patches. Re-audit on any upgrade.</li>
+<li>The relay depends on <code>opencode api</code> CLI behavior. Pin the version in docs and test after upgrades.</li>
+<li>After a reboot with no TUI, the first phone message reached the session in the verified run; re-check after an OpenCode upgrade.</li>
+<li>Duplicate folder names merge topics by design.</li>
+<li>A second relay on another machine would double-handle messages. Run one relay per ntfy account; document it.</li>
+<li>Attachment and cache expiry is 72 hours.</li>
+<li>A permission ask stalls the turn until answered. The phone commands are the mitigation.</li>
+<li>The laptop must be awake and online for any of this to run.</li>
+</ul>
+<h2><span class="num">14</span>14. Deliverables</h2>
+<div class="rule"></div>
+<pre><code>docs/specsheet/01-phone-continuation.md   this file
+rust/                             Rust workspace: core, ntfy, opencode, inbound, outbound, app
+tools/                            image build, token rotation, doc checks
+docs/                             operation and troubleshooting manual</code></pre>
+<p>Local-only configuration, not committed:</p>
+<pre><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay.json
+%LOCALAPPDATA%\ntfy-relay\ntfy-token.txt</code></pre>
+<p>On Linux the same two files sit in the install directory.</p>
+<p>The Rust cutover in <code>03</code> is done; the Node relay was deleted in 0.8.0, so there is no implementation switch and no inbound rollback to it. Do not redesign the locked decisions.</p>
+  </main>
+</div>
+<script>const ThemeEngine=(function(){
+
+  function hexToRgb(hex){
+    if(typeof hex!=='string'||hex[0]!=='#'){
+      throw new Error('hexToRgb: expected a hex color string starting with "#"');
+    }
+    const h=hex.substring(1);
+    if(h.length!==6||!/^[0-9a-fA-F]{6}$/.test(h)){
+      throw new Error('hexToRgb: expected 6 hex digits after "#" (got "'+hex+'")');
+    }
+    return[
+      parseInt(h.substring(0,2),16),
+      parseInt(h.substring(2,4),16),
+      parseInt(h.substring(4,6),16)
+    ];
+  }
+
+  function rgbToHex(r,g,b){
+    const c=v=>Math.max(0,Math.min(255,Math.round(v)));
+    return'#'+[c(r),c(g),c(b)].map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+
+  function rgbToHsl(r,g,b){
+    r/=255;g/=255;b/=255;
+    const max=Math.max(r,g,b),min=Math.min(r,g,b);
+    let h,s;
+    const l=(max+min)/2;
+    if(max===min){
+      h=s=0;
+    }else{
+      const d=max-min;
+      s=l>0.5?d/(2-max-min):d/(max+min);
+      switch(max){
+        case r:h=((g-b)/d+(g<b?6:0))/6;break;
+        case g:h=((b-r)/d+2)/6;break;
+        case b:h=((r-g)/d+4)/6;break;
+      }
+    }
+    return[h*360,s,l];
+  }
+
+  function hslToRgb(h,s,l){
+    h/=360;
+    let r,g,b;
+    if(s===0){
+      r=g=b=l;
+    }else{
+      const hue2rgb=(p,q,t)=>{
+        if(t<0)t+=1;
+        if(t>1)t-=1;
+        if(t<1/6)return p+(q-p)*6*t;
+        if(t<1/2)return q;
+        if(t<2/3)return p+(q-p)*(2/3-t)*6;
+        return p;
+      };
+      const q=l<0.5?l*(1+s):l+s-l*s;
+      const p=2*l-q;
+      r=hue2rgb(p,q,h+1/3);
+      g=hue2rgb(p,q,h);
+      b=hue2rgb(p,q,h-1/3);
+    }
+    return[Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+  }
+
+  function clampStep(step){
+    return Math.max(-3,Math.min(3,Number(step)||0));
+  }
+
+  function adjustBrightness(rgb,step){
+    step=clampStep(step);
+    if(!step)return rgb.slice();
+    const factor=1+step*0.08;
+    return rgb.map(v=>Math.max(0,Math.min(255,Math.round(v*factor))));
+  }
+
+  function adjustSaturation(rgb,step){
+    step=clampStep(step);
+    if(!step)return rgb.slice();
+    const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);
+    const newS=Math.max(0,Math.min(1,s*(1+step*0.15)));
+    return hslToRgb(h,newS,l);
+  }
+
+  function adjustColor(hex,brightness,saturation){
+    let rgb=hexToRgb(hex);
+    rgb=adjustBrightness(rgb,brightness);
+    rgb=adjustSaturation(rgb,saturation);
+    return rgbToHex(rgb[0],rgb[1],rgb[2]);
+  }
+
+  function inkOn(hex){
+    const rgb=hexToRgb(hex);
+    const c=rgb.map(v=>{
+      const p=v/255;
+      return p<=0.04045?p/12.92:Math.pow((p+0.055)/1.055,2.4);
+    });
+    const l=0.2126*c[0]+0.7152*c[1]+0.0722*c[2];
+    return l>0.179?'#000000':'#FFFFFF';
+  }
+
+  const THEMES={
+    dark:{
+      github:{bg:'#0D1117',card:'#010409',ink:'#C9D1D9',muted:'#8B949E',line:'#6E7681',accent:'#3B82F6'},
+      harbor:{bg:'#0F1A2B',card:'#212121',ink:'#C9C9C9',muted:'#999999',line:'#737373',accent:'#4FD1C5'},
+      solarized:{bg:'#002B36',card:'#073642',ink:'#9DB0B0',muted:'#8FA5AA',line:'#93A1A1',accent:'#D96F3C'},
+      oledblack:{bg:'#000000',card:'#1A1A1A',ink:'#EDEDED',muted:'#A8A8A8',line:'#6E6E6E',accent:'#D4D4D4'},
+      ayu:{bg:'#0B0E14',card:'#0F131A',ink:'#BFBDB6',muted:'#59C2FF',line:'#6C7380',accent:'#E6B450'}
+    },
+    light:{
+      vercel:{bg:'#F3F3F1',card:'#FFFFFF',ink:'#20242A',muted:'#4E545C',line:'#C9CCD1',accent:'#9A6400'},
+      tokyonight:{bg:'#F3F3F1',card:'#F0F4FC',ink:'#232A3D',muted:'#4B5468',line:'#C6CEDF',accent:'#2F5BB7'},
+      cursor:{bg:'#F3F3F1',card:'#F0F7F1',ink:'#212A24',muted:'#4C5850',line:'#C5D2C7',accent:'#2A6350'},
+      orng:{bg:'#F3F3F1',card:'#FFF6EE',ink:'#2A2420',muted:'#5C4F46',line:'#DBC8B9',accent:'#B4471E'}
+    }
+  };
+
+  const THUMB={
+    dark:{bg:'#2E2E2E',line:'#777777'},
+    light:{bg:'#CBCBCB',line:'#888888'}
+  };
+
+  function apply(state){
+    state=state||{};
+    const mode=state.mode==='dark'?'dark':'light';
+    const dark=THEMES.dark[state.dark]?state.dark:'github';
+    const light=THEMES.light[state.light]?state.light:'vercel';
+    const theme=THEMES[mode][mode==='dark'?dark:light];
+    const print=!!state.print;
+    const font=state.font==='serif'?'serif':'sans-serif';
+    const b=clampStep(state.brightness),s=clampStep(state.saturation);
+
+    const root=document.documentElement;
+    root.setAttribute('data-theme',mode);
+    root.setAttribute('data-font',font);
+    root.setAttribute('data-print',print?'on':'off');
+    root.setAttribute('data-dark',dark);
+    root.setAttribute('data-light',light);
+
+    const vars={};
+    if(print){
+      vars['--page-bg']='var(--print-bg)';
+      vars['--page-ink']='var(--print-ink)';
+      vars['--page-muted']='var(--print-muted)';
+      vars['--page-line']='var(--print-line)';
+      vars['--card']='var(--print-bg)';
+      vars['--accent']='var(--print-ink)';
+      vars['--pick-ink']='var(--print-bg)';
+      vars['--tb-ink']='var(--print-muted)';
+      vars['--tb-line']='var(--print-line)';
+      vars['--thumb']=THUMB.light.bg;
+      vars['--thumb-line']=THUMB.light.line;
+    }else{
+      const bg=adjustColor(theme.bg,b,s);
+      const card=adjustColor(theme.card,b,s);
+      const ink=adjustColor(theme.ink,b,s);
+      const muted=adjustColor(theme.muted,b,s);
+      const line=adjustColor(theme.line,b,s);
+      const accent=adjustColor(theme.accent,b,s);
+      vars['--page-bg']=bg;
+      vars['--page-ink']=ink;
+      vars['--page-muted']=muted;
+      vars['--page-line']=line;
+      vars['--card']=card;
+      vars['--accent']=accent;
+      vars['--pick-ink']=inkOn(accent);
+      vars['--tb-ink']=muted;
+      vars['--tb-line']=line;
+      vars['--thumb']=THUMB[mode].bg;
+      vars['--thumb-line']=THUMB[mode].line;
+    }
+    for(const[prop,value]of Object.entries(vars)){
+      root.style.setProperty(prop,value);
+    }
+  }
+
+  return{apply,THEMES,inkOn};
+})();</script>
+<script>const LinkState=(function(){
+  function readParams(){
+    var s=(window.location&&window.location.search)||'';
+    if(s.charAt(0)==='?')s=s.slice(1);
+    if(!s)return null;
+    var out={};
+    s.split('&').forEach(function(p){
+      var i=p.indexOf('=');
+      if(i>0)out[p.slice(0,i)]=p.slice(i+1);
+    });
+    var mode=(out.mode==='dark'||out.mode==='light')?out.mode:null;
+    var dark=ThemeEngine.THEMES.dark[out.dark]?out.dark:null;
+    var light=ThemeEngine.THEMES.light[out.light]?out.light:null;
+    if(!mode&&!dark&&!light)return null;
+    return{mode:mode,dark:dark,light:light};
+  }
+
+  function pickQuery(state){
+    return '?mode='+(state.mode==='dark'?'dark':'light')+
+           '&dark='+state.dark+'&light='+state.light;
+  }
+
+  function syncLinks(state){
+    var nodes=document.querySelectorAll?document.querySelectorAll('a[href]'):[];
+    for(var i=0;i<nodes.length;i++){
+      var a=nodes[i];
+      var href=a.getAttribute('href')||'';
+      if(href.charAt(0)==='#'||href.slice(0,2)==='//')continue;
+      if(/^[a-z][a-z0-9+.-]*:/i.test(href))continue;
+      var cut=href.search(/[?#]/);
+      var path=cut<0?href:href.slice(0,cut);
+      var hash=href.indexOf('#')<0?'':href.slice(href.indexOf('#'));
+      if(!/\.html$/.test(path))continue;
+      a.setAttribute('href',path+pickQuery(state)+hash);
+    }
+  }
+
+  return{readParams:readParams,syncLinks:syncLinks};
+})();</script>
+<script>const MenuBar=(function(){
+  let printBtn,modeBtn,fontBtn,bri,sat,briOut,satOut;
+  let state={mode:'light',dark:'github',light:'vercel',font:'sans-serif',print:false};
+  let onChange=null,manual=false,mq=null;
+
+  function init(opts){
+    opts=opts||{};
+    onChange=opts.onChange||null;
+    mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+
+    state.mode=opts.mode==='dark'||opts.mode==='light'
+      ?opts.mode
+      :(mq&&mq.matches?'dark':'light');
+    if(opts.dark&&ThemeEngine.THEMES.dark[opts.dark])state.dark=opts.dark;
+    if(opts.light&&ThemeEngine.THEMES.light[opts.light])state.light=opts.light;
+    if(opts.manual)manual=true;
+    if(opts.font)state.font=opts.font;
+
+    printBtn=document.getElementById('print');
+    modeBtn=document.getElementById('mode');
+    fontBtn=document.getElementById('font');
+    bri=document.getElementById('brightness');
+    briOut=document.getElementById('brightness-value');
+    sat=document.getElementById('saturation');
+    satOut=document.getElementById('saturation-value');
+
+    printBtn.addEventListener('click',()=>setPrint(!state.print));
+    modeBtn.addEventListener('click',()=>{
+      manual=true;
+      setPrint(false,true);
+      setMode(state.mode==='dark'?'light':'dark');
+    });
+    fontBtn.addEventListener('click',()=>setFont(state.font==='serif'?'sans-serif':'serif'));
+    bri.addEventListener('input',()=>{syncSliders();emit();});
+    sat.addEventListener('input',()=>{syncSliders();emit();});
+
+    buildMenu('dark-menu','dark');
+    buildMenu('light-menu','light');
+    document.getElementById('dark-theme').addEventListener('click',e=>{
+      e.stopPropagation();
+      toggleMenu('dark-theme','dark-menu');
+    });
+    document.getElementById('light-theme').addEventListener('click',e=>{
+      e.stopPropagation();
+      toggleMenu('light-theme','light-menu');
+    });
+    document.getElementById('dark-menu').addEventListener('keydown',menuKey);
+    document.getElementById('light-menu').addEventListener('keydown',menuKey);
+    document.addEventListener('click',e=>{
+      if(!e.target.closest||!e.target.closest('.group'))closeMenus();
+    });
+    document.addEventListener('keydown',e=>{
+      if(e.key!=='Escape')return;
+      let openBtn=null;
+      [['dark-theme','dark-menu'],['light-theme','light-menu']].forEach(pair=>{
+        if(document.getElementById(pair[1]).classList.contains('open')){
+          openBtn=document.getElementById(pair[0]);
+        }
+      });
+      closeMenus();
+      if(openBtn)openBtn.focus();
+    });
+
+    if(mq){
+      const follow=e=>{if(!manual)setMode(e.matches?'dark':'light');};
+      if(mq.addEventListener)mq.addEventListener('change',follow);
+      else if(mq.addListener)mq.addListener(follow);
+    }
+
+    bri.value='0';
+    sat.value='0';
+    syncUI();
+    emit();
+  }
+
+  function syncSliders(){
+    const b=stepOf(bri),s=stepOf(sat);
+    bri.value=String(b);
+    sat.value=String(s);
+    briOut.textContent=String(b);
+    satOut.textContent=String(s);
+  }
+
+  function syncMenus(){
+    [['dark','dark-menu'],['light','light-menu']].forEach(pair=>{
+      const menu=document.getElementById(pair[1]);
+      Array.prototype.forEach.call(menu.children,row=>{
+        row.setAttribute('aria-checked',String(row.textContent===state[pair[0]]));
+      });
+    });
+  }
+
+  function syncUI(){
+    const light=state.mode==='light';
+    const sans=state.font==='sans-serif';
+    modeBtn.classList.toggle('on',light);
+    modeBtn.setAttribute('aria-checked',String(light));
+    modeBtn.setAttribute('aria-label',light?'Light mode':'Dark mode');
+    fontBtn.classList.toggle('on',sans);
+    fontBtn.setAttribute('aria-checked',String(sans));
+    fontBtn.setAttribute('aria-label',sans?'Sans-serif':'Serif');
+    printBtn.classList.toggle('on',state.print);
+    printBtn.setAttribute('aria-pressed',String(state.print));
+    syncSliders();
+    syncMenus();
+  }
+
+  function stepOf(el){
+    const n=parseInt(el.value,10);
+    return isNaN(n)?0:Math.max(-3,Math.min(3,n));
+  }
+
+  function copy(){
+    return{
+      mode:state.mode,
+      dark:state.dark,
+      light:state.light,
+      font:state.font,
+      print:state.print,
+      brightness:stepOf(bri),
+      saturation:stepOf(sat)
+    };
+  }
+
+  function emit(){
+    if(onChange)onChange(copy());
+  }
+
+  function setMode(mode){
+    state.mode=mode==='dark'?'dark':'light';
+    syncUI();
+    emit();
+  }
+
+  function setTheme(mode,name){
+    if(!ThemeEngine.THEMES[mode]||!ThemeEngine.THEMES[mode][name])return;
+    manual=true;
+    setPrint(false,true);
+    state[mode]=name;
+    state.mode=mode;
+    syncUI();
+    emit();
+  }
+
+  function setFont(font){
+    state.font=font==='serif'?'serif':'sans-serif';
+    syncUI();
+    emit();
+  }
+
+  function setPrint(on,quiet){
+    state.print=!!on;
+    if(!quiet)syncUI();
+    if(!quiet)emit();
+  }
+
+  function buildMenu(id,mode){
+    const menu=document.getElementById(id);
+    Object.keys(ThemeEngine.THEMES[mode]).forEach(name=>{
+      const row=document.createElement('button');
+      row.type='button';
+      row.setAttribute('role','menuitemradio');
+      row.setAttribute('aria-checked',String(state[mode]===name));
+      row.textContent=name;
+      row.addEventListener('click',()=>{
+        setTheme(mode,name);
+        closeMenus();
+        document.getElementById(mode==='dark'?'dark-theme':'light-theme').focus();
+      });
+      menu.appendChild(row);
+    });
+  }
+
+  function closeMenus(){
+    [['dark-theme','dark-menu'],['light-theme','light-menu']].forEach(pair=>{
+      document.getElementById(pair[1]).classList.remove('open');
+      document.getElementById(pair[0]).setAttribute('aria-expanded','false');
+    });
+  }
+
+  function toggleMenu(btnId,menuId){
+    const btn=document.getElementById(btnId);
+    const menu=document.getElementById(menuId);
+    const open=!menu.classList.contains('open');
+    closeMenus();
+    if(open){
+      menu.classList.add('open');
+      btn.setAttribute('aria-expanded','true');
+      const rows=Array.prototype.slice.call(menu.children);
+      const pick=rows.filter(row=>row.getAttribute('aria-checked')==='true')[0]||rows[0];
+      if(pick)pick.focus();
+    }
+  }
+
+  function menuKey(e){
+    const rows=Array.prototype.slice.call(this.children);
+    const n=rows.length;
+    if(!n)return;
+    const i=rows.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();
+      rows[(i+(e.key==='ArrowDown'?1:-1)+n)%n].focus();
+    }else if(e.key==='Home'||e.key==='End'){
+      e.preventDefault();
+      rows[e.key==='Home'?0:n-1].focus();
+    }
+  }
+
+  function getValues(){
+    return copy();
+  }
+
+  function setValues(opts){
+    opts=opts||{};
+    if(opts.mode==='dark'||opts.mode==='light')state.mode=opts.mode;
+    if(opts.dark&&ThemeEngine.THEMES.dark[opts.dark])state.dark=opts.dark;
+    if(opts.light&&ThemeEngine.THEMES.light[opts.light])state.light=opts.light;
+    if(opts.font)state.font=opts.font;
+    if(opts.print!==undefined)state.print=!!opts.print;
+    if(opts.brightness!==undefined)bri.value=String(Math.max(-3,Math.min(3,Number(opts.brightness)||0)));
+    if(opts.saturation!==undefined)sat.value=String(Math.max(-3,Math.min(3,Number(opts.saturation)||0)));
+    syncUI();
+    emit();
+  }
+
+  return{init,getValues,setValues,setMode,setTheme,setFont,setPrint};
+})();</script>
+<script>(function(){
+  var params=LinkState.readParams()||{};
+  var manual=!!(params.mode||params.dark||params.light);
+  MenuBar.init({
+    mode:params.mode||undefined,
+    dark:params.dark||undefined,
+    light:params.light||undefined,
+    manual:manual,
+    onChange:function(state){
+      ThemeEngine.apply(state);
+      LinkState.syncLinks(state);
+    }
+  });
+  LinkState.syncLinks(MenuBar.getValues());
+})();</script>
+</body>
+</html>

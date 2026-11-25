@@ -1,0 +1,13 @@
+[package]
+name = "ntfy-relay-deploy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ntfy-deploy"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

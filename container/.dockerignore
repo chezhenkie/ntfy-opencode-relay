@@ -1,0 +1,4 @@
+# The build fetches the ntfy release itself. Keep hand-downloaded copies out of
+# the context; they would be sent to the builder for nothing.
+ntfy
+ntfy_*.tar.gz

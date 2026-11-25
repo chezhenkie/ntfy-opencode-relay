@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>7. Operations</title>
+<style>
+#tb{
+  position:fixed;top:0;left:0;right:0;height:24px;z-index:10;
+  display:flex;align-items:center;justify-content:flex-end;gap:7px;
+  padding:0 28px;background:var(--page-bg);color:var(--tb-ink);
+  font:10px/1 var(--font-ui);
+  user-select:none;transition:background .25s,color .25s;
+}
+#tb .s{width:1px;height:12px;background:var(--tb-line)}
+#tb .tb-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  height:18px;padding:0 6px 3px;cursor:pointer;
+  color:inherit;background:transparent;
+  border:1px solid var(--tb-line);border-radius:2px;
+  white-space:nowrap;
+}
+#tb .tb-btn svg{width:13px;height:13px}
+#tb .tb-btn.on{background:var(--tb-ink);color:var(--page-bg);border-color:var(--tb-ink)}
+#tb .tb-btn.fold{min-width:68px}
+#tb .tb-btn.fold::after{
+  content:"";width:0;height:0;margin-left:4px;
+  border-left:3px solid transparent;border-right:3px solid transparent;
+  border-top:4px solid currentColor;
+}
+#tb .group{position:relative;display:inline-flex}
+#tb .menu{
+  display:none;position:absolute;top:21px;right:0;z-index:20;
+  flex-direction:column;min-width:100%;padding:2px;
+  background:var(--page-bg);border:1px solid var(--tb-line);border-radius:2px;
+}
+#tb .menu.open{display:flex}
+#tb .menu button{
+  height:16px;padding:0 6px;cursor:pointer;text-align:left;
+  font:inherit;color:inherit;background:transparent;border:0;border-radius:1px;
+  white-space:nowrap;
+}
+#tb .menu button:hover,#tb .menu button:focus-visible{background:var(--tb-line)}
+#tb .menu button[aria-checked="true"]{background:var(--accent);color:var(--pick-ink)}
+#tb .toggle{
+  position:relative;width:44px;height:20px;padding:0;cursor:pointer;
+  background:transparent;border:0;color:inherit;
+}
+#tb .toggle-thumb{
+  position:absolute;top:2px;left:5px;width:16px;height:16px;
+  border-radius:2px;background:var(--thumb);border:1px solid var(--thumb-line);
+  transition:transform .25s cubic-bezier(.4,0,.2,1),background .25s,border-color .25s;
+}
+#tb .toggle.on .toggle-thumb{transform:translateX(17px)}
+#tb .toggle svg{
+  position:absolute;top:50%;width:12px;height:12px;
+  transform:translateY(-50%);pointer-events:none;
+  transition:opacity .25s;
+}
+#tb .toggle .ico-l{left:7px;opacity:1}
+#tb .toggle .ico-r{right:8px;opacity:.45}
+#tb .toggle.on .ico-l{opacity:.45}
+#tb .toggle.on .ico-r{opacity:1}
+#tb .sl{display:inline-flex;align-items:center;gap:4px}
+#tb .sl svg{width:10px;height:10px;flex-shrink:0}
+#tb .sl input[type=range]{
+  -webkit-appearance:none;appearance:none;width:48px;height:3px;
+  padding:0;margin:0;cursor:pointer;outline:none;
+  background:var(--tb-line);border:1px solid var(--tb-line);border-radius:2px;
+}
+#tb .sl input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:10px;height:10px;
+  background:var(--page-bg);border:1px solid var(--tb-ink);border-radius:2px;
+  cursor:pointer;
+}
+#tb .sl input[type=range]::-moz-range-thumb{
+  width:10px;height:10px;background:var(--page-bg);
+  border:1px solid var(--tb-ink);border-radius:2px;cursor:pointer;
+}
+#tb .sl .v{min-width:14px;text-align:center;font-variant-numeric:tabular-nums}
+#tb .tb-btn:focus-visible,#tb .toggle:focus-visible,#tb .sl input:focus-visible,#tb .menu button:focus-visible{
+  outline:2px solid var(--tb-ink);outline-offset:1px;
+}
+@media(prefers-reduced-motion:reduce){
+  #tb *{transition:none!important}
+}
+:root{
+  color-scheme:light;
+  --page-bg:#F3F3F1;
+  --page-ink:#20242A;
+  --page-muted:#4E545C;
+  --page-line:#C9CCD1;
+  --card:#FFFFFF;
+  --accent:#9A6400;
+  --pick-ink:#000000;
+  --tb-ink:#4E545C;
+  --tb-line:#C9CCD1;
+  --thumb:#CBCBCB;
+  --thumb-line:#888888;
+  --print-bg:#FFFFFF;
+  --print-ink:#000000;
+  --print-muted:#333333;
+  --print-line:#9A9A9A;
+  --font-serif:Georgia,'Times New Roman',serif;
+  --font-ui:'Segoe UI',Helvetica,Arial,sans-serif;
+  --font-mono:'Cascadia Code',Consolas,monospace;
+}
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --page-bg:#0D1117;
+  --page-ink:#C9D1D9;
+  --page-muted:#8B949E;
+  --page-line:#6E7681;
+  --card:#010409;
+  --accent:#3B82F6;
+  --pick-ink:#000000;
+  --tb-ink:#8B949E;
+  --tb-line:#6E7681;
+  --thumb:#2E2E2E;
+  --thumb-line:#777777;
+}
+html[data-print="on"]{color-scheme:light}
+[data-os="windows"]{
+  --font-ui:"Segoe UI Variable Text","Segoe UI",sans-serif;
+  --font-serif:Georgia,"Times New Roman",serif;
+  --font-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace;
+}
+[data-os="mac"]{
+  --font-ui:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;
+  --font-serif:"New York","Times New Roman",Times,serif;
+  --font-mono:"SF Mono",Menlo,Monaco,monospace;
+}
+[data-os="ios"]{
+  --font-ui:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;
+  --font-serif:"New York",Georgia,"Times New Roman",serif;
+  --font-mono:"SF Mono",Menlo,monospace;
+}
+[data-os="android"]{
+  --font-ui:Roboto,"Noto Sans",sans-serif;
+  --font-serif:"Noto Serif",serif;
+  --font-mono:"Roboto Mono","Droid Sans Mono","Noto Sans Mono",monospace;
+}
+[data-os="linux"]{
+  --font-ui:Ubuntu,"Cantarell","Noto Sans",sans-serif;
+  --font-serif:"Liberation Serif","Noto Serif",serif;
+  --font-mono:"Ubuntu Mono","DejaVu Sans Mono",monospace;
+}
+body{
+  margin:0;
+  background:var(--page-bg);
+  color:var(--page-ink);
+  font-family:var(--font-ui);
+  font-size:16px;
+  line-height:1.6;
+  transition:background .25s,color .25s;
+}
+[data-font="serif"] body{font-family:var(--font-serif)}
+h1,h2,h3,h4,h5,h6{
+  color:var(--page-ink);
+  font-family:inherit;
+  font-weight:400;
+  line-height:1.3;
+  margin:0 0 .5em;
+  transition:color .25s;
+}
+a{color:var(--accent);text-decoration:none;transition:color .2s}
+a:hover{text-decoration:underline}
+hr{border:none;border-top:1px solid var(--line);margin:2em 0}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  @page{margin:12mm}
+  :root{
+    color-scheme:light!important;
+    --page-bg:var(--print-bg)!important;
+    --page-ink:var(--print-ink)!important;
+    --page-muted:var(--print-muted)!important;
+    --page-line:var(--print-line)!important;
+    --card:var(--print-bg)!important;
+    --accent:var(--print-ink)!important;
+    --pick-ink:var(--print-bg)!important;
+    --tb-ink:var(--print-muted)!important;
+    --tb-line:var(--print-line)!important;
+  }
+  #tb{display:none}
+  .wrap{max-width:none;padding:0}
+  body{background:var(--page-bg)!important;color:var(--page-ink)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  header,table,pre,.callout,.kicker,.lede,.rule{break-inside:avoid}
+}
+*{box-sizing:border-box}
+.wrap{max-width:990px;margin:0 auto;padding:64px 32px 96px}
+header{border-top:6px solid var(--accent);padding-top:28px;margin-bottom:8px;transition:border-color .25s}
+.kicker{font-family:var(--font-ui);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--page-muted);margin:0 0 14px;transition:color .25s}
+h1{font-size:38px;font-weight:400;line-height:1.2;color:var(--page-ink);margin:0 0 12px;letter-spacing:-.01em;transition:color .25s}
+h1 em{font-style:italic;color:var(--accent);transition:color .25s}
+.lede{font-family:var(--font-serif);font-size:18px;line-height:1.5;color:var(--accent);margin:0 0 4px;font-style:italic;transition:color .25s}
+.lede small{display:block;font-style:normal;font-family:var(--font-ui);font-size:12.5px;color:var(--page-muted);margin-top:10px;transition:color .25s}
+h2{font-size:26px;font-weight:400;color:var(--page-ink);margin:56px 0 6px;letter-spacing:-.01em;transition:color .25s}
+h2 .num{font-family:var(--font-ui);font-size:14px;color:var(--accent);vertical-align:super;margin-right:8px;transition:color .25s}
+h2+.rule{height:1px;background:var(--page-line);margin:0 0 22px;transition:background .25s}
+h3{font-weight:600;color:var(--page-ink);font-size:19px;margin:26px 0 6px;transition:color .25s}
+p{margin:0 0 16px}
+em{font-family:var(--font-serif);color:var(--accent);transition:color .25s}
+strong{color:var(--accent);font-weight:600;transition:color .25s}
+table{width:100%;border-collapse:collapse;margin:20px 0 28px;background:var(--card);border:1px solid var(--page-line);transition:background .25s,border-color .25s}
+th,td{text-align:left;padding:10px 14px;vertical-align:top}
+th{font-family:var(--font-ui);font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--page-muted);background:var(--card);border-bottom:2px solid var(--accent);font-weight:600;transition:background .25s,color .25s,border-color .25s}
+td{font-size:14.5px;border-bottom:1px solid var(--page-line);color:var(--page-ink);transition:background .25s,border-color .25s,color .25s}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:var(--page-bg)}
+.callout{border-left:4px solid var(--accent);background:var(--card);padding:16px 20px;margin:22px 0;font-family:var(--font-serif);font-style:italic;color:var(--page-muted);transition:background .25s,border-color .25s,color .25s}
+.callout strong{font-family:var(--font-ui);font-style:normal}
+ul,ol{margin:0 0 18px;padding-left:26px}
+li{margin:0 0 8px}
+li::marker{color:var(--accent)}
+code{font-family:var(--font-mono);font-size:13px;background:transparent;color:var(--page-ink);border:1px solid var(--page-line);padding:1px 5px;border-radius:3px;transition:background .25s,color .25s,border-color .25s}
+pre{background:var(--card);color:var(--page-ink);border:1px solid var(--page-line);padding:16px 20px;border-radius:4px;overflow-x:auto;margin:18px 0 24px;font-family:var(--font-mono);font-size:13px;line-height:1.6;transition:background .25s,color .25s,border-color .25s}
+pre code{background:none;color:inherit;border:0;padding:0}
+@media(max-width:620px){.wrap{padding:40px 18px 72px}h1{font-size:28px}}
+</style>
+<script>(function(){
+  var ua=navigator.userAgent;
+  var os='unknown';
+  if(/Android/i.test(ua))os='android';
+  else if(/iPhone|iPad|iPod/i.test(ua))os='ios';
+  else if(/Windows/i.test(ua))os='windows';
+  else if(/Macintosh|Mac OS X/i.test(ua))os='mac';
+  else if(/Linux/i.test(ua))os='linux';
+  document.documentElement.dataset.os=os;
+})();</script>
+<script>(function(){
+  var p=/[?&]mode=(dark|light)\b/.exec(window.location.search||'');
+  var mq=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');
+  var root=document.documentElement;
+  root.setAttribute('data-theme',p?p[1]:(mq&&mq.matches?'dark':'light'));
+  root.setAttribute('data-font','sans-serif');
+  root.setAttribute('data-print','off');
+})();</script>
+</head>
+<body>
+<div id="tb" role="group" aria-label="Page controls">
+  <button class="tb-btn" id="print" type="button" aria-pressed="false" aria-label="Print friendly" title="Print friendly">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 9V3h12v6"/>
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+      <rect x="6" y="14" width="12" height="8" rx="1"/>
+    </svg>
+    <span>print friendly</span>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <button class="toggle on" id="mode" type="button" role="switch" aria-checked="true" aria-label="Light mode" title="Light or dark mode">
+    <span class="toggle-thumb" aria-hidden="true"></span>
+    <svg class="ico-l" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    <svg class="ico-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  </button>
+  <button class="toggle on" id="font" type="button" role="switch" aria-checked="true" aria-label="Sans-serif" title="Serif or sans-serif">
+    <span class="toggle-thumb" aria-hidden="true"></span>
+    <svg class="ico-l" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <line x1="3" y1="3" x2="11" y2="3"/>
+      <line x1="7" y1="3" x2="7" y2="11"/>
+      <line x1="3" y1="11" x2="11" y2="11"/>
+    </svg>
+    <svg class="ico-r" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <line x1="7" y1="3" x2="7" y2="11"/>
+    </svg>
+  </button>
+  <span class="s" aria-hidden="true"></span>
+  <div class="group">
+    <button class="tb-btn fold" id="dark-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="dark-menu" title="Dark theme">dark theme</button>
+    <div class="menu" id="dark-menu" role="menu" aria-label="Dark theme"></div>
+  </div>
+  <div class="group">
+    <button class="tb-btn fold" id="light-theme" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="light-menu" title="Light theme">light theme</button>
+    <div class="menu" id="light-menu" role="menu" aria-label="Light theme"></div>
+  </div>
+  <span class="s" aria-hidden="true"></span>
+  <div class="sl">
+    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10"/>
+      <polygon points="1,1 11,1 1,11" fill="currentColor"/>
+    </svg>
+    <input type="range" id="brightness" min="-3" max="3" step="1" value="0" aria-label="Brightness">
+    <span class="v" id="brightness-value" aria-hidden="true">0</span>
+  </div>
+  <div class="sl">
+    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+      <circle cx="6" cy="3" r="1.8"/>
+      <circle cx="3.5" cy="7.5" r="1.8"/>
+      <circle cx="8.5" cy="7.5" r="1.8"/>
+    </svg>
+    <input type="range" id="saturation" min="-3" max="3" step="1" value="0" aria-label="Saturation">
+    <span class="v" id="saturation-value" aria-hidden="true">0</span>
+  </div>
+</div>
+<div class="wrap">
+  <header>
+    <h1>7. Operations</h1>
+  </header>
+  <main>
+<h2><span class="num">1</span>7.1 Machine lifecycle and restarts</h2>
+<div class="rule"></div>
+<p>Podman is daemonless. Killing the <code>podman</code> CLI does nothing to running containers. Killing <code>podman system service</code> inside the machine also leaves them running; conmon and crun own the processes. Killing <code>wslrelay</code> or <code>gvproxy</code> only breaks port forwarding.</p>
+<p>Stopping the machine is different: <code>podman machine stop</code> shuts down the WSL2 VM and every container in it. Containers do not survive that.</p>
+<p>Auto-start after a machine start needs two things:</p>
+<ol>
+<li>The container must have a restart policy:</li>
+</ol>
+<pre><code class="language-powershell">podman inspect ntfy --format &#39;{{.HostConfig.RestartPolicy.Name}}&#39;</code></pre>
+<p>Expected: <code>unless-stopped</code>.</p>
+<ol>
+<li>The user-level <code>podman-restart.service</code> must be enabled inside the machine:</li>
+</ol>
+<pre><code class="language-powershell">podman machine ssh &#39;systemctl --user is-enabled podman-restart&#39;</code></pre>
+<p>Expected: <code>enabled</code>. If it is not:</p>
+<pre><code class="language-powershell">podman machine ssh &#39;sudo chown -R user:user /home/user/.config/systemd&#39;
+podman machine ssh &#39;systemctl --user enable --now podman-restart&#39;</code></pre>
+<p>The <code>chown</code> is needed because the machine image ships <code>~/.config/systemd</code> owned by root, which makes <code>systemctl --user enable</code> fail with <code>Access denied</code>.</p>
+<p>With both in place, a stop/start cycle restores the container:</p>
+<pre><code class="language-powershell">podman machine stop
+podman machine start
+podman ps --format &#39;{{.Names}} {{.Status}} {{.Ports}}&#39;</code></pre>
+<pre><code>ntfy Up 11 seconds (starting) 0.0.0.0:8810-&gt;8080/tcp</code></pre>
+<p>The machine itself is not started automatically by Podman. Start it manually with <code>podman machine start</code>, or let Podman Desktop start it at login.</p>
+<p>The private network client starts automatically and reconnects without a tray. A tray UI is optional and does not carry connectivity.</p>
+<p>Windows:</p>
+<pre><code class="language-powershell">podman stop ntfy
+podman start ntfy
+podman logs -f ntfy
+podman exec -it ntfy sh</code></pre>
+<p>Ubuntu native:</p>
+<pre><code class="language-bash">sudo systemctl restart ntfy
+journalctl -u ntfy -f</code></pre>
+<p>Ubuntu Podman:</p>
+<pre><code class="language-bash">podman restart ntfy
+podman logs -f ntfy
+podman exec -it ntfy sh</code></pre>
+<p>Rebuild after changing <code>Dockerfile</code> or a baked key in <code>server.yml</code>:</p>
+<pre><code class="language-powershell">.\tools\build-image.ps1
+ntfy-deploy apply
+ntfy-deploy status</code></pre>
+<p>The build fetches the pinned ntfy release and checks it against <code>NTFY_SHA256</code>, so it needs outbound HTTPS to GitHub. A version change updates <code>NTFY_VERSION</code> and <code>NTFY_SHA256</code> in the Dockerfile together; the script takes the tag from that pin.</p>
+<p>A mode or base URL change needs only <code>ntfy-deploy apply</code> with the new <code>ntfy-deploy.json</code>; it recreates the container and never rebuilds the image. A rebuild that keeps the tag is rolled out by the next <code>apply</code>, which compares the container&#39;s image ID with the local one and replaces the container when they differ. <code>ntfy-deploy mode</code> writes that config for you: with no argument it lists the paths it detects (Tailscale, Nord Meshnet, LAN) as a numbered menu, applies the choice, and prints the phone URL; <code>mode tailscale</code>, <code>mode nord</code>, and <code>mode lan</code> do the same without the menu, and <code>mode ... --dry-run</code> shows the document and plan first. See <a href="switching-networks-user-manual.html">switching networks manual</a> for the operator steps. Modes are <code>proxy</code>, <code>vpn</code>, and <code>lan</code>; the config sits in the relay root. On Windows the switch needs an elevated shell for the portproxy step. <code>ntfy-deploy apply --dry-run</code> prints the plan, <code>ntfy-deploy status</code> reports mode, container, health, and the active portproxy. Exit codes: 0 ok, 2 invalid config or unavailable path, 3 unhealthy, 4 platform command failed. The relay keeps <code>ntfy.server</code> on loopback in every mode, so a switch never restarts it.</p>
+<p>The image runs as uid 1000. A volume created by the earlier root image needs a one-time chown after the stop, see <a href="windows-podman.html#23-build-context">windows-podman.md</a>.</p>
+<p>Publish from the host with <code>curl.exe</code>:</p>
+<pre><code class="language-powershell">$token = (Get-Content &quot;$env:NTFY_RELAY_HOME\ntfy-token.txt&quot; -Raw).Trim()
+curl.exe -sS -H &quot;Authorization: Bearer $token&quot; -d &quot;message&quot; https://ntfy.example.ts.net/ntfy-proj</code></pre>
+<p>A rebuild-free config change goes through <code>ntfy-deploy apply</code> with the new <code>ntfy-deploy.json</code>; <code>ntfy-deploy mode</code> writes that file for the network step. A manual <code>podman run</code> is not a supported shortcut: the baked <code>server.yml</code> sets <code>attachment-cache-dir</code> and no <code>base-url</code>, so the container exits at startup unless <code>NTFY_BASE_URL</code> and <code>NTFY_BEHIND_PROXY</code> are passed.</p>
+<h2><span class="num">2</span>7.2 Auth and tokens</h2>
+<div class="rule"></div>
+<p><code>server.yml</code> sets:</p>
+<pre><code class="language-yaml">auth-file: /var/cache/ntfy/auth.db
+auth-default-access: deny-all</code></pre>
+<p><code>auth.db</code> lives on the <code>ntfy-cache</code> volume, so users and tokens survive container replacement. Anonymous read and write are denied. <code>/v1/health</code> stays anonymous for the container healthcheck and for uptime checks.</p>
+<p>An ACL row is one entry in <code>auth.db</code>: a user, a topic pattern, and a permission. <code>rw</code> allows publish and subscribe, <code>read</code> subscribes only, <code>write</code> publishes only, <code>deny</code> blocks both; <code>*</code> or <code>everyone</code> is the anonymous principal, left with nothing under <code>deny-all</code>.</p>
+<p>The bootstrap is <code>ntfy-auth</code>, which runs the container CLI through <code>podman exec</code>. Place <code>ntfy-auth.json</code> in the relay root, then:</p>
+<pre><code class="language-powershell">&amp; &quot;$env:NTFY_RELAY_HOME\ntfy-auth.exe&quot; apply
+&amp; &quot;$env:NTFY_RELAY_HOME\ntfy-auth.exe&quot; apply --dry-run
+&amp; &quot;$env:NTFY_RELAY_HOME\ntfy-auth.exe&quot; status</code></pre>
+<p><code>apply</code> creates the user, the <code>*</code> row, and the token file only where they are absent; a second run issues no write. A wiped token file is restored by one run. <code>status</code> reports the user, the access pair, and the token state without changing anything. Exit codes: 0 ok, 2 invalid config, 3 incomplete, 4 platform command failed. Spec 11 carries the config shape and the rules. The equivalent manual commands are <code>ntfy user add --role=user phone</code>, <code>ntfy access phone &quot;*&quot; rw</code>, and <code>ntfy token add --label=owner phone</code> inside the container; a non-interactive <code>user add</code> takes <code>NTFY_PASSWORD</code> from the environment. Tokens never expire unless <code>--expires</code> is set and carry the full rights of their user.</p>
+<p>A token can also authenticate with HTTP basic auth as an empty username plus the token as the password (<code>-u &quot;:tk_...&quot;</code>). A non-empty username with the token as the password returns <code>401</code>.</p>
+<p>Show state and change a password:</p>
+<pre><code class="language-powershell">podman exec ntfy ntfy user list
+podman exec ntfy ntfy access phone
+podman exec -e &quot;NTFY_PASSWORD=&lt;new&gt;&quot; ntfy ntfy user change-pass phone</code></pre>
+<p>The <code>phone</code> user is the only principal, with one row, <code>*</code> read-write, since 2026-11-18. Any topic works with no host step; a new project that the relay should serve needs its folder to sit under a root in <code>projectRoots</code>, not an ACL row. The token is the only credential: the app carries it as a custom <code>Authorization: Bearer</code> header, and the relay and the MCP read <code>%LOCALAPPDATA%\ntfy-relay\ntfy-token.txt</code>. No password is used and the web UI has no login. The <code>system</code> and <code>admin</code> users and the per-topic rows are removed; the token is not duplicated on disk.</p>
+<p>A user entry with the token in the password field returns <code>401</code>; the header is the only app credential.</p>
+<p>Verified 2026-11-18: <code>phone</code> publishes and polls a topic that was never granted with <code>200</code>, and anonymous publish returns <code>403</code>.</p>
+<p>Test enforcement over HTTPS:</p>
+<pre><code class="language-powershell">curl.exe -sS -o NUL -w &quot;anon publish=%{http_code}`n&quot; -d test https://ntfy.example.ts.net/ntfy-proj
+curl.exe -sS -o NUL -w &quot;token publish=%{http_code}`n&quot; -H &quot;Authorization: Bearer &lt;token&gt;&quot; -d test https://ntfy.example.ts.net/ntfy-proj</code></pre>
+<p>Expected: <code>403</code> and <code>200</code>.</p>
+<h3>Token rotation</h3>
+<p><code>tools\rotate-token.ps1</code> rotates one token in two phases. The old token stays valid until the revoke phase, so a failed paste or restart cannot lock anything out.</p>
+<pre><code class="language-powershell">powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\rotate-token.ps1 -User phone -RestartRelay
+# paste the TOKEN line into the app before revoking the old value
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\rotate-token.ps1 -User phone -RevokeOld tk_old5678</code></pre>
+<p>The issue phase creates the token, writes <code>ntfy-token.txt</code> atomically, and prints the prefix. With <code>-RestartRelay</code> it stops the relay, starts it with <code>ntfy-relay ensure</code>, and requires a <code>200</code> publish to <code>ntfy-probe</code> with the new token before it reports PASS. The token is printed on a <code>TOKEN</code> line; paste it into the app before revoking the old one. MCP processes hold the token they read at startup, so they pick up the new value only after an OpenCode reload. The revoke phase refuses a prefix shorter than 4 characters, a prefix matching no token or more than one, and the token in the consumer file. <code>-DryRun</code> prints the planned calls and the prefixes currently held.</p>
+<p>A temporary token carries an expiry and is the only kind that may. It serves a test device, a demo, or a one-off client, never the relay or the phone; the issue phase writes no consumer file and refuses <code>-RestartRelay</code>, <code>-RevokeOld</code>, or the live consumer path.</p>
+<pre><code class="language-powershell">powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\rotate-token.ps1 -User phone -Expires 7d -Label demo
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\rotate-token.ps1 -User phone -RevokeOld tk_temp12</code></pre>
+<p><code>-Expires</code> takes one unit, <code>Nm</code>, <code>Nh</code>, <code>Nd</code>, or <code>Nw</code>, with N from 1 to 9999. The issue phase reads <code>ntfy token list</code> back, fails when the server did not apply the expiry, and prints the token plus the computed UTC end. A plain issue asserts <code>never expires</code> the same way, so a live token cannot silently acquire an expiry. An expired token stays listed until it is removed and returns <code>401</code> like any other invalid token.</p>
+<p>A process that read the token at start keeps the old one until it restarts, and each MCP process caches the token it read. A reload of the shared OpenCode service picks up the new value; it is shared with other sessions and runs only with approval. Rotation is <code>phone</code> only.</p>
+<p>Rehearsed on <code>system</code> before that user was removed in 0.14.0 (2026-11-18): the new token was written, the relay restarted with it, the probe publish returned <code>200</code>, the revoked token returned <code>401</code>, and <code>send_file</code> delivered after <code>opencode reload</code>. Rehearsed on <code>phone</code>: the app carries the token as an <code>Authorization: Bearer</code> custom header with no user entry, <code>ntfy token list</code> showed a fresh access from the phone, and the revoked token returned <code>401</code>.</p>
+<h2><span class="num">3</span>7.3 Startup and repair</h2>
+<div class="rule"></div>
+<p><code>ntfy-deploy install</code> is the startup and repair step. It places the four binaries, sets <code>NTFY_RELAY_HOME</code>, writes <code>ntfy-relay.json</code> and <code>ntfy-auth.json</code> when they are missing, and registers two scheduled tasks from generated XML: <code>ntfy-relay-watchdog</code> every five minutes runs <code>ntfy-relay.exe ensure</code>, and <code>ntfy-relay-startup</code> at logon runs the generated <code>ntfy-relay-startup.vbs</code> through <code>wscript.exe</code>, which runs <code>podman machine start</code> and <code>ntfy-relay ensure</code> in order with hidden consoles. The container returns through <code>unless-stopped</code> and <code>podman-restart.service</code>; <code>apply</code> stays a deploy step. It deletes the old logon shortcut and the installed script folder. A re-run is the upgrade and repair step; it keeps the token, state, log, and any existing config. Exit codes: 0 ok, 2 refused or a file failure, 4 a platform command failed.</p>
+<p>The read-only check is <code>ntfy-relay status</code>: config, lock pid and liveness, state counts, the last log line, then the eight startup rows, each PASS, FAIL, or SKIP. It starts and repairs nothing and exits 0, so a FAIL line names the fault. To act on it, re-run <code>ntfy-deploy install</code>, start the missing layer by hand, or read <code>logs\relay-ensure.log</code>.</p>
+<p>Both tasks use the user&#39;s interactive token, least privilege, <code>IgnoreNew</code>, <code>StartWhenAvailable</code>, the battery defaults, and a ten minute limit. The watchdog names the windowless relay binary directly. The logon task names <code>wscript.exe</code> and the generated script, which runs <code>podman machine start</code> and <code>ntfy-relay ensure</code> with style 0; a direct action that names a console program flashes a window. The relay start is <code>ntfy-relay ensure</code>: it checks the lock owner and starts the daemon detached, with output under <code>logs\</code>. The watchdog covers a relay death between logons; the logon task covers a reboot.</p>
+<p>The PowerShell launcher and the startup check were removed in 0.6.0; since 0.6.1 the logon chain runs through the generated VBS. <code>docs\startup.md</code> carries the manual start order and the per-layer checks.</p>
+<h2><span class="num">4</span>7.4 OpenCode notifications</h2>
+<div class="rule"></div>
+<p>Outbound is the Rust daemon since 2026-11-11 (0.5.0). <code>rust\crates\outbound</code> subscribes to <code>/api/event</code> and publishes session idle, execution error, permission prompts, <code>question</code> tool prompts, and assistant turn text to the project folder name as the ntfy topic, for example <code>ntfy-proj</code>. It runs in the relay process, not in the OpenCode server. Every message carries the <code>oc-out</code> tag, which the inbound relay ignores. The MCP tool <code>ntfy_send_file</code> sends one existing file on request.</p>
+<p>The <code>/api/event</code> stream has no replay cursor. It closes and reconnects after 90 seconds with no bytes, as does the ntfy subscription. Since 0.7.4 the daemon backfills completed assistant text: after a stream reconnect or a start it reads <code>GET /api/session/{id}/message</code> (<code>type=assistant</code>, newest first, cursor pages) and publishes text it has not delivered. Reconnect scope is the open turns, the session that published last, and the sessions the state file remembers; a cold start reads the newest 20 sessions per project root inside the 15-minute window, capped at 200 messages. One seen journal at <code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay-seen.jsonl</code> holds event ids and assistant message ids for 15 minutes (8192 ids at most). A message id is marked before its push and committed after it, so a live part and a backfilled message publish once and a restart inside the window republishes nothing. The journal is an optimization: if it cannot be read or written, the daemon logs once and keeps the in-memory window. Permission asks and question forms have no history endpoint and are not recovered. There is no event forwarder and no second feed; <code>/api/event</code> is the only source.</p>
+<p>Gate 2026-11-12 (0.7.4): the forwarder was moved out and <code>opencode reload</code> ran, then the relay was stopped for 41 s while a gate turn completed. The start logged <code>backfill cold=true sessions=20 messages=111 published=1</code> and the phone received <code>GATE-A</code>, <code>GATE-B</code>, <code>GATE-C</code> once. A second start of the same binary logged <code>published=0</code>. The forwarder, the loopback ingest, <code>ntfy-relay-forward.json</code>, and its bearer token were deleted; <code>.opencode\</code> is gone from the tree.</p>
+<p>Configuration lives outside the repository, in the relay root <code>%LOCALAPPDATA%\ntfy-relay\</code>:</p>
+<ul>
+<li><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay.json</code>: <code>outbound.enabled: true</code> plus the event switches, subagent suppression, permission delay, turn text, and auto-attach values.</li>
+<li><code>~/.config/opencode/opencode.jsonc</code>: <code>mcp.servers.ntfy</code> (<code>type: local</code>, <code>command</code> = the relay binary plus <code>mcp</code>, <code>cwd: &quot;.&quot;</code>, <code>codemode: false</code>) and the permission allow for <code>ntfy_send_file</code>.</li>
+<li><code>%LOCALAPPDATA%\ntfy-relay\ntfy-token.txt</code>: the only token, 32 characters, read at daemon start and by each MCP process; the app keeps its copy. When the file is absent the daemon waits for it with one WARN and attaches it within a second, so a fresh root, <code>ntfy-deploy install</code>, and a logon start do not depend on the auth step having run first.</li>
+</ul>
+<p>Verified 2026-11-11: the daemon logged <code>event stream subscribed</code>; one turn produced one <code>oc-out</code> text push; a long turn produced a 11361-byte <code>turn-*.md</code> attachment; a three-file turn produced three <code>oc-attach</code> pushes; a permission ask produced one <code>lock,oc-out</code> push 15 s after the ask; a question form produced one <code>question,oc-out</code> push; a child session produced none. An agent call to <code>ntfy_send_file</code> returned the plugin text and one <code>oc-out,oc-manual</code> push. Gap gate: see the 0.7.4 result above.</p>
+<p>The publisher plugin <code>opencode-ntfy-with-questions@0.2.1</code> is removed; the patched copy was deleted in 0.7.0 and survives only in git history. The behavior text below describes the contract the Rust port implements.</p>
+<p>Payload: project folder name, session id, error type and message, permission action and patterns, and the full question text plus options. Subagent idle and error events are suppressed. Permission notifications wait 15 seconds and are cancelled when the request is answered in time. A published permission ask is written to the ask registry with its session id, request id, title, and push time, plus a short code derived from the request id. The push ends with <code>Reply /allow &lt;code&gt;, /always &lt;code&gt;, or /deny &lt;code&gt;; with one ask, /allow is enough.</code> <code>/allow</code>, <code>/always</code>, and <code>/deny</code> resolve that record; the routing target is never consulted for a permission reply.</p>
+<p>A published question form is written to the form registry with its session id, form id, topic, title, and visible fields before the push. The push carries the question and its options and ends with <code>Reply with /answer and your answer in your own words.</code> The relay does not interpret the answer: <code>/answer</code> followed by any text cancels the newest pushed form with that text as the reason through <code>DELETE /api/session/{session}/form/{form}?message=&lt;reason&gt;</code> (<code>session.form.cancel</code>), so the desktop form closes at once and the assistant reads the free text. A 404 or 409 removes the record and answers <code>that question in &lt;title&gt; was already answered</code>; any other 4xx keeps the record and pushes the server reason. The registry is <code>ntfy-relay-forms.json</code> in the relay root, holds 64 forms, and prunes quarantined copies after 72 hours.</p>
+<p>Turn text: <code>session.text.ended</code> parts are buffered per session, sorted by event time then ordinal, and published once at the terminal event. The terminal is debounced for 3 seconds so <code>session.execution.succeeded</code> plus <code>session.status idle</code> cannot produce two pushes. Text up to 3400 UTF-8 bytes is inline; larger text becomes a <code>turn-&lt;session&gt;-&lt;unix&gt;.md</code> attachment with a 500-character summary. A buffer expires after 10 minutes without a terminal event, and the tracker holds at most 256 turn states; the oldest buffered text is published as a partial and every drop is logged. <code>session.execution.failed</code> publishes the error and any partial text; <code>session.execution.interrupted</code> publishes partial text with an <code>(interrupted)</code> marker. The turn text push title is the folder name only; idle, error, permission, question, attachment, and relay pushes keep their event suffix.</p>
+<p>Link safety: the Android client linkifies any token that looks like a domain, so <code>readme.md</code> became a link to the <code>.md</code> country domain and opened a scam site. Extensions must never be read as links. Outgoing turn text, file titles, file messages, and relay acks therefore pass through the link filter: <code>core::link_safe</code>. The TLD table is generated from <code>tools\link-safety\tlds.txt</code>, and <code>npm run tlds</code> fails when the Rust table drifts. A token whose last label is one of the 68 entries in <code>core::link_safe::ALLOWED_TLDS</code> stays as written: ae ai app at au be bg biz blog br ca ch cloud cn co com cz de dev dk edu ee es eu fi fr gov gr hk hr hu ie il in info int io is it jp kr lt lu lv mil mx net nl no nz online org pl pt ro se sg shop si site sk store tech tw ua uk us za. Every other token that ends in a real IANA top-level domain, or in any two-letter suffix, has its last dot replaced with <code>[.]</code>, so <code>readme.md</code> is published as <code>readme[.]md</code>. Scheme URLs and dotted names that are not domains, such as <code>package.json</code> or <code>main.mjs</code>, pass through unchanged. The long-text attachment keeps the raw turn text up to the 2 MB per-turn cap; later parts are dropped and logged once.</p>
+<p>Files: new media and document files created during a run are auto-attached at the terminal. The allowlist is png jpg jpeg webp gif bmp tiff svg avif heic mp3 wav ogg flac m4a aac opus mp4 webm mov mkv pdf txt md csv docx xlsx pptx epub zip 7z tar gz. <code>.git</code>, <code>node_modules</code>, <code>.cache</code>, <code>.ntfy-inbox</code>, <code>.opencode</code>, <code>logs</code>, <code>dist</code>, <code>build</code>, <code>bin</code>, <code>target</code>, <code>venv</code>, <code>.venv</code>, <code>__pycache__</code>, <code>temp</code>, <code>resources</code>, and <code>.scratch</code> are excluded. Caps default to 8 files, 10 MB each, and 30 MB per turn; the accepted range is 1 to 16 files, 1 to 20 MB per file, and 1 to 40 MB per turn. Cap skips produce one summary line at min priority. Each file is one push tagged <code>oc-out,oc-attach</code> with title <code>&lt;project&gt; - &lt;filename&gt;</code> and message <code>&lt;bytes&gt; bytes</code>. New source files and modified existing files are not attached. OpenCode&#39;s native <code>filesystem.changed</code> event only fires for files watched through the API, and the server&#39;s recursive watcher does not report nested directories reliably, so the daemon scans the project at the terminal for files whose creation time falls inside the run; a root-level watcher is a real-time supplement. The scan costs one project walk per turn and is capped at 20000 entries. The MCP tool <code>ntfy_send_file</code> sends one existing file on explicit request: <code>path</code> plus optional <code>message</code>, project-confined, 15 MB limit, tags <code>oc-out,oc-manual</code>, never throws.</p>
+<p>Verified 2026-11-08: the idle probe arrived after a restart; an induced <code>session.execution.failed</code> push arrived on the phone. That probe exposed duplicate idle and error pushes from two loaded locations. The first gate read the wrong field and failed open; it now reads <code>location.directory</code>, covers idle and error, and passes offline assertions including the native session shape. Live re-check after the second restart: one <code>session error</code> push at 19:38:52 and one <code>session idle</code> push at 19:39:18, with both locations loaded.</p>
+<p>Phase 2 verified 2026-11-08 with the real handler and ntfy client against the live server: one inline turn push and one long turn push arrived on <code>ntfy-proj</code> with <code>oc-out</code>; the <code>.md</code> attachment content matched the source exactly. Offline assertions cover topic derivation, assembly order, debounce, subagent suppression, the 3400-byte threshold, the attachment name, the client topic override, and the phone config sections.</p>
+<p>Folder topic re-verified 2026-11-08 after the prefix removal: one turn push, title <code>ntfy-proj - Folder topic verify</code>, body <code>folder-topic-ok</code>, tag <code>oc-out</code>, no duplicate.</p>
+<p>Long text re-verified 2026-11-08 on the folder topic: one <code>oc-out</code> push carried a <code>turn-ses_e42c-1794176892.md</code> attachment of 5340 bytes. The attachment size field matched the download, the inline summary was the first 500 characters, the begin marker was present, and the end marker was the last line. No duplicate push appeared.</p>
+<p>Two locations loaded re-verified 2026-11-08: a second location with its own active plugin instance received the same server-global terminal frames. One turn in <code>ntfy-proj</code> produced exactly one <code>oc-out</code> push there and zero messages on the second topic (<code>ntfy-probe</code>). The gate reads <code>SessionInfo.location.directory</code> and fails open only when the session lookup fails.</p>
+<p><code>ntfy_send_file</code> verified live 2026-11-09: a 70-byte PNG produced one <code>oc-out,oc-manual</code> push on <code>ntfy-proj</code>, title <code>ntfy-proj - phase3-probe.png</code>, message <code>phase3 manual</code>, attachment type <code>image/png</code> and size 70.</p>
+<p>Auto-attach verified live 2026-11-09: a nested PNG and MP3 created during a turn produced exactly two <code>oc-attach</code> pushes (70 and 64 bytes, priority low) with the expected titles; a new <code>.ts</code> file and a previously existing modified file produced none. The native event feed and the server-side recursive watcher do not cover nested directories, so the terminal scan is the source of truth; the offline suite covers the scan, allowlist, excluded directories, caps, and the tool contract.</p>
+<p>Rust outbound verified live 2026-11-11 on <code>ntfy-proj</code>: turn text, a long turn (<code>turn-ses_e343-1794421292.md</code>, 11361 bytes), a three-file auto-attach set, a <code>net user</code> permission ask pushed 15 s later, a question form, and a child session with no push. The MCP tool call returned <code>Sent gate-set-1.md (3 bytes) to the phone.</code> with <code>oc-out,oc-manual</code>.</p>
+<p>The ntfy version is pinned at 2.37.2; re-audit the server and the Android client before upgrading.</p>
+<h2><span class="num">5</span>7.5 Phone continuation relay</h2>
+<div class="rule"></div>
+<p>Status: the Rust daemon is the live path in both directions since 0.5.0. Inbound text and attachments, outbound turn text, auto-attach, <code>ntfy_send_file</code>, the phone permission commands, and question forms are verified live. Round 2 hardening is implemented: atomic lock, compact state with quarantine, a separate replay cursor, publish timeouts, HTTPS-only attachments, case-insensitive commands, and a 150-topic subscription cap. Command and control is table-driven with a capability gate and a 60 s confirm hold. The Rust port in <code>rust\crates\inbound</code>, <code>rust\crates\outbound</code>, and <code>rust\crates\app</code> is the only implementation; the Node relay was deleted in 0.8.0. Section 7.9 covers the build, smoke, and cutover.</p>
+<p>The topic is the project canonical path&#39;s folder name, unchanged: no prefix and no slug. Names outside <code>[-_A-Za-z0-9]{1,64}</code> are skipped with a warning. The daemon holds one SSE subscription for all project topics, ignores messages tagged <code>oc-out</code>, and routes accepted text into an existing session; free text never creates one. A JSON command table at <code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay-control.json</code> supplies the control verbs (<code>new</code>, <code>sessions</code>, <code>to</code>, <code>auto</code>, plus <code>help</code> and <code>status</code>), with built-in defaults when the file is missing; <code>/steer</code>, <code>/allow</code>, <code>/always</code>, and <code>/deny</code> stay native. Commands are matched case-insensitively; any other text starting with <code>/</code>, such as <code>/usr/bin/env is missing</code>, is delivered as a prompt. The subscription covers at most 150 topics; above that it keeps the 150 with the newest activity and logs the rest. Inbound attachments are saved to <code>.ntfy-inbox</code> under the project; the relay prunes that directory at startup and every 6 hours, deleting only <code>&lt;epoch&gt;-&lt;name&gt;</code> regular files older than 7 days. The Rust inbound path adds a 200 MB per-project byte budget: the oldest matching files are pruned first, and a message that still does not fit gets one error push and no prompt. It limits prompts to 30 per minute per topic with a burst of 10; <code>/steer</code> counts, and a burst above 10 gets one <code>rate limited</code> error push and no prompt. It also requires attachment URLs to use the <code>ntfy.server</code> host on every hop. Acks and error pushes pass through the same link filter, so a session title or a <code>/to</code> argument that contains a file name cannot become a link.</p>
+<p>Routing needs no command. Every text resolves against a live snapshot of the project&#39;s sessions. A one-shot target set by <code>/new</code> or <code>/to</code> wins, then the session that accepted the previous prompt inside 10 minutes, then the session with the newest activity where activity is the later of <code>time.viewed</code> (desktop use) and <code>time.updated</code> (any message). A running session breaks an activity tie, then the previous target, then the id. Child sessions are never targets. A stored hint outside its window is ignored, so no decision outlives the evidence and a stale target cannot capture traffic. <code>/sessions</code> and <code>/to</code> list numbers and titles; no command takes a session id. Permissions resolve the ask that was pushed, never the target. Free text never creates a session: start one on the host, or send <code>/new</code> to create one and send the next message to it.</p>
+<p>Local configuration, not committed, in the relay root <code>%LOCALAPPDATA%\ntfy-relay\</code>:</p>
+<ul>
+<li><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay.json</code>: server, token file, <code>projectRoots</code>, OpenCode exe, <code>adapter</code> block (<code>agent</code> and <code>model</code> for created sessions), state and log paths. <code>projectRoots</code> holds any number of roots since 0.3.0; an empty list serves no topics. Each discovered project folder name is a topic, and discovery keeps the newest 150 topics. Two roots whose folders share a name collide on one topic: the more recently active project wins and the relay logs a duplicate-topic warning.</li>
+<li><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay-control.json</code> (optional): command table. Built-in <code>new</code>, <code>sessions</code>, <code>to</code>, <code>auto</code>, <code>help</code>, and <code>status</code> when absent; invalid content stops the relay at startup.</li>
+<li><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay-state.json</code>: routing hints (<code>last</code>, <code>pending</code>) and processed message ids, compact JSON. A corrupt file is renamed to <code>.corrupt-&lt;unix&gt;</code>, backups older than 7 days are removed at startup, and the relay starts empty.</li>
+<li><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay-asks.json</code>: published permission asks, compact JSON, mode 0600. Each record holds the code from the push, the request id, the session id, the session title, and the push time. Written before the push, removed on a reply or a desktop answer, capped at 512 records and evicted oldest first. A corrupt or unknown-version file is quarantined to <code>.corrupt-&lt;unix&gt;</code> and the relay starts with an empty registry; startup never blocks on it.</li>
+<li><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay.log</code>: log, rotates at 5 MB, default level <code>info</code>, prompt text never written. The heartbeat line carries topic count, last event age, and queue depth.</li>
+<li><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay-state.lock</code>: single-instance lock, created atomically with <code>open(&#39;wx&#39;)</code>.</li>
+</ul>
+<p>Round 2 behavior: an unreadable lock fails closed instead of being deleted; the replay cursor advances only after a message is handled, so a queue drop never skips messages; publish calls abort after 10 seconds; attachment URLs must be HTTPS with at most 3 HTTPS redirects; acks are capped at 3400 bytes; at shutdown the relay aborts the SSE stream, waits up to 10 seconds for the drain, logs the dropped count, then releases the lock.</p>
+<p>Run it detached through <code>ensure</code>. The command is idempotent: with a live lock owner it prints <code>running pid=&lt;n&gt;</code> and exits without spawning a second process. Otherwise it starts the binary hidden, waits up to 60 seconds for the lock, and reports the new pid. The root is <code>NTFY_RELAY_HOME</code>, else the binary&#39;s directory; the state, log, asks, and journal paths come from the relay config.</p>
+<pre><code class="language-powershell">&amp; &quot;$env:NTFY_RELAY_HOME\ntfy-relay.exe&quot; ensure
+Get-Content &quot;$env:NTFY_RELAY_HOME\logs\relay-ensure.log&quot; -Tail 3</code></pre>
+<p>Run it in the foreground for debugging:</p>
+<pre><code class="language-powershell">&amp; &quot;$env:NTFY_RELAY_HOME\ntfy-relay.exe&quot; run</code></pre>
+<p>The Rust suite is the acceptance gate: <code>cargo test --workspace</code> under <code>rust\</code>.</p>
+<p>Verified 2026-11-08 on the Node relay, deleted in 0.8.0: 40 tests passed on Windows and WSL. A text message published to <code>ntfy-proj</code> with the phone token produced exactly one prompt in the existing running session, no new session, and one <code>oc-out</code> ack. A relay restart filtered the replayed message as a duplicate. A PNG attachment was saved to <code>.ntfy-inbox</code> and prompted successfully; an absolute Windows path in <code>files[].uri</code> was rejected with HTTP 400, while <code>file:///C:/...</code> was accepted, so the relay always sends <code>file://</code> URIs. The suite reached 94 cases on 2026-11-10, in the Node era, before the Rust suites replaced it.</p>
+<p>Verified 2026-11-09, before 0.11.0, against real pending permission requests in a scratch session: <code>/to</code> pinned the session and wrote the state pin; <code>/allow</code> approved once and the <code>del</code> command ran; <code>/always</code> approved the session-wide pattern and the command ran; <code>/deny</code> rejected the request and the tool returned a declined error. Each command produced exactly one ack on <code>ntfy-proj</code>. <code>/always</code> writes a saved approval row to the local permission table for the project, so the live test rows were removed afterwards.</p>
+<p>Verified 2026-11-09 for phase 4: with the relay already running, the wrapper reported <code>PASS relay-running</code> and the node process count stayed at one. After a forced stop, the wrapper started a new process, the lock pid matched, the log reached <code>subscribed</code>, and the startup check returned all PASS including <code>relay-process</code> and <code>relay-heartbeat</code>. The first real reboot exposed a hang: the wrapper used <code>Start-Process</code>, node inherited the check&#39;s stdout pipe, and the check stopped after <code>PASS podman-binary</code> with the Podman machine still down. The wrapper then spawned through WMI and the check invoked it with <code>Start-Process -Wait</code> (commit <code>e3f2b44</code>). Cold start re-verified with the relay and the Podman machine stopped: all PASS, container healthy, HTTPS 200, relay <code>subscribed</code>, one node process. The phone then sent <code>reboot-ok</code>: the relay accepted it, published a <code>queued</code> ack, prompted the newest session, and the turn push <code>reboot-ok</code> arrived with tag <code>oc-out</code>. The wrapper and the check were removed in 0.6.0.</p>
+<p>Modern standby verified 2026-11-09: the host entered S0 Low Power Idle at 12:36:18 and resumed at 12:37:27, 69 seconds later, exit reason keyboard, no login. Connectivity in standby is disconnected by policy, yet the frozen SSE stream resumed without a reconnect line; the 45-second keepalive ticks show a 113-second gap. The phone message <code>wake-ok</code> was accepted 27 seconds after the resume and routed to the same session. While the host is in standby the network is off, so a phone publish fails and nothing is stored; resend after wake. A message accepted just before the standby transition is recovered by the relay replay window.</p>
+<h2><span class="num">6</span>7.6 Message flow and inbound surface</h2>
+<div class="rule"></div>
+<p>Both directions are outbound from the host. Nothing on the host accepts notification traffic, and there is no inbound firewall rule or port forward for it.</p>
+<p>Host to phone: the Rust outbound task POSTs to <code>https://ntfy.example.ts.net/&lt;topic&gt;</code> with the owner token. The server stores the message and pushes it to the phone over the phone&#39;s own outbound WebSocket connection.</p>
+<p>Phone to host: the phone POSTs to the same server over its own outbound HTTPS. The relay holds one long-lived HTTPS GET built from the topic set (<code>sse.rs</code> in Rust; <code>buildSseUrl</code> was the deleted Node relay&#39;s builder): <code>https://ntfy.example.ts.net/&lt;topics&gt;/sse?since=&lt;last seen minus 60&gt;</code>, with comma-separated topics and <code>since=now minus replay window</code> on the first connection. It reads the streaming response, and the server writes each new message down that already-open stream. Keepalive frames hold the connection open; a dropped stream reconnects with 1 to 60 second backoff, resets the backoff only after a connection stayed up 60 seconds, times out response headers after 30 seconds, closes after 90 seconds with no bytes, and replays from <code>since</code>.</p>
+<p>Consequences:</p>
+<ul>
+<li>The server never connects to the host. No inbound rule, no port forward, no LAN exposure, and the host can sit behind NAT.</li>
+<li>The only host listeners are the TLS terminator on 443 of the private interface and the loopback portproxy to <code>[::1]:8810</code>. Neither accepts ntfy traffic on the home LAN.</li>
+<li><code>192.168.2.9</code> answers nothing on the home LAN: the Wi-Fi profile is Public, inbound ICMP echo is disabled, and no LAN-facing TCP port is open. A LAN link or status probe therefore reports the host offline even while ntfy works, so ignore that indicator in third-party apps such as a WoL sender.</li>
+<li>Wake-on-LAN is the one path that is not client-initiated. The magic packet is L2 and must reach the NIC from the home LAN; the private network is L3, so the phone cannot deliver it over the VPN.</li>
+</ul>
+<h2><span class="num">7</span>7.7 Sleep and wake</h2>
+<div class="rule"></div>
+<p>Long sleep verified 2026-11-09: the host entered S0 Low Power Idle at 12:55:15 and resumed at 13:22:06, 26 min 51 s later, connectivity disconnected by policy, login required. The relay process and the OpenCode session survived; the frozen SSE resumed without a reconnect line, the overdue heartbeat fired at resume, and the phone message <code>Waketest</code> was accepted 34 seconds after resume and routed to the same session. The 5-minute heartbeat and the 10-minute turn buffer expired during sleep; the 60-minute replay window and the 72-hour cache did not. A 69-second cycle behaved the same. If a longer sleep drops the socket instead, the relay retries with backoff up to 60 seconds and logs <code>subscribed</code>, and a message accepted just before sleep is recovered by the replay window. While the host sleeps the network is off, so a phone publish fails and is not stored; resend after wake.</p>
+<p>Remote wake stays a future goal: local input and wake timers exist, and the Intel Wi-Fi 7 NIC is wake-armed for a LAN magic packet, but WoL is L2 and the private network is L3, so the phone cannot wake the host. No inbound rule is allowed.</p>
+<h2><span class="num">8</span>7.8 Remote wake: parked</h2>
+<div class="rule"></div>
+<p>Wake-on-LAN over Wi-Fi does not wake this laptop. Tested 2026-11-09 with BIOS 330 and Intel Wi-Fi 7 BE201 driver 24.50.0.4: the sender&#39;s 102-byte magic packet was captured at the NIC, the adapter stayed associated through modern standby with no WLAN-AutoConfig disconnect, and Windows reports the NIC as wake_armed with magic packet and pattern match enabled. Every standby session still exited on local input, and a TCP SYN pattern test changed nothing. Hibernate was not testable because the virtualization driver behind the Podman/WSL VM blocks the S4 transition, and this model&#39;s BIOS exposes no wake control. Enabling networking in standby was required for the test; an OEM power policy blocks it by default.</p>
+<p>Conclusion: remote wake is not available on this hardware under modern standby. Revisit on the Linux hosts with desktop motherboards, where Ethernet WoL from S4/S5 is the reliable path; test Wi-Fi wake only where the card and access point both support it. The phone side needs no change: the verified sender already emits a standard magic packet, and its status probe cannot work here because the host exposes nothing on the LAN (<a href="#76-message-flow-and-inbound-surface">section 7.6</a>).</p>
+<h2><span class="num">9</span>7.9 Rust daemon: build, smoke, cutover</h2>
+<div class="rule"></div>
+<p>The live path is the Rust daemon since 2026-11-11 (0.5.0; supervision in 0.6.0; reconnect backfill in 0.7.4). <code>rust\crates\app</code> builds <code>ntfy-relay run|mcp|ensure|status</code> with the same filter, routing, control, permission, attachment, and retention behavior, plus the outbound event subscription, the task supervisor, and the MCP stdio server. The Windows release binary is cross-built at <code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay.exe</code> and started hidden through <code>ntfy-relay ensure</code>. Service discovery reads <code>~/.local/state/opencode/service.json</code> and uses its URL, pid, and password; <code>opencode.baseUrl</code> remains an optional override. A missing or dead registration starts the relay degraded on a placeholder client, and the reload picks the registration up when OpenCode appears. After a transport error or HTTP 401 the client re-reads the registration and swaps only when the URL or password changed.</p>
+<p>Build and test in WSL2 Ubuntu with a WSL-native target directory:</p>
+<pre><code class="language-bash">cd /path/to/ntfy-proj/rust
+export CARGO_TARGET_DIR=$HOME/target/ntfy-proj
+~/.cargo/bin/cargo test --workspace
+~/.cargo/bin/cargo build -p ntfy-relay-app</code></pre>
+<p>That binary is a Linux ELF. A Windows cutover needs a Windows build: <code>cargo build -p ntfy-relay-app</code> produces <code>rust\target\debug\ntfy-relay.exe</code>. A release build for all four tools is <code>cargo build -p ntfy-relay-app -p ntfy-relay-deploy -p ntfy-relay-auth -p ntfy-relay-admin --release --target x86_64-pc-windows-gnu</code>. CI compiles and tests the workspace on <code>windows-latest</code>.</p>
+<p>The daemon resolves its config in this order: <code>NTFY_RELAY_CONFIG</code>, else <code>&lt;install root&gt;/ntfy-relay.json</code>, where the root is <code>NTFY_RELAY_HOME</code> or the directory that holds the running binary. It discovers the shared service from <code>~/.local/state/opencode/service.json</code>; <code>opencode.baseUrl</code> overrides the discovered URL and then uses the password from <code>~/.config/opencode/service.json</code>. It also needs the token file, and <code>adapter.agent</code> plus <code>adapter.model</code> for <code>/new</code>. <code>opencode.command</code> is accepted and ignored: the Rust client talks HTTP.</p>
+<p>Smoke with a temporary state file and log, so live state is untouched. Copy the live config into <code>temp\rust-smoke\</code>, set absolute <code>stateFile</code> and <code>logging.file</code> under that folder, set <code>logging.echo</code> to true, and set <code>NTFY_RELAY_CONFIG</code> to the copy. No <code>opencode.baseUrl</code> is needed while the shared service registration is current. Set <code>ntfy.tokenFile</code> absolute as well when the home directory differs from the live one: <code>~</code> is expanded before the daemon reads the token.</p>
+<p>Run the build for the target OS. The WSL binary is a Linux process: its <code>~</code> is the Linux home, and <code>127.0.0.1</code> points into the WSL network namespace, not the Windows host unless WSL networking is mirrored. Use a native Windows build for a smoke against the Windows server, or a <code>baseUrl</code> that the Linux side can reach. The shared registration is read from <code>&lt;home&gt;/.local/state/opencode/service.json</code>, so a WSL run needs <code>HOME</code> pointed at the mounted Windows profile or a copy of that file in the Linux home. The explicit override password comes from <code>&lt;home&gt;/.config/opencode/service.json</code>.</p>
+<p>Stop the relay before the smoke: both processes read the same lock path when they share a state file, and the second process exits on a live lock. There is no stop script; a hard stop leaves a stale lock, and the next start replaces a readable dead pid once. Never delete a lock held by a live pid.</p>
+<p>Smoke checks:</p>
+<ul>
+<li>the log lists <code>topics now</code> with the project and then <code>subscribed</code>;</li>
+<li><code>/help</code> returns one ack;</li>
+<li>one text prompt reaches a session;</li>
+<li>one attachment lands in <code>.ntfy-inbox</code>;</li>
+<li>on Linux, Ctrl+C finishes the current message, drops queued messages with one log line, joins the SSE task for at most 5 s, and removes the lock; the Windows build is windowless and is stopped by pid, which leaves the lock for the next start to replace;</li>
+<li><code>ntfy-relay status</code> prints the config, lock pid and liveness, state counts, and the last log line, then the read-only platform rows of the startup check (podman, container, Tailscale Serve, portproxy, legacy files, health). It starts nothing, a FAIL line does not change the exit code, and it does not prove the subscription.</li>
+</ul>
+<p>Cutover (done 2026-11-11): <code>ntfy-relay.exe</code> moved to the install root, then <code>bin\ntfy-relay\</code>; it now lives at <code>%LOCALAPPDATA%\ntfy-relay\</code>, and <code>ensure</code> starts it. The outbound cutover followed on the same day: set <code>outbound.enabled: true</code>, remove plugin 0.2.1 from <code>opencode.jsonc</code>, register <code>mcp.servers.ntfy</code> with <code>codemode: false</code>, and restart the relay through <code>ensure</code>. Rollback: run a previous <code>ntfy-relay.exe</code> build from the same folder. The Node relay was deleted in 0.8.0, so there is no implementation switch; <code>relay.implementation</code> in an old config is ignored. Do not restore the deleted publisher plugin. Do not run two relays against the same state file: they would double-handle the same phone message. Do not run both publishers: every push would double.</p>
+<p>Check the routing hint after a cutover or a long gap: <code>status</code> prints <code>targets</code> and <code>pending</code> counts, and <code>/status</code> on the phone prints the target. There is no pin to clear. A one-shot target from <code>/new</code> or <code>/to</code> expires after 10 minutes or one message; <code>/auto</code> drops it early. Routing then follows the newest desktop activity; type one message in the intended chat, because merely opening a chat does not update <code>time.viewed</code>.</p>
+  </main>
+</div>
+<script>const ThemeEngine=(function(){
+
+  function hexToRgb(hex){
+    if(typeof hex!=='string'||hex[0]!=='#'){
+      throw new Error('hexToRgb: expected a hex color string starting with "#"');
+    }
+    const h=hex.substring(1);
+    if(h.length!==6||!/^[0-9a-fA-F]{6}$/.test(h)){
+      throw new Error('hexToRgb: expected 6 hex digits after "#" (got "'+hex+'")');
+    }
+    return[
+      parseInt(h.substring(0,2),16),
+      parseInt(h.substring(2,4),16),
+      parseInt(h.substring(4,6),16)
+    ];
+  }
+
+  function rgbToHex(r,g,b){
+    const c=v=>Math.max(0,Math.min(255,Math.round(v)));
+    return'#'+[c(r),c(g),c(b)].map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+
+  function rgbToHsl(r,g,b){
+    r/=255;g/=255;b/=255;
+    const max=Math.max(r,g,b),min=Math.min(r,g,b);
+    let h,s;
+    const l=(max+min)/2;
+    if(max===min){
+      h=s=0;
+    }else{
+      const d=max-min;
+      s=l>0.5?d/(2-max-min):d/(max+min);
+      switch(max){
+        case r:h=((g-b)/d+(g<b?6:0))/6;break;
+        case g:h=((b-r)/d+2)/6;break;
+        case b:h=((r-g)/d+4)/6;break;
+      }
+    }
+    return[h*360,s,l];
+  }
+
+  function hslToRgb(h,s,l){
+    h/=360;
+    let r,g,b;
+    if(s===0){
+      r=g=b=l;
+    }else{
+      const hue2rgb=(p,q,t)=>{
+        if(t<0)t+=1;
+        if(t>1)t-=1;
+        if(t<1/6)return p+(q-p)*6*t;
+        if(t<1/2)return q;
+        if(t<2/3)return p+(q-p)*(2/3-t)*6;
+        return p;
+      };
+      const q=l<0.5?l*(1+s):l+s-l*s;
+      const p=2*l-q;
+      r=hue2rgb(p,q,h+1/3);
+      g=hue2rgb(p,q,h);
+      b=hue2rgb(p,q,h-1/3);
+    }
+    return[Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+  }
+
+  function clampStep(step){
+    return Math.max(-3,Math.min(3,Number(step)||0));
+  }
+
+  function adjustBrightness(rgb,step){
+    step=clampStep(step);
+    if(!step)return rgb.slice();
+    const factor=1+step*0.08;
+    return rgb.map(v=>Math.max(0,Math.min(255,Math.round(v*factor))));
+  }
+
+  function adjustSaturation(rgb,step){
+    step=clampStep(step);
+    if(!step)return rgb.slice();
+    const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);
+    const newS=Math.max(0,Math.min(1,s*(1+step*0.15)));
+    return hslToRgb(h,newS,l);
+  }
+
+  function adjustColor(hex,brightness,saturation){
+    let rgb=hexToRgb(hex);
+    rgb=adjustBrightness(rgb,brightness);
+    rgb=adjustSaturation(rgb,saturation);
+    return rgbToHex(rgb[0],rgb[1],rgb[2]);
+  }
+
+  function inkOn(hex){
+    const rgb=hexToRgb(hex);
+    const c=rgb.map(v=>{
+      const p=v/255;
+      return p<=0.04045?p/12.92:Math.pow((p+0.055)/1.055,2.4);
+    });
+    const l=0.2126*c[0]+0.7152*c[1]+0.0722*c[2];
+    return l>0.179?'#000000':'#FFFFFF';
+  }
+
+  const THEMES={
+    dark:{
+      github:{bg:'#0D1117',card:'#010409',ink:'#C9D1D9',muted:'#8B949E',line:'#6E7681',accent:'#3B82F6'},
+      harbor:{bg:'#0F1A2B',card:'#212121',ink:'#C9C9C9',muted:'#999999',line:'#737373',accent:'#4FD1C5'},
+      solarized:{bg:'#002B36',card:'#073642',ink:'#9DB0B0',muted:'#8FA5AA',line:'#93A1A1',accent:'#D96F3C'},
+      oledblack:{bg:'#000000',card:'#1A1A1A',ink:'#EDEDED',muted:'#A8A8A8',line:'#6E6E6E',accent:'#D4D4D4'},
+      ayu:{bg:'#0B0E14',card:'#0F131A',ink:'#BFBDB6',muted:'#59C2FF',line:'#6C7380',accent:'#E6B450'}
+    },
+    light:{
+      vercel:{bg:'#F3F3F1',card:'#FFFFFF',ink:'#20242A',muted:'#4E545C',line:'#C9CCD1',accent:'#9A6400'},
+      tokyonight:{bg:'#F3F3F1',card:'#F0F4FC',ink:'#232A3D',muted:'#4B5468',line:'#C6CEDF',accent:'#2F5BB7'},
+      cursor:{bg:'#F3F3F1',card:'#F0F7F1',ink:'#212A24',muted:'#4C5850',line:'#C5D2C7',accent:'#2A6350'},
+      orng:{bg:'#F3F3F1',card:'#FFF6EE',ink:'#2A2420',muted:'#5C4F46',line:'#DBC8B9',accent:'#B4471E'}
+    }
+  };
+
+  const THUMB={
+    dark:{bg:'#2E2E2E',line:'#777777'},
+    light:{bg:'#CBCBCB',line:'#888888'}
+  };
+
+  function apply(state){
+    state=state||{};
+    const mode=state.mode==='dark'?'dark':'light';
+    const dark=THEMES.dark[state.dark]?state.dark:'github';
+    const light=THEMES.light[state.light]?state.light:'vercel';
+    const theme=THEMES[mode][mode==='dark'?dark:light];
+    const print=!!state.print;
+    const font=state.font==='serif'?'serif':'sans-serif';
+    const b=clampStep(state.brightness),s=clampStep(state.saturation);
+
+    const root=document.documentElement;
+    root.setAttribute('data-theme',mode);
+    root.setAttribute('data-font',font);
+    root.setAttribute('data-print',print?'on':'off');
+    root.setAttribute('data-dark',dark);
+    root.setAttribute('data-light',light);
+
+    const vars={};
+    if(print){
+      vars['--page-bg']='var(--print-bg)';
+      vars['--page-ink']='var(--print-ink)';
+      vars['--page-muted']='var(--print-muted)';
+      vars['--page-line']='var(--print-line)';
+      vars['--card']='var(--print-bg)';
+      vars['--accent']='var(--print-ink)';
+      vars['--pick-ink']='var(--print-bg)';
+      vars['--tb-ink']='var(--print-muted)';
+      vars['--tb-line']='var(--print-line)';
+      vars['--thumb']=THUMB.light.bg;
+      vars['--thumb-line']=THUMB.light.line;
+    }else{
+      const bg=adjustColor(theme.bg,b,s);
+      const card=adjustColor(theme.card,b,s);
+      const ink=adjustColor(theme.ink,b,s);
+      const muted=adjustColor(theme.muted,b,s);
+      const line=adjustColor(theme.line,b,s);
+      const accent=adjustColor(theme.accent,b,s);
+      vars['--page-bg']=bg;
+      vars['--page-ink']=ink;
+      vars['--page-muted']=muted;
+      vars['--page-line']=line;
+      vars['--card']=card;
+      vars['--accent']=accent;
+      vars['--pick-ink']=inkOn(accent);
+      vars['--tb-ink']=muted;
+      vars['--tb-line']=line;
+      vars['--thumb']=THUMB[mode].bg;
+      vars['--thumb-line']=THUMB[mode].line;
+    }
+    for(const[prop,value]of Object.entries(vars)){
+      root.style.setProperty(prop,value);
+    }
+  }
+
+  return{apply,THEMES,inkOn};
+})();</script>
+<script>const LinkState=(function(){
+  function readParams(){
+    var s=(window.location&&window.location.search)||'';
+    if(s.charAt(0)==='?')s=s.slice(1);
+    if(!s)return null;
+    var out={};
+    s.split('&').forEach(function(p){
+      var i=p.indexOf('=');
+      if(i>0)out[p.slice(0,i)]=p.slice(i+1);
+    });
+    var mode=(out.mode==='dark'||out.mode==='light')?out.mode:null;
+    var dark=ThemeEngine.THEMES.dark[out.dark]?out.dark:null;
+    var light=ThemeEngine.THEMES.light[out.light]?out.light:null;
+    if(!mode&&!dark&&!light)return null;
+    return{mode:mode,dark:dark,light:light};
+  }
+
+  function pickQuery(state){
+    return '?mode='+(state.mode==='dark'?'dark':'light')+
+           '&dark='+state.dark+'&light='+state.light;
+  }
+
+  function syncLinks(state){
+    var nodes=document.querySelectorAll?document.querySelectorAll('a[href]'):[];
+    for(var i=0;i<nodes.length;i++){
+      var a=nodes[i];
+      var href=a.getAttribute('href')||'';
+      if(href.charAt(0)==='#'||href.slice(0,2)==='//')continue;
+      if(/^[a-z][a-z0-9+.-]*:/i.test(href))continue;
+      var cut=href.search(/[?#]/);
+      var path=cut<0?href:href.slice(0,cut);
+      var hash=href.indexOf('#')<0?'':href.slice(href.indexOf('#'));
+      if(!/\.html$/.test(path))continue;
+      a.setAttribute('href',path+pickQuery(state)+hash);
+    }
+  }
+
+  return{readParams:readParams,syncLinks:syncLinks};
+})();</script>
+<script>const MenuBar=(function(){
+  let printBtn,modeBtn,fontBtn,bri,sat,briOut,satOut;
+  let state={mode:'light',dark:'github',light:'vercel',font:'sans-serif',print:false};
+  let onChange=null,manual=false,mq=null;
+
+  function init(opts){
+    opts=opts||{};
+    onChange=opts.onChange||null;
+    mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+
+    state.mode=opts.mode==='dark'||opts.mode==='light'
+      ?opts.mode
+      :(mq&&mq.matches?'dark':'light');
+    if(opts.dark&&ThemeEngine.THEMES.dark[opts.dark])state.dark=opts.dark;
+    if(opts.light&&ThemeEngine.THEMES.light[opts.light])state.light=opts.light;
+    if(opts.manual)manual=true;
+    if(opts.font)state.font=opts.font;
+
+    printBtn=document.getElementById('print');
+    modeBtn=document.getElementById('mode');
+    fontBtn=document.getElementById('font');
+    bri=document.getElementById('brightness');
+    briOut=document.getElementById('brightness-value');
+    sat=document.getElementById('saturation');
+    satOut=document.getElementById('saturation-value');
+
+    printBtn.addEventListener('click',()=>setPrint(!state.print));
+    modeBtn.addEventListener('click',()=>{
+      manual=true;
+      setPrint(false,true);
+      setMode(state.mode==='dark'?'light':'dark');
+    });
+    fontBtn.addEventListener('click',()=>setFont(state.font==='serif'?'sans-serif':'serif'));
+    bri.addEventListener('input',()=>{syncSliders();emit();});
+    sat.addEventListener('input',()=>{syncSliders();emit();});
+
+    buildMenu('dark-menu','dark');
+    buildMenu('light-menu','light');
+    document.getElementById('dark-theme').addEventListener('click',e=>{
+      e.stopPropagation();
+      toggleMenu('dark-theme','dark-menu');
+    });
+    document.getElementById('light-theme').addEventListener('click',e=>{
+      e.stopPropagation();
+      toggleMenu('light-theme','light-menu');
+    });
+    document.getElementById('dark-menu').addEventListener('keydown',menuKey);
+    document.getElementById('light-menu').addEventListener('keydown',menuKey);
+    document.addEventListener('click',e=>{
+      if(!e.target.closest||!e.target.closest('.group'))closeMenus();
+    });
+    document.addEventListener('keydown',e=>{
+      if(e.key!=='Escape')return;
+      let openBtn=null;
+      [['dark-theme','dark-menu'],['light-theme','light-menu']].forEach(pair=>{
+        if(document.getElementById(pair[1]).classList.contains('open')){
+          openBtn=document.getElementById(pair[0]);
+        }
+      });
+      closeMenus();
+      if(openBtn)openBtn.focus();
+    });
+
+    if(mq){
+      const follow=e=>{if(!manual)setMode(e.matches?'dark':'light');};
+      if(mq.addEventListener)mq.addEventListener('change',follow);
+      else if(mq.addListener)mq.addListener(follow);
+    }
+
+    bri.value='0';
+    sat.value='0';
+    syncUI();
+    emit();
+  }
+
+  function syncSliders(){
+    const b=stepOf(bri),s=stepOf(sat);
+    bri.value=String(b);
+    sat.value=String(s);
+    briOut.textContent=String(b);
+    satOut.textContent=String(s);
+  }
+
+  function syncMenus(){
+    [['dark','dark-menu'],['light','light-menu']].forEach(pair=>{
+      const menu=document.getElementById(pair[1]);
+      Array.prototype.forEach.call(menu.children,row=>{
+        row.setAttribute('aria-checked',String(row.textContent===state[pair[0]]));
+      });
+    });
+  }
+
+  function syncUI(){
+    const light=state.mode==='light';
+    const sans=state.font==='sans-serif';
+    modeBtn.classList.toggle('on',light);
+    modeBtn.setAttribute('aria-checked',String(light));
+    modeBtn.setAttribute('aria-label',light?'Light mode':'Dark mode');
+    fontBtn.classList.toggle('on',sans);
+    fontBtn.setAttribute('aria-checked',String(sans));
+    fontBtn.setAttribute('aria-label',sans?'Sans-serif':'Serif');
+    printBtn.classList.toggle('on',state.print);
+    printBtn.setAttribute('aria-pressed',String(state.print));
+    syncSliders();
+    syncMenus();
+  }
+
+  function stepOf(el){
+    const n=parseInt(el.value,10);
+    return isNaN(n)?0:Math.max(-3,Math.min(3,n));
+  }
+
+  function copy(){
+    return{
+      mode:state.mode,
+      dark:state.dark,
+      light:state.light,
+      font:state.font,
+      print:state.print,
+      brightness:stepOf(bri),
+      saturation:stepOf(sat)
+    };
+  }
+
+  function emit(){
+    if(onChange)onChange(copy());
+  }
+
+  function setMode(mode){
+    state.mode=mode==='dark'?'dark':'light';
+    syncUI();
+    emit();
+  }
+
+  function setTheme(mode,name){
+    if(!ThemeEngine.THEMES[mode]||!ThemeEngine.THEMES[mode][name])return;
+    manual=true;
+    setPrint(false,true);
+    state[mode]=name;
+    state.mode=mode;
+    syncUI();
+    emit();
+  }
+
+  function setFont(font){
+    state.font=font==='serif'?'serif':'sans-serif';
+    syncUI();
+    emit();
+  }
+
+  function setPrint(on,quiet){
+    state.print=!!on;
+    if(!quiet)syncUI();
+    if(!quiet)emit();
+  }
+
+  function buildMenu(id,mode){
+    const menu=document.getElementById(id);
+    Object.keys(ThemeEngine.THEMES[mode]).forEach(name=>{
+      const row=document.createElement('button');
+      row.type='button';
+      row.setAttribute('role','menuitemradio');
+      row.setAttribute('aria-checked',String(state[mode]===name));
+      row.textContent=name;
+      row.addEventListener('click',()=>{
+        setTheme(mode,name);
+        closeMenus();
+        document.getElementById(mode==='dark'?'dark-theme':'light-theme').focus();
+      });
+      menu.appendChild(row);
+    });
+  }
+
+  function closeMenus(){
+    [['dark-theme','dark-menu'],['light-theme','light-menu']].forEach(pair=>{
+      document.getElementById(pair[1]).classList.remove('open');
+      document.getElementById(pair[0]).setAttribute('aria-expanded','false');
+    });
+  }
+
+  function toggleMenu(btnId,menuId){
+    const btn=document.getElementById(btnId);
+    const menu=document.getElementById(menuId);
+    const open=!menu.classList.contains('open');
+    closeMenus();
+    if(open){
+      menu.classList.add('open');
+      btn.setAttribute('aria-expanded','true');
+      const rows=Array.prototype.slice.call(menu.children);
+      const pick=rows.filter(row=>row.getAttribute('aria-checked')==='true')[0]||rows[0];
+      if(pick)pick.focus();
+    }
+  }
+
+  function menuKey(e){
+    const rows=Array.prototype.slice.call(this.children);
+    const n=rows.length;
+    if(!n)return;
+    const i=rows.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();
+      rows[(i+(e.key==='ArrowDown'?1:-1)+n)%n].focus();
+    }else if(e.key==='Home'||e.key==='End'){
+      e.preventDefault();
+      rows[e.key==='Home'?0:n-1].focus();
+    }
+  }
+
+  function getValues(){
+    return copy();
+  }
+
+  function setValues(opts){
+    opts=opts||{};
+    if(opts.mode==='dark'||opts.mode==='light')state.mode=opts.mode;
+    if(opts.dark&&ThemeEngine.THEMES.dark[opts.dark])state.dark=opts.dark;
+    if(opts.light&&ThemeEngine.THEMES.light[opts.light])state.light=opts.light;
+    if(opts.font)state.font=opts.font;
+    if(opts.print!==undefined)state.print=!!opts.print;
+    if(opts.brightness!==undefined)bri.value=String(Math.max(-3,Math.min(3,Number(opts.brightness)||0)));
+    if(opts.saturation!==undefined)sat.value=String(Math.max(-3,Math.min(3,Number(opts.saturation)||0)));
+    syncUI();
+    emit();
+  }
+
+  return{init,getValues,setValues,setMode,setTheme,setFont,setPrint};
+})();</script>
+<script>(function(){
+  var params=LinkState.readParams()||{};
+  var manual=!!(params.mode||params.dark||params.light);
+  MenuBar.init({
+    mode:params.mode||undefined,
+    dark:params.dark||undefined,
+    light:params.light||undefined,
+    manual:manual,
+    onChange:function(state){
+      ThemeEngine.apply(state);
+      LinkState.syncLinks(state);
+    }
+  });
+  LinkState.syncLinks(MenuBar.getValues());
+})();</script>
+</body>
+</html>

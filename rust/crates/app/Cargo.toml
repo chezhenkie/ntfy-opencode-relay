@@ -1,0 +1,29 @@
+[package]
+name = "ntfy-relay-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ntfy-relay"
+path = "src/main.rs"
+
+[dependencies]
+ntfy-relay-core = { path = "../core" }
+ntfy-relay-control = { path = "../control" }
+ntfy-relay-inbound = { path = "../inbound" }
+ntfy-relay-ntfy = { path = "../ntfy" }
+ntfy-relay-opencode = { path = "../opencode" }
+ntfy-relay-outbound = { path = "../outbound" }
+async-trait = "0.1"
+bytes = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "rt-multi-thread", "signal", "sync", "time"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
+[dev-dependencies]
+async-trait = "0.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util"] }
