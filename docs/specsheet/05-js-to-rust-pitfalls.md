@@ -165,7 +165,7 @@ The 94 `node --test` cases pin exact reason strings, ack text, header names, byt
 | Time is injected (`Control({now})`, `Relay({deps.now})`, `withRetry({sleep})`, `phone-outbound` `now` and `timers`). | `tokio::time::pause` covers tokio timers only, not `SystemTime::now()` inside logic. | Decided (04 row 10): inject `Clock::now_ms`; replay uses wall time, control windows use the monotonic source. |
 | Concurrency: two `acquireLock` calls with different pids in one process. | Two tasks or two processes; the pid is a parameter in JS. | Keep `pid` injectable in the Rust signature. |
 | JS-only cases: `undefined` versus null, `Number("...")`, stable `sort`, `localeCompare`, `toISOString`, `for await` over a body. | Rust must choose an explicit behavior. | Add a test per case; do not rely on the type system to guess the old behavior. |
-| Outbound turn and file behavior lived in `tools/verify-ntfy-patch.mjs`, not in `tests/`. | The verifier was deleted with the publisher plugin in 0.7.0. | The contract is now held by the Rust suites: the 68 tests in `rust\crates\outbound`, the inbound suite, and the app MCP test. |
+| Outbound turn and file behavior lived in `tools/verify-ntfy-patch.mjs`, not in `tests/`. | The verifier was deleted with the publisher plugin in 0.7.0. | The contract is now held by the Rust suites: the 89 tests in `rust\crates\outbound`, the inbound suite, and the app MCP test. |
 
 ## Per-module risk
 
@@ -218,4 +218,4 @@ General, from the Python and autocache ports; no artefact of those ports exists 
 - `03` says "3400 UTF-8 bytes inline"; the plugin also has `MAX_MESSAGE_BYTES` 4096 and `boundQuestionMessage` with a `(truncated)` marker. `core::text` carries the 3400 ack budget; `ntfy::header` carries the plugin 1024/4096 caps.
 - `04` covers the clock choice (row 10) and the wire format (row 11), but has no row for duplicate-key policy or unknown-field strictness. Config parses through `serde_json::Value`, so a duplicate key takes the last value; typed state rejects a duplicate field.
 - `03` section 6 says the OpenCode calls go through HTTP directly. The Rust adapter retries no-status and 5xx twice, 1 s then 2 s, matching the Node classifier; the parser is gone.
-- The 94 Node tests cover inbound, control, and the inbox prune. Outbound turn, file, gap, and backfill behavior is pinned by the 68 tests in `rust\crates\outbound` and the app MCP test; outbound and the MCP tool are live, and the publisher plugin is deleted.
+- The 94 Node tests cover inbound, control, and the inbox prune. Outbound turn, file, gap, and backfill behavior is pinned by the 89 tests in `rust\crates\outbound` and the app MCP test; outbound and the MCP tool are live, and the publisher plugin is deleted.

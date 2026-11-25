@@ -101,6 +101,8 @@ The migration shipped, but some reference sections still describe the deleted No
 
 Not a doc defect: the device-side round for a new phone subscription has no dated record. The host `200`/`403` check at operations 7.2 is the only evidence.
 
+Status 2026-11-25: closed. Section 5 is titled as the outbound contract with the patch text marked historical; section 8 lists the Rust portability rules; section 10 and the phase table carry the 0.6.10 counts; section 13 carries the current risks; section 7 keeps the XDG example as a labelled earlier layout.
+
 ## 10.15 Control path and user CLI
 
 The control crate (working name `control`) carries the request and response types, validation, and shared policy for topic add and delete, topic list, relay settings, and a network-mode request. The relay owns the config write and the discovery reload; the CLI is a thin front end that talks to the relay only, and deploy stays the separate privileged helper. For a mode switch the relay returns a validated plan and the CLI runs `ntfy-deploy mode` in the current console; the relay never spawns the helper and never runs elevated. Status 2026-11-24: done. The endpoint and `ntfy-admin` are live; Windows needs an elevated shell for the portproxy step.
