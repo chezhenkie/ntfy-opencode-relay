@@ -11,8 +11,8 @@
 | Surface | Where | Direction |
 |---|---|---|
 | REST | ntfy server: `POST /<topic>` to publish, `PUT` for files, `GET /v1/health` | relay to ntfy |
-| REST | OpenCode server: `/api/session/<id>/prompt`, `/api/session/<id>/message`, `/api/permission/...` | relay to OpenCode |
-| SSE | `GET /api/event` on ntfy, and the OpenCode event stream | long-lived read inside REST |
+| REST | OpenCode server: `/api/session/<id>/prompt`, `/api/session/<id>/message`, `/api/session/<id>/permission` | relay to OpenCode |
+| SSE | ntfy `GET /<topics>/sse?since=`, and the OpenCode `GET /api/event` stream | long-lived read inside REST |
 | MCP | `ntfy-relay mcp` on stdio, one tool `send_file` | OpenCode calls the relay |
 
 REST plus SSE is the data and control plane. MCP is a single-tool facade over the same publish path. MCP is inbound only in the sense that the agent calls the relay; the relay never calls an MCP server itself. The framework never talks to ntfy directly; design rule 1 in `00-overview.md` is binding.

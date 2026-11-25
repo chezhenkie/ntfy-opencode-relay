@@ -7,7 +7,7 @@ A self-hosted ntfy relay for OpenCode. The phone is both an output and an input:
 - Push out: every assistant turn, and any file the agent sends, arrives as a notification.
 - Push back: phone text and files become a prompt in the target session.
 - Commands: `/new`, `/to`, `/sessions`, `/status` and `/auto` run on the host from the phone.
-- Permission asks: a `lock` push carries a four-character code; `/allow`, `/always` or `/deny` decides it.
+- Permission asks: a `lock` push carries a short code, four characters unless a collision extends it; `/allow`, `/always` or `/deny` decides it.
 - Questions: a `question` push shows the agent's question; `/answer` followed by any text closes the newest form, and the assistant reads that text.
 - Tags: the relay stamps each push (`oc-out`, `oc-attach`, `oc-manual`, `lock`, `question`, `warning`, `hourglass_done`). A phone message carries no `oc-out`, so it becomes a prompt; the relay ignores the pushes it wrote itself. The tag decides the direction, which is how command and control stays inside the relay.
 - Boundary: the relay holds the only ntfy token and is the only publisher; OpenCode has no token and opens no connection to the server. The relay also drives OpenCode through the local API: create a session, target one, prompt it and reply to a permission.
@@ -54,8 +54,8 @@ The [manual index](https://chezhenkie.github.io/ntfy-opencode-relay/) opens the 
 
 ## Requirements
 
-- A host for the ntfy server: Podman or Docker on Windows or Linux, or the native binary on Linux under systemd
-- A private network from phone to host, and TLS on 443. The certificate must chain to a public root, because the relay uses the rustls public store; a private CA is not supported
+- A host for the ntfy server: Podman or Docker on Windows or Linux, or the native binary on Linux under systemd. The `ntfy-deploy` helper drives Podman; a Docker host runs the container commands itself
+- A private network from phone to host, and TLS on 443. The certificate must chain to a public root, because the relay uses the rustls public store; a private CA is not supported. The LAN mode is the exception: it serves plain HTTP on 8810 inside the local network
 - The F-Droid ntfy client on Android, with no Firebase and no Play services
 - OpenCode 2.2.7 or newer
 
@@ -69,7 +69,7 @@ After the install, check the path:
 curl.exe -sS https://ntfy.example.ts.net/v1/health
 ```
 
-The live install sits outside the checkout in `%LOCALAPPDATA%\ntfy-relay\`, named by `NTFY_RELAY_HOME`. A release folder is installed with one command, which places the four binaries, writes the missing configs, and registers the watchdog and logon entries: scheduled tasks on Windows, systemd user units on Linux, or a reported skip when there is no systemd.
+The live install sits outside the checkout in `%LOCALAPPDATA%\ntfy-relay\`, named by `NTFY_RELAY_HOME`. A release folder is installed with one command, which places the four binaries, writes the missing configs, and registers the watchdog and logon entries: scheduled tasks on Windows, systemd user units on Linux, or a reported skip when there is no systemd. `install` sets `NTFY_RELAY_HOME` with `setx`, which does not update the current shell; open a new shell, or use the full path, before the next command uses the variable.
 
 ```powershell
 & .\ntfy-deploy.exe install
@@ -81,11 +81,11 @@ The live install sits outside the checkout in `%LOCALAPPDATA%\ntfy-relay\`, name
 
 Plain text goes to the chat last typed in on the desktop. `/new <title>` creates a session and targets it. `/to` lists five numbered sessions; `/to 2` or a title fragment targets one message. `/auto` drops a pending target. `/sessions` prints numbers and titles. `/status` prints the target and the open asks.
 
-Permission replies are `/allow [code]`, `/always [code]` and `/deny [code]`. A permission ask carries a four-character code and stays answerable until it is answered or evicted. A question form arrives on the phone as a `question` push; answer it with `/answer` followed by any text. The relay closes the desktop form with that text and the assistant asks again when the answer is not enough.
+Permission replies are `/allow [code]`, `/always [code]` and `/deny [code]`. A permission ask carries a short code, four characters unless a collision extends it, and stays answerable until it is answered or evicted. A question form arrives on the phone as a `question` push; answer it with `/answer` followed by any text. The relay closes the desktop form with that text and the assistant asks again when the answer is not enough.
 
 ## Everyday operations
 
-`ntfy-deploy.exe mode` switches between Tailscale, Nord Meshnet and the LAN; the relay keeps running with the same pid and token. `tools\rotate-token.ps1 -User phone` issues a token, writes `ntfy-token.txt`, optionally restarts the relay, then revokes the old token by prefix.
+`ntfy-deploy.exe mode` switches between Tailscale, Nord Meshnet and the LAN; the relay keeps running with the same pid and token. `tools\rotate-token.ps1 -User phone` issues a token, writes `ntfy-token.txt`, and optionally restarts the relay; revocation is a second run with `-RevokeOld <prefix>`.
 
 The one-page check, start and stop guide for the host route, container and relay is [docs/startup.md](docs/startup.md).
 
@@ -113,15 +113,15 @@ npm run secrets   # no tokens, private host names, or real absolute paths
 npm run site      # regenerates the published pages and checks their links
 ```
 
-CI runs the Node checks and the Rust tests on Ubuntu and Windows.
+CI runs the Node checks on Windows and the Rust tests on Ubuntu and Windows.
 
 Protocols:
 
 | surface | where | direction |
 |---|---|---|
 | REST | ntfy server: `POST /<topic>` to publish, `PUT` for files, `GET /v1/health` | relay to ntfy |
-| REST | OpenCode server: `/api/session/<id>/prompt`, `/api/session/<id>/message`, `/api/permission/...` | relay to OpenCode |
-| SSE | `GET /api/event` on ntfy, and the OpenCode event stream | long-lived read inside REST |
+| REST | OpenCode server: `/api/session/<id>/prompt`, `/api/session/<id>/message`, `/api/session/<id>/permission` | relay to OpenCode |
+| SSE | ntfy `GET /<topics>/sse?since=`, and the OpenCode `GET /api/event` stream | long-lived read inside REST |
 | MCP | `ntfy-relay mcp` on stdio, one tool `send_file` | OpenCode calls the relay |
 
 REST plus SSE is the data and control plane; MCP is a single-tool interface over the same publish path. See [specsheet 00](docs/specsheet/00-overview.md), [specsheet 02](docs/specsheet/02-message-routes.md) and [specsheet 08](docs/specsheet/08-comms-and-mcp.md).

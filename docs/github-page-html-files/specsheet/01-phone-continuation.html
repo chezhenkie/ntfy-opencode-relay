@@ -480,7 +480,7 @@ zip 7z tar gz</code></pre>
 <ul>
 <li>Process <code>ntfy-relay run</code>, built from <code>rust\crates\app</code>. The Node relay this section originally specified was deleted in 0.8.0.</li>
 <li>Single instance. Lock file in the state directory with PID and start time. The lock is created atomically with <code>open(&#39;wx&#39;)</code>. On <code>EEXIST</code> the relay reads the owner: a live PID exits with code 0, an unreadable lock fails closed, and only a readable lock with a dead PID is removed before one retry.</li>
-<li>Signals abort the SSE stream, wait up to 10 seconds for the drain, log the number of dropped queued messages, then release the lock.</li>
+<li>Signals abort the SSE stream, wait up to 5 s for each task to stop (a 6 s bound), log the number of dropped queued messages, then release the lock.</li>
 <li>Writes its own log with timestamp, level, message. Default level <code>info</code>, console echo off. Prompt text is never logged; decision lines carry the message ID and byte count instead. Rotate at 5 MB, keep one old file. <code>logging.echo</code> may be enabled for a manual console run.</li>
 <li>Heartbeat every 5 minutes with <code>topics=</code>, <code>lastEventAge=</code>, and <code>queue=</code>. A large age is a warning, not a restart condition.</li>
 <li>Config load failures and fatal errors exit non-zero with a clear log line.</li>
@@ -501,6 +501,7 @@ zip 7z tar gz</code></pre>
   &quot;opencode&quot;: { &quot;command&quot;: [&quot;opencode&quot;], &quot;timeoutMs&quot;: 30000 },
   &quot;routing&quot;: { &quot;preferRunning&quot;: true, &quot;delivery&quot;: &quot;queue&quot; },
   &quot;files&quot;: { &quot;inboxDir&quot;: &quot;.ntfy-inbox&quot;, &quot;maxFileBytes&quot;: 15728640 },
+  &quot;outbound&quot;: { &quot;enabled&quot;: true },
   &quot;logging&quot;: {
     &quot;file&quot;: &quot;ntfy-relay.log&quot;,
     &quot;heartbeatMinutes&quot;: 5,
@@ -512,15 +513,15 @@ zip 7z tar gz</code></pre>
 <ul>
 <li>Example values only. The local config supplies the real server, token file, and roots.</li>
 <li><code>~</code> expands to the home directory. Relative roots resolve against the config file.</li>
-<li><code>projectRoots</code> matches with a path boundary. Case-insensitive only on Windows. Since 0.14.0 the Rust path accepts several roots; each folder name is a topic, discovery keeps the newest 150, and a duplicate folder name keeps the more recently active project with a warning.</li>
+<li><code>projectRoots</code> matches with a path boundary. Case-insensitive only on Windows. The Rust path accepts several roots; each folder name is a topic, discovery keeps the newest 150, and a duplicate folder name keeps the more recently active project with a warning.</li>
 <li>The Rust path uses rustls and its public root store. There is no custom CA and no native certificate store, so the ntfy endpoint must present a publicly trusted certificate.</li>
-<li><code>opencode.command</code> is an argv array. On Windows configure the real <code>opencode.exe</code>, not the <code>.cmd</code> shim. No shell is used.</li>
-<li>The relay must also honor <code>OPENCODE_BIN</code> as an override, for tests.</li>
+<li><code>opencode.command</code> is accepted for compatibility and ignored: the relay calls the OpenCode HTTP API directly, so it needs no binary and no PATH.</li>
+<li>There is no OpenCode binary override; the API base URL comes from the service registration or <code>opencode.baseUrl</code>.</li>
 <li><code>logging.level</code> is <code>debug</code>, <code>info</code>, <code>warn</code>, or <code>error</code>. <code>logging.echo</code> defaults to false because stdout is redirected to a non-rotating file; enable it only for a manual console run.</li>
 </ul>
 <h3>6.3 Project discovery</h3>
 <ul>
-<li>Every 60 seconds and at startup, run <code>opencode api get /api/project</code>.</li>
+<li>Every 60 seconds and at startup, call <code>GET /api/project</code> over HTTP.</li>
 <li>Keep projects whose canonical is inside a configured root.</li>
 <li>Skip a project without a string id, with a warning.</li>
 <li>Deduplicate by canonical. A canonical may have more than one project ID; keep all IDs for routing.</li>
@@ -589,7 +590,7 @@ zip 7z tar gz</code></pre>
 <li>Default: <code>POST /api/session/&lt;id&gt;/prompt</code> with <code>{&quot;text&quot;: &quot;...&quot;, &quot;delivery&quot;: &quot;queue&quot;}</code>.</li>
 <li><code>/steer &lt;text&gt;</code>: same call with <code>delivery: &quot;steer&quot;</code>.</li>
 <li>With files: add <code>files: [{&quot;uri&quot;: &quot;file:///C:/...&quot;, &quot;name&quot;: &quot;&lt;original name&gt;&quot;}]</code> and append <code>Attached file: &lt;absolute path&gt;</code> to the text. Always send a <code>file://</code> URI, built from the saved absolute path.</li>
-<li>If only a file is sent, use <code>Please inspect the attached file.</code> as the text.</li>
+<li>A file-only message carries <code>Attached file: &lt;absolute path&gt;</code> as its text.</li>
 <li>Timeout 30 seconds per attempt. Retry network errors and 5xx twice, 1 second then 2 seconds. Never retry 4xx.</li>
 <li>Ack on success with min priority, title <code>&lt;project&gt; - queued</code>, body <code>queued to &lt;session title&gt;</code> or <code>steering &lt;session title&gt;</code>, tags <code>oc-out</code>. Ack bodies are capped at 3400 bytes.</li>
 <li>On failure, publish an error push with the HTTP status and a short message; log stderr in full.</li>
@@ -604,7 +605,7 @@ zip 7z tar gz</code></pre>
 <ul>
 <li>Use <code>attachment.url</code>, <code>attachment.name</code>, <code>attachment.size</code>.</li>
 <li>Download over HTTPS without a token. Cap at 15 MB and verify the size when present.</li>
-<li>Reject HTTP URLs. Follow redirects manually, at most 3, and require HTTPS on every hop. The deleted Node relay had no host allowlist; the Rust path also requires the URL host to equal the <code>ntfy.server</code> host on every hop.</li>
+<li>Reject HTTP URLs. Follow redirects manually, at most 3, and require HTTPS on every hop. The deleted Node relay had no host allowlist; the Rust path requires the URL host to equal the <code>ntfy.server</code> host or the deployment <code>baseUrl</code> host on every hop.</li>
 <li>Sanitize the name: basename only, strip control characters, keep <code>[A-Za-z0-9._-]</code>, limit to 120 characters, fallback <code>file</code>.</li>
 <li>Save to <code>&lt;project canonical&gt;/&lt;inboxDir&gt;/&lt;unix&gt;-&lt;name&gt;</code>. Create the directory.</li>
 <li>On collision, prefix with unix milliseconds.</li>
@@ -618,9 +619,9 @@ zip 7z tar gz</code></pre>
 <li><code>/allow</code>: reply <code>{&quot;decision&quot;: &quot;once&quot;}</code>.</li>
 <li><code>/always</code>: reply <code>{&quot;decision&quot;: &quot;always&quot;}</code>.</li>
 <li><code>/deny</code>: reply <code>{&quot;decision&quot;: &quot;reject&quot;}</code>.</li>
-<li>Resolve the target session, then <code>GET /api/session/&lt;id&gt;/permission</code> for pending requests.</li>
-<li>The Rust path replies to the first pending request in server order; the deleted Node relay sorted by id. The id is opaque and is not an age order. If more remain, say so in the ack.</li>
-<li>Replies are scoped to the routed session. Other sessions in the project are out of scope; the ack names the session.</li>
+<li>Reply to the published ask record. The registry binds session, request id, title, and push time before the push, and a code selects the record; the routing target and the session&#39;s pending list are never read. Spec <code>09</code> defines the registry and the ack.</li>
+<li>With no argument the newest pushed record is used; with a code, the matching record wherever it lives. The ack names the record&#39;s session title.</li>
+<li>A desktop answer removes the record through <code>permission.replied</code>; a later phone reply reports that the ask was already answered.</li>
 <li>No pending request: publish an error push.</li>
 </ul>
 <h3>6.11 Commands</h3>
@@ -650,8 +651,8 @@ zip 7z tar gz</code></pre>
 <tr><td>Long text</td><td><code>oc-out</code></td><td>default</td><td><code>&lt;project&gt;</code></td><td>summary plus <code>.md</code></td></tr>
 <tr><td>Auto file</td><td><code>oc-out,oc-attach</code></td><td>low</td><td><code>&lt;project&gt; - &lt;filename&gt;</code></td><td><code>&lt;bytes&gt; bytes</code></td></tr>
 <tr><td>Manual file</td><td><code>oc-out,oc-manual</code></td><td>default</td><td><code>&lt;project&gt; - &lt;filename&gt;</code></td><td>optional message</td></tr>
-<tr><td>Permission ask</td><td><code>oc-out</code></td><td>high</td><td><code>&lt;project&gt; - permission</code></td><td>existing payload</td></tr>
-<tr><td>Session error</td><td><code>oc-out</code></td><td>high</td><td><code>&lt;project&gt; - session error</code></td><td>error type and message</td></tr>
+<tr><td>Permission ask</td><td><code>lock,oc-out</code></td><td>default</td><td><code>&lt;project&gt; - permission requested</code></td><td>action, patterns, and reply line</td></tr>
+<tr><td>Session error</td><td><code>warning,oc-out</code></td><td>default</td><td><code>&lt;project&gt; - session error</code></td><td>error type and message</td></tr>
 <tr><td>Relay ack</td><td><code>oc-out</code></td><td>min</td><td><code>&lt;project&gt; - queued</code></td><td>target session</td></tr>
 <tr><td>Relay error</td><td><code>oc-out</code></td><td>high</td><td><code>&lt;project&gt; - relay error</code></td><td>short failure</td></tr>
 </tbody></table>
@@ -680,7 +681,7 @@ zip 7z tar gz</code></pre>
 </ul>
 <h2><span class="num">10</span>10. Testing</h2>
 <div class="rule"></div>
-<p>Unit and integration tests run with <code>cargo test</code>. The workspace holds 624 tests at 0.6.10: 94 in <code>deploy</code>, 89 in <code>outbound</code>, 86 in <code>inbound</code>, 99 in <code>app</code>, 75 in <code>core</code>, 54 in <code>ntfy</code>, 50 in <code>opencode</code>, 30 in <code>control</code>, 28 in <code>auth</code>, and 19 in <code>admin</code>. No test uses the network; test directories stay inside the workspace.</p>
+<p>Unit and integration tests run with <code>cargo test</code>. The workspace holds 624 tests at 0.6.12: 94 in <code>deploy</code>, 89 in <code>outbound</code>, 86 in <code>inbound</code>, 99 in <code>app</code>, 75 in <code>core</code>, 54 in <code>ntfy</code>, 50 in <code>opencode</code>, 30 in <code>control</code>, 28 in <code>auth</code>, and 19 in <code>admin</code>. No test uses the network; test directories stay inside the workspace.</p>
 <ul>
 <li>Topic derivation: Windows and POSIX paths, trailing separators, invalid characters, length limit, empty basename, duplicate folder names.</li>
 <li>Filter: <code>oc-out</code>, stale, oversized, empty, attachment-only, duplicate ID.</li>

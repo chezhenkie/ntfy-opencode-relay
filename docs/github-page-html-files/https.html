@@ -352,13 +352,20 @@ netsh interface portproxy show all</code></pre>
 <div class="rule"></div>
 <p>The deploy config switches to proxy mode:</p>
 <pre><code class="language-json">{
+  &quot;version&quot;: 1,
   &quot;mode&quot;: &quot;proxy&quot;,
   &quot;baseUrl&quot;: &quot;https://ntfy.example.ts.net&quot;,
-  &quot;behindProxy&quot;: true
+  &quot;behindProxy&quot;: true,
+  &quot;port&quot;: 8810,
+  &quot;container&quot;: {
+    &quot;name&quot;: &quot;ntfy&quot;,
+    &quot;image&quot;: &quot;localhost/ntfy:server&quot;,
+    &quot;cacheVolume&quot;: &quot;ntfy-cache&quot;
+  }
 }</code></pre>
 <pre><code class="language-powershell">ntfy-deploy mode tailscale
 ntfy-deploy status</code></pre>
-<p><code>mode tailscale</code> writes the proxy config from the detected MagicDNS name and applies it; the JSON above is what it produces.</p>
+<p><code>mode tailscale</code> rewrites <code>mode</code>, <code>baseUrl</code>, and <code>behindProxy</code> in the existing <code>ntfy-deploy.json</code> from the detected MagicDNS name and applies it; the other keys keep their values. The file must already exist, because <code>mode</code> does not create it.</p>
 <p>The auth keys from <a href="windows-podman.html#23-build-context">section 2.3</a> stay unchanged. The terminator ends TLS, so <code>baseUrl</code> must be the HTTPS name; <code>behindProxy: true</code> makes ntfy read the <code>X-Forwarded-For</code> header the terminator sets. Without it, rate limiting and logs see <code>127.0.0.1</code> for every client.</p>
 <p><code>ntfy.server</code> may carry a reverse-proxy path prefix, for example <code>https://host/notify/</code>. The relay appends the topic to that base and sends the topic in the path, not in a JSON body, so the proxy must route the prefix to ntfy without stripping it.</p>
 <p>The container is recreated with <code>NTFY_BASE_URL</code> and <code>NTFY_BEHIND_PROXY</code>. The image and the cache volume are unchanged, and the relay config and token are not touched. On Ubuntu the same command applies; it publishes on all interfaces outside proxy mode and on loopback in proxy mode.</p>

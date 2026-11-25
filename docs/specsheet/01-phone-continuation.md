@@ -214,7 +214,7 @@ Change `ntfy.token` to `{file:~/.config/opencode/ntfy-token.txt}`.
 
 - Process `ntfy-relay run`, built from `rust\crates\app`. The Node relay this section originally specified was deleted in 0.8.0.
 - Single instance. Lock file in the state directory with PID and start time. The lock is created atomically with `open('wx')`. On `EEXIST` the relay reads the owner: a live PID exits with code 0, an unreadable lock fails closed, and only a readable lock with a dead PID is removed before one retry.
-- Signals abort the SSE stream, wait up to 10 seconds for the drain, log the number of dropped queued messages, then release the lock.
+- Signals abort the SSE stream, wait up to 5 s for each task to stop (a 6 s bound), log the number of dropped queued messages, then release the lock.
 - Writes its own log with timestamp, level, message. Default level `info`, console echo off. Prompt text is never logged; decision lines carry the message ID and byte count instead. Rotate at 5 MB, keep one old file. `logging.echo` may be enabled for a manual console run.
 - Heartbeat every 5 minutes with `topics=`, `lastEventAge=`, and `queue=`. A large age is a warning, not a restart condition.
 - Config load failures and fatal errors exit non-zero with a clear log line.
@@ -238,6 +238,7 @@ Change `ntfy.token` to `{file:~/.config/opencode/ntfy-token.txt}`.
   "opencode": { "command": ["opencode"], "timeoutMs": 30000 },
   "routing": { "preferRunning": true, "delivery": "queue" },
   "files": { "inboxDir": ".ntfy-inbox", "maxFileBytes": 15728640 },
+  "outbound": { "enabled": true },
   "logging": {
     "file": "ntfy-relay.log",
     "heartbeatMinutes": 5,
@@ -250,15 +251,15 @@ Change `ntfy.token` to `{file:~/.config/opencode/ntfy-token.txt}`.
 
 - Example values only. The local config supplies the real server, token file, and roots.
 - `~` expands to the home directory. Relative roots resolve against the config file.
-- `projectRoots` matches with a path boundary. Case-insensitive only on Windows. Since 0.14.0 the Rust path accepts several roots; each folder name is a topic, discovery keeps the newest 150, and a duplicate folder name keeps the more recently active project with a warning.
+- `projectRoots` matches with a path boundary. Case-insensitive only on Windows. The Rust path accepts several roots; each folder name is a topic, discovery keeps the newest 150, and a duplicate folder name keeps the more recently active project with a warning.
 - The Rust path uses rustls and its public root store. There is no custom CA and no native certificate store, so the ntfy endpoint must present a publicly trusted certificate.
-- `opencode.command` is an argv array. On Windows configure the real `opencode.exe`, not the `.cmd` shim. No shell is used.
-- The relay must also honor `OPENCODE_BIN` as an override, for tests.
+- `opencode.command` is accepted for compatibility and ignored: the relay calls the OpenCode HTTP API directly, so it needs no binary and no PATH.
+- There is no OpenCode binary override; the API base URL comes from the service registration or `opencode.baseUrl`.
 - `logging.level` is `debug`, `info`, `warn`, or `error`. `logging.echo` defaults to false because stdout is redirected to a non-rotating file; enable it only for a manual console run.
 
 ### 6.3 Project discovery
 
-- Every 60 seconds and at startup, run `opencode api get /api/project`.
+- Every 60 seconds and at startup, call `GET /api/project` over HTTP.
 - Keep projects whose canonical is inside a configured root.
 - Skip a project without a string id, with a warning.
 - Deduplicate by canonical. A canonical may have more than one project ID; keep all IDs for routing.
@@ -338,7 +339,7 @@ The selected session title is used in acks and titles. Fall back to the first 8 
 - Default: `POST /api/session/<id>/prompt` with `{"text": "...", "delivery": "queue"}`.
 - `/steer <text>`: same call with `delivery: "steer"`.
 - With files: add `files: [{"uri": "file:///C:/...", "name": "<original name>"}]` and append `Attached file: <absolute path>` to the text. Always send a `file://` URI, built from the saved absolute path.
-- If only a file is sent, use `Please inspect the attached file.` as the text.
+- A file-only message carries `Attached file: <absolute path>` as its text.
 - Timeout 30 seconds per attempt. Retry network errors and 5xx twice, 1 second then 2 seconds. Never retry 4xx.
 - Ack on success with min priority, title `<project> - queued`, body `queued to <session title>` or `steering <session title>`, tags `oc-out`. Ack bodies are capped at 3400 bytes.
 - On failure, publish an error push with the HTTP status and a short message; log stderr in full.
@@ -355,7 +356,7 @@ Observed 2026-11-08: the prompt renderer shows the attachment path itself, so th
 
 - Use `attachment.url`, `attachment.name`, `attachment.size`.
 - Download over HTTPS without a token. Cap at 15 MB and verify the size when present.
-- Reject HTTP URLs. Follow redirects manually, at most 3, and require HTTPS on every hop. The deleted Node relay had no host allowlist; the Rust path also requires the URL host to equal the `ntfy.server` host on every hop.
+- Reject HTTP URLs. Follow redirects manually, at most 3, and require HTTPS on every hop. The deleted Node relay had no host allowlist; the Rust path requires the URL host to equal the `ntfy.server` host or the deployment `baseUrl` host on every hop.
 - Sanitize the name: basename only, strip control characters, keep `[A-Za-z0-9._-]`, limit to 120 characters, fallback `file`.
 - Save to `<project canonical>/<inboxDir>/<unix>-<name>`. Create the directory.
 - On collision, prefix with unix milliseconds.
@@ -369,9 +370,9 @@ Observed 2026-11-08: the prompt renderer shows the attachment path itself, so th
 - `/allow`: reply `{"decision": "once"}`.
 - `/always`: reply `{"decision": "always"}`.
 - `/deny`: reply `{"decision": "reject"}`.
-- Resolve the target session, then `GET /api/session/<id>/permission` for pending requests.
-- The Rust path replies to the first pending request in server order; the deleted Node relay sorted by id. The id is opaque and is not an age order. If more remain, say so in the ack.
-- Replies are scoped to the routed session. Other sessions in the project are out of scope; the ack names the session.
+- Reply to the published ask record. The registry binds session, request id, title, and push time before the push, and a code selects the record; the routing target and the session's pending list are never read. Spec `09` defines the registry and the ack.
+- With no argument the newest pushed record is used; with a code, the matching record wherever it lives. The ack names the record's session title.
+- A desktop answer removes the record through `permission.replied`; a later phone reply reports that the ask was already answered.
 - No pending request: publish an error push.
 
 ### 6.11 Commands
@@ -406,8 +407,8 @@ A command is a known name, matched case-insensitively after trim. Any other lead
 | Long text | `oc-out` | default | `<project>` | summary plus `.md` |
 | Auto file | `oc-out,oc-attach` | low | `<project> - <filename>` | `<bytes> bytes` |
 | Manual file | `oc-out,oc-manual` | default | `<project> - <filename>` | optional message |
-| Permission ask | `oc-out` | high | `<project> - permission` | existing payload |
-| Session error | `oc-out` | high | `<project> - session error` | error type and message |
+| Permission ask | `lock,oc-out` | default | `<project> - permission requested` | action, patterns, and reply line |
+| Session error | `warning,oc-out` | default | `<project> - session error` | error type and message |
 | Relay ack | `oc-out` | min | `<project> - queued` | target session |
 | Relay error | `oc-out` | high | `<project> - relay error` | short failure |
 
@@ -435,7 +436,7 @@ The relay ignores every message with `oc-out`. That is the only direction marker
 
 ## 10. Testing
 
-Unit and integration tests run with `cargo test`. The workspace holds 624 tests at 0.6.10: 94 in `deploy`, 89 in `outbound`, 86 in `inbound`, 99 in `app`, 75 in `core`, 54 in `ntfy`, 50 in `opencode`, 30 in `control`, 28 in `auth`, and 19 in `admin`. No test uses the network; test directories stay inside the workspace.
+Unit and integration tests run with `cargo test`. The workspace holds 624 tests at 0.6.12: 94 in `deploy`, 89 in `outbound`, 86 in `inbound`, 99 in `app`, 75 in `core`, 54 in `ntfy`, 50 in `opencode`, 30 in `control`, 28 in `auth`, and 19 in `admin`. No test uses the network; test directories stay inside the workspace.
 
 - Topic derivation: Windows and POSIX paths, trailing separators, invalid characters, length limit, empty basename, duplicate folder names.
 - Filter: `oc-out`, stale, oversized, empty, attachment-only, duplicate ID.

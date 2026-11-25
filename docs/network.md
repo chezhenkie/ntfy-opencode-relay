@@ -68,13 +68,20 @@ With the terminator active, the deploy config uses the HTTPS name and proxy mode
 
 ```json
 {
+  "version": 1,
   "mode": "proxy",
   "baseUrl": "https://ntfy.example.ts.net",
-  "behindProxy": true
+  "behindProxy": true,
+  "port": 8810,
+  "container": {
+    "name": "ntfy",
+    "image": "localhost/ntfy:server",
+    "cacheVolume": "ntfy-cache"
+  }
 }
 ```
 
-`ntfy-deploy mode tailscale` writes this config and recreates the container with `NTFY_BASE_URL` and `NTFY_BEHIND_PROXY`; `ntfy-deploy status` shows the result. Then remove the VPN-facing portproxy as shown in [section 5.5](https.md#55-remove-the-vpn-facing-portproxy).
+`ntfy-deploy mode tailscale` rewrites these keys in the existing config and recreates the container with `NTFY_BASE_URL` and `NTFY_BEHIND_PROXY`; `ntfy-deploy status` shows the result. Then remove the VPN-facing portproxy as shown in [section 5.5](https.md#55-remove-the-vpn-facing-portproxy).
 
 The terminator is reachable only from the private network. Do not enable a public exposure feature.
 

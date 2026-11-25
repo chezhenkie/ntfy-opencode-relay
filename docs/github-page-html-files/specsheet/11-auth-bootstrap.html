@@ -329,7 +329,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 }</code></pre>
 <ul>
 <li>Strict JSON: unknown fields, another version, and a missing field fail with exit 2.</li>
-<li><code>container</code>: the running container name, 1 to 64 characters of letters, digits, dot, dash, or underscore.</li>
+<li><code>container</code>: the running container name, 1 to 64 characters of letters, digits, dot, dash, or underscore. The first character must be alphanumeric.</li>
 <li><code>user</code>: 1 to 64 characters of letters, digits, dash, or underscore. A wildcard user is rejected.</li>
 <li><code>topic</code>: 1 to 64 characters of letters, digits, dash, underscore, or <code>*</code>. <code>*</code> grants every topic, including one that does not exist yet.</li>
 <li><code>permission</code>: <code>rw</code>, <code>read</code>, or <code>write</code>. <code>deny</code> is rejected: bootstrap with deny is a mistake, not a policy.</li>
@@ -370,7 +370,7 @@ podman exec &lt;container&gt; ntfy token add --label=&lt;label&gt; &lt;user&gt;<
 <li>Add a token only when the file is missing, unreadable, empty, malformed, or holds a value the server does not list. Write the returned token to the file, 32 characters plus a newline, <code>0600</code> on Unix.</li>
 <li>A valid file token that the server lists is kept and no command writes.</li>
 </ol>
-<p>A wiped token file is restored by one run. A stale file is replaced by a new token; old tokens stay until <code>tools\rotate-token.ps1 -User phone -RevokeOld</code> removes them. The tool never revokes.</p>
+<p>A wiped token file is restored by one run. A stale file is replaced by a new token; old tokens stay until <code>tools\rotate-token.ps1 -User phone -RevokeOld &lt;prefix&gt;</code> removes them. The tool never revokes.</p>
 <h2><span class="num">7</span>Status</h2>
 <div class="rule"></div>
 <p><code>status</code> prints the container, the user, the access pair, and the token state, then <code>result: ok</code> or <code>result: incomplete</code>. The token state is <code>listed</code>, <code>file token not listed</code>, or <code>file missing</code>. Incomplete exits 3 and writes nothing.</p>

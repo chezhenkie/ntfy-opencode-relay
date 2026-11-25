@@ -18,7 +18,7 @@ Linux:
 bash e2e-smoke-tests/run-linux.sh
 ```
 
-Both wrappers accept `--base-url`, `--token-file`, `--topic`, and `--timeout` in the form `run-windows.ps1 -BaseUrl ...` or `run-linux.sh --base-url ...`. `node e2e-smoke-tests/smoke.mjs` runs the same suite directly.
+Both wrappers accept `--base-url`, `--token-file`, `--topic`, and `--timeout`; on Windows the parameters are `-BaseUrl`, `-TokenFile`, `-Topic`, and `-TimeoutMs`. `node e2e-smoke-tests/smoke.mjs` runs the same suite directly.
 
 The base URL defaults to `http://127.0.0.1:8810`. The token file defaults to `$NTFY_TOKEN_FILE`, else `$NTFY_RELAY_HOME/ntfy-token.txt`, else `%LOCALAPPDATA%\ntfy-relay\ntfy-token.txt` on Windows, else `bin/ntfy-relay/ntfy-token.txt` under the repository. On Linux the install root is usually set with `NTFY_RELAY_HOME`.
 
@@ -38,7 +38,7 @@ bash e2e-smoke-tests/run-linux.sh --base-url https://ntfy.example.ts.net
 | `publish-header` | token publish to `/<topic>` with `Title`, `Tags`, and a text body returns one 12-character message id |
 | `read-back` | `/<topic>/json?poll=1&since=` returns that id with the same body, title, and `oc-out` tag |
 | `sse-live` | `/<topic>/sse?since=` opens, a later publish arrives as a message frame with the same body |
-| `publish-json` | JSON publish to the base URL returns a message that reads back with title and priority |
+| `publish-json` | JSON publish to the base URL returns a message that reads back with the same title; the priority is reported but not compared |
 | `attachment-roundtrip` | a `PUT` upload stores the file, and the attachment URL returns the same bytes |
 
 ## Options

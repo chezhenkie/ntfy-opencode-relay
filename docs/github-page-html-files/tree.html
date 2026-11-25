@@ -322,6 +322,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
       core\
         Cargo.toml
         src\lib.rs, topic.rs, clock.rs, adapter.rs     topic rule, clock, SessionApi and PermissionApi
+        src\fsutil.rs                                  temp-sibling write and rename helpers
         src\config.rs                                  defaults, validation, path resolution
         src\state.rs, asks.rs, forms.rs, text.rs       state file, ask and form registries, byte budgets
         src\link_safe.rs, tlds.rs                      link rewrite, generated IANA table
@@ -329,6 +330,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
       inbound\
         Cargo.toml
         src\control\                                  table, parse, load, engine
+        src\rate.rs                                   prompt rate cap per topic
         src\filter.rs, queue.rs, routing.rs           acceptance, bounded queue, target choice
         src\prompting.rs, permission.rs, prune.rs     prompt delivery, native replies, inbox retention
         src\form_reply.rs                             /answer cancel pass-through
@@ -392,7 +394,10 @@ pre code{background:none;color:inherit;border:0;padding:0}
         src\main.rs, cli.rs                           ntfy-admin topics|add|remove|status|stop|mode
         src\endpoint.rs, run.rs                       live client seam, dispatch, one line per item
   .github\
-    workflows\ci.yml              Node checks and Rust matrix on ubuntu and windows
+    workflows\ci.yml              Node checks on windows; Rust matrix on ubuntu and windows
+    workflows\release.yml         patch bump, three targets, image, release, cleanup
+  release\
+    README-RELEASE.md.in          release notes template with case labels
   docs\
     index.md                manual contents, scope, environment
     index.html              site front page: diagram cards and a document table
@@ -430,12 +435,16 @@ pre code{background:none;color:inherit;border:0;padding:0}
   container\
     Dockerfile                    alpine 3.24.4, non-root, baked server.yml, fetch stage for ntfy
     server.yml                    ntfy config; base-url and behind-proxy come from ntfy-deploy
+    compose.yml                   container definition for the released image
+    env.example                   values for compose.yml
     .dockerignore                 excludes hand-downloaded ntfy copies
   tools\
     build-image.ps1               builds the image from the tracked context
     rotate-token.ps1              two-phase token rotation, probe publish, temporary expiry
     check-doc-links.mjs           relative links and ASCII over every tracked markdown file
     build-docs-site.mjs           regenerates the published pages and checks their links
+    secret-scan.mjs               scans tracked files for tokens, hosts, and absolute paths
+    secret-scan.allow             allowlisted fixture matches
     link-safety\build-tlds.mjs    writes the Rust TLD table
     link-safety\tlds.txt          IANA TLD source list
   e2e-smoke-tests\

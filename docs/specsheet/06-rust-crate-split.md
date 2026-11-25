@@ -1,6 +1,6 @@
 # Rust crate split
 
-Status: agreed process and crate split, implemented and live. `core`, `ntfy`, `opencode`, `inbound`, `outbound`, and `app` build `ntfy-relay run|mcp|status`; `deploy` builds `ntfy-deploy`; `auth` builds `ntfy-auth`; `admin` builds `ntfy-admin`. `control` is the shared library for the relay and the CLI (`12`): types, root policy, runtime file, pid liveness, listener, and client. The daemon owns both directions and the MCP stdio server shares the build. The design context is in `03-rust-relay-merge.md`; open questions stay in `04-rust-relay-decisions.md`; the porting pitfalls are in `05-js-to-rust-pitfalls.md`; deployment modes are in `10`; the auth bootstrap is in `11`.
+Status: agreed process and crate split, implemented and live. `core`, `ntfy`, `opencode`, `inbound`, `outbound`, and `app` build `ntfy-relay run|mcp|ensure|status`; `deploy` builds `ntfy-deploy`; `auth` builds `ntfy-auth`; `admin` builds `ntfy-admin`. `control` is the shared library for the relay and the CLI (`12`): types, root policy, runtime file, pid liveness, listener, and client. The daemon owns both directions and the MCP stdio server shares the build. The design context is in `03-rust-relay-merge.md`; open questions stay in `04-rust-relay-decisions.md`; the porting pitfalls are in `05-js-to-rust-pitfalls.md`; deployment modes are in `10`; the auth bootstrap is in `11`.
 
 The implementation has two layers: shipped entry points and internal crates, with the seams between them.
 
@@ -61,7 +61,7 @@ The `ntfy-forwarder` plugin and its loopback ingest were removed in 0.7.4. Outbo
 ## What each boundary owns
 
 - `core` is the only place link-safe and the TLD table live. The daemon, the MCP tool, and every ack call the same function. The generated Rust table is checked in; `npm run tlds` compares it to the text source.
-- `ntfy` owns the wire, not the policy. No topic derivation, no link safety, no caller byte budgets. It takes bytes and headers, and keeps the plugin title and message caps because they are part of the serialized request. The two publish styles are explicit here.
+- `ntfy` owns the wire, not the policy. No topic derivation, no link safety, no caller byte budgets. It takes bytes and headers, and keeps the plugin title and message caps because they are part of the serialized request. The three publish styles are explicit here.
 - `opencode` owns the API and the event types, not the mapping. `outbound` maps events to pushes; contract tests parse recorded fixtures here.
 - `inbound` owns the control table, confirm holds, and cooldowns. Modules, not crates.
 - `app` is the composition root only: CLI, lock, supervisor, logging, signals, MCP protocol. No business rules.
@@ -82,7 +82,7 @@ The `control` crate carries the envelope and error codes, the project-root polic
 
 Cost: a second token read and a second publisher. Both use the same policy code, so there is no drift. Project confinement comes from the single `projectRoots` entry, not from MCP scoping, so row 2 loses its scoping risk; only rendering and tool naming remain to test.
 
-`outbound::send_file` is the library function the MCP loop calls. It enforces canonical path, 15 MB cap, `oc-out,oc-manual`, and link-safe message. The protocol layer stays thin.
+`outbound::files::send_file` is the library function the MCP loop calls. It enforces canonical path, 15 MB cap, `oc-out,oc-manual`, and link-safe message. The protocol layer stays thin.
 
 Live since 2026-11-11: `mcp.servers.ntfy` runs the binary with `mcp`, `cwd: "."`, and `codemode: false`; a permission allow matches `ntfy_send_file`. An agent call returned the plugin's `Sent ...` text and one `oc-out,oc-manual` push. One process per directory means a directory outside `projectRoots` gets refusals, not publishes.
 

@@ -3,7 +3,7 @@
 ## Header
 
 - Scope: how `/allow`, `/always`, and `/deny` from the phone select the OpenCode session and permission request they answer.
-- Status: implemented and live-verified as 0.9.0 on 2026-11-13. The local audit holds the matrix; cases 1 to 6 pass, the UI-driven ask case stays open.
+- Status: implemented and live-verified on 2026-11-13; the UI-driven ask case passed on 2026-11-18. The local audit holds the matrix.
 - Related: `01-phone-continuation.md` (permission contract), `08-comms-and-mcp.md` (surfaces), `../operations.md` (notification behavior), `../phone-app-user-manual.md` (phone commands), `../open-work.md` item 10.2.
 
 ## 1. Problem
@@ -43,7 +43,7 @@ The routing hint keeps its meaning for text prompts only. Since 0.11.0 it is a o
 - R1 Bind at publish: an ask enters the registry immediately before its push is published, with session id, request id, title, and push time.
 - R2 Reply by record: `/allow`, `/always`, `/deny` resolve a registry record, never a routed session.
 - R3 Default target: with no argument, the most recently pushed record. With an argument, the record whose short code matches.
-- R4 Short codes: 4 hex characters, extended to 5 or 6 only on collision; displayed in the push; accepted with or without `#`.
+- R4 Short codes: 4 hex characters, extended to 5, 6, or 7 only on collision; displayed in the push; accepted with or without `#`.
 - R5 Ack from the record: the ack names the record's session title and counts remaining records across the registry.
 - R6 Desktop answer: `permission.replied` removes the record, so a later phone reply cannot target a dead ask.
 - R7 Restart: the registry survives a relay restart; entries are optimistic and cleaned when the ask is gone.
@@ -81,7 +81,7 @@ Grammar: the existing native verbs plus one optional token, case-insensitive: `/
 2. Without a token, take the newest record.
 3. Post the decision to the record's session and request id.
 4. Remove the record on success.
-5. Ack: `approved once in <title> (<code>), N more pending`, `approved always ...`, or `rejected ...`; `N` counts all remaining records.
+5. Ack: `approved once in <title> (<code>), N more pending`, `approved always ...`, or `rejected ...`; `N` counts all remaining records, and the suffix is dropped when `N` is 0.
 6. Empty registry: `no pending permission ask`. The message must not name a session.
 
 Server outcomes on reply:
@@ -102,7 +102,7 @@ The outbound scheduler keeps its 15 s grace. On a due timer the worker:
 1. allocates the code,
 2. writes the registry entry and persists it,
 3. publishes the push,
-4. on a failed publish, removes the entry and logs `permission push failed`.
+4. on a failed publish, removes the entry and logs `permission ask removed code=<code> reason=publish-failed: <error>`.
 
 The push body adds one line: `Reply /allow <code>, /always <code>, or /deny <code>; with one ask, /allow is enough.` The code appears in the body only; the title stays `<project> - permission requested`, so notification actions and previews stay unchanged.
 
@@ -125,7 +125,7 @@ The grace is a heuristic. OpenCode does not expose its auto-approve mode, so the
 - Records are verified lazily on reply.
 - A relay restart while an ask is pending keeps the notification answerable, because the request id and session id are stable in the OpenCode server.
 - An OpenCode restart invalidates the ids; the first reply removes the record and acks already answered.
-- The registry is per relay process. Since 0.14.0 the relay serves every root in `projectRoots`, so one registry covers several topics; a reply resolves by request id, never by topic.
+- The registry is per relay process. The relay serves every root in `projectRoots`, so one registry covers several topics; a reply resolves by request id, never by topic.
 
 ## 10. Status and logs
 
@@ -133,7 +133,7 @@ The grace is a heuristic. OpenCode does not expose its auto-approve mode, so the
 - Log lines, one each, no full command text:
   - `permission ask code=<code> session=<id> request=<id>`
   - `permission reply code=<code> decision=<once|always|reject>`
-  - `permission ask removed code=<code> reason=<answered|gone|evicted|publish-failed>`
+  - `permission ask removed code=<code> reason=<answered|evicted|publish-failed>`
 
 ## 11. Tests
 
@@ -179,4 +179,4 @@ The relay does not interpret a question form. The phone sends `/answer` followed
 - The registry is `ntfy-relay-forms.json` in the relay root: 64 forms, the oldest push evicted, 16 in-memory tombstones for 15 minutes, and a corrupt file quarantined like the ask registry.
 - The push carries the question and its options and ends with `Reply with /answer and your answer in your own words.` A form with no visible field is pushed as text with the generic hint and carries no reply line.
 - `/help` lists `/answer - dismiss the last question and send the rest of the message to the assistant`.
-- Log lines: `form cancelled title=<title> bytes=<n>`, `answer failed id=<event> <reason>`, `question form not pushed id=<form> <reason>`. The registry count appears in `/status` only as part of the state file, not as a new line.
+- Log lines: `form cancelled title=<title> bytes=<n>`, `answer failed id=<message id>: <reason>`, `question form not pushed id=<form id>: <reason>`. The registry count has no `/status` line.

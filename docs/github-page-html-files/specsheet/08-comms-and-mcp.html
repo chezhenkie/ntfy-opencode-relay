@@ -315,8 +315,8 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <div class="rule"></div>
 <table><thead><tr><th>Surface</th><th>Where</th><th>Direction</th></tr></thead><tbody>
 <tr><td>REST</td><td>ntfy server: <code>POST /&lt;topic&gt;</code> to publish, <code>PUT</code> for files, <code>GET /v1/health</code></td><td>relay to ntfy</td></tr>
-<tr><td>REST</td><td>OpenCode server: <code>/api/session/&lt;id&gt;/prompt</code>, <code>/api/session/&lt;id&gt;/message</code>, <code>/api/permission/...</code></td><td>relay to OpenCode</td></tr>
-<tr><td>SSE</td><td><code>GET /api/event</code> on ntfy, and the OpenCode event stream</td><td>long-lived read inside REST</td></tr>
+<tr><td>REST</td><td>OpenCode server: <code>/api/session/&lt;id&gt;/prompt</code>, <code>/api/session/&lt;id&gt;/message</code>, <code>/api/session/&lt;id&gt;/permission</code></td><td>relay to OpenCode</td></tr>
+<tr><td>SSE</td><td>ntfy <code>GET /&lt;topics&gt;/sse?since=</code>, and the OpenCode <code>GET /api/event</code> stream</td><td>long-lived read inside REST</td></tr>
 <tr><td>MCP</td><td><code>ntfy-relay mcp</code> on stdio, one tool <code>send_file</code></td><td>OpenCode calls the relay</td></tr>
 </tbody></table>
 <p>REST plus SSE is the data and control plane. MCP is a single-tool facade over the same publish path. MCP is inbound only in the sense that the agent calls the relay; the relay never calls an MCP server itself. The framework never talks to ntfy directly; design rule 1 in <code>00-overview.md</code> is binding.</p>

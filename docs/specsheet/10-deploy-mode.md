@@ -3,7 +3,7 @@
 ## Header
 
 - Status: spec final; migration executed 2026-11-14, the crate is implemented.
-- Scope: one cross-platform helper, `ntfy-deploy`, that switches the ntfy server between proxy, VPN, and LAN modes by recreating the container with environment variables and maintaining the Windows portproxy. It never manages the relay daemon.
+- Scope: one cross-platform helper, `ntfy-deploy`, that switches the ntfy server between proxy, VPN, and LAN modes by recreating the container with environment variables and maintaining the Windows portproxy. `install` and `remove` place the binaries, register the startup entries, and stop or start the relay; `apply` and `mode` never touch the daemon.
 - Supersedes: the baked `base-url` rebuild path in `container\server.yml` and `tools\build-image.ps1`.
 - Related: `00-overview.md` (file ownership), `06-rust-crate-split.md` (crate boundaries), `docs\https.md` (current proxy route), `docs\switching-networks-user-manual.md` (operator workflow).
 
@@ -33,6 +33,8 @@ Contents:
 | `ntfy-token.txt` | the only token, read by the daemon and the MCP; the app keeps its copy |
 | `ntfy-relay-state.json` | routing hints, state |
 | `ntfy-relay-asks.json` | ask registry |
+| `ntfy-relay-forms.json` | pushed question forms and tombstones |
+| `ntfy-relay-endpoint.json` | control endpoint port and per-process token |
 | `ntfy-relay-seen.jsonl` | journal |
 | `ntfy-relay.log` | daemon log |
 
@@ -83,9 +85,9 @@ A mode switch is never started by the relay. The relay validates the request and
 - A mode switch recreates the container. It never rebuilds the image.
 - A rebuild is needed for a new ntfy version or a change to the baked keys, and it never waits for a relay release.
 - Build source: the tracked context holds the Dockerfile, `server.yml`, and `.dockerignore`. The Dockerfile is a standard one; Podman builds it directly, so there is no second builder file, and `--format docker` selects the image format that keeps the healthcheck. A build stage fetches the pinned ntfy release tarball and checks it against `NTFY_SHA256` before the binary enters a layer, so the tree holds no binary and no download step precedes the build. A version change updates `NTFY_VERSION` and `NTFY_SHA256` together.
-- Engine: the artifact is engine-neutral. The Dockerfile is standard, the saved archive is docker-archive, and either `podman load` or `docker load` restores the same `localhost/ntfy:server` tag. `ntfy-deploy` currently drives the Podman binary through `NTFY_PODMAN_BIN`; Docker is a manual route until engine detection and installation are designed (open-work 10.10).
+- Engine: the artifact is engine-neutral. The Dockerfile is standard, the saved archive is docker-archive, and either `podman load` or `docker load` restores the same `localhost/ntfy:server` tag. `ntfy-deploy` currently runs `podman`; only the `status` rows honor `NTFY_PODMAN_BIN`. Docker is a manual route until engine detection and installation are designed (open-work 10.10).
 - Reference: `localhost/ntfy:server`, plus `:latest` as an alias. The tag is stable across ntfy versions; `tools\build-image.ps1` reads the version pin only to report it. When a rebuild keeps the tag, the image-ID rule in `apply` replaces the container on the next run, so a server bump is a rebuild and an apply, never a relay release.
-- Distribution: no registry. A release ships one `podman save --format docker-archive` archive per claimed architecture, named `ntfy-image-<ntfy version>-<arch>.tar` and carrying the `server` tag and `latest`; `podman load` restores both without a build, account, or network, and the docker-archive format also loads in Docker.
+- Distribution: no registry. A release ships one `docker save` archive per claimed architecture, named `ntfy-image-<ntfy version>-<arch>.tar` and carrying the `server` tag and `latest`; `podman load` restores both without a build, account, or network, and the docker-archive format also loads in Docker.
 - Architecture: amd64 is claimed, and the pinned base digest and release checksum name it. Another architecture needs its own base digest and release checksum, and ships only after a live run on that architecture.
 
 ## Modes
@@ -95,7 +97,7 @@ A mode switch is never started by the relay. The relay validates the request and
 | `baseUrl` | `https://<name>` | `http://<vpn-ip>:8810` | `http://<lan-ip>:8810` |
 | `behindProxy` | true | false | false |
 | container publish | loopback | loopback | LAN interface or all |
-| Windows portproxy | loopback only | loopback plus VPN IP | none |
+| Windows portproxy | loopback only | loopback plus VPN IP | loopback only |
 | ingress | TLS terminator on 443 | VPN client | LAN |
 | phone URL | https name | http VPN IP | http host |
 
@@ -202,7 +204,7 @@ Linux:
 
 - Config parse, required fields, unknown mode, unknown field.
 - URL rules: https any host, http only on a loopback, VPN, or LAN IP literal, no path, no trailing slash, and an HTTP port equal to `port`.
-- Portproxy mapping: proxy removes the VPN entry, VPN adds it, LAN leaves none.
+- Portproxy mapping: proxy removes the VPN entry, VPN adds it, LAN leaves the loopback entry only.
 - Container argument construction: image, name, volume, publish, env pair per mode.
 - Dry-run emits commands and changes nothing.
 - Status output for each mode.
@@ -217,7 +219,7 @@ Linux:
 
 ## Non-goals
 
-- No relay lifecycle, restart, or supervision. That is the bridge boundary.
+- No relay lifecycle in `apply` or `mode`; `install` and `remove` stop and start the relay. Supervision belongs to the bridge.
 - No writes to OpenCode config or state.
 - No edit of the relay config at runtime.
 - No auth, cache, or attachment changes.

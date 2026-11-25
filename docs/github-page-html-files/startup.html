@@ -330,7 +330,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <p>The route examples use Tailscale. For Nord Meshnet or LAN mode, check the equivalent client and use the base URL that <code>ntfy-deploy status</code> prints; see <a href="switching-networks-user-manual.html">switching networks</a>.</p>
 <h2><span class="num">3</span>Start</h2>
 <div class="rule"></div>
-<p>At logon Windows runs the <code>ntfy-relay-startup</code> task, so the usual case needs no manual step. It starts the Podman machine, applies the deployment config, and runs <code>ensure</code>; no console window opens. To start by hand, in order:</p>
+<p>At logon Windows runs the <code>ntfy-relay-startup</code> task, so the usual case needs no manual step. It starts the Podman machine and runs <code>ensure</code>; no console window opens. To start by hand, in order:</p>
 <pre><code class="language-powershell">podman machine start
 podman machine list --format &#39;{{.Running}}&#39;   # wait for true
 podman start ntfy                             # only after an explicit container stop
@@ -356,7 +356,7 @@ podman start ntfy                             # only after an explicit container
 
 podman stop ntfy
 podman machine stop</code></pre>
-<p><code>ntfy-admin stop</code> posts to the control endpoint. The daemon finishes the current message, drops the queue with one log line, joins the SSE task for at most 5 s, and removes the lock and the endpoint file; the CLI waits up to 15 s for the pid and reports <code>still running</code> otherwise. A force stop is immediate and leaves the lock file behind; the next start replaces a readable dead pid once. A message in flight can be lost or repeated: restart within the 60-minute replay window. The Windows binary is windowless, so a foreground run receives no Ctrl+C. If the endpoint does not answer, the fallback on Windows is <code>Stop-Process -Id &lt;pid&gt; -Force</code>, which sends no signal; on Linux <code>kill &lt;pid&gt;</code> sends SIGTERM and follows the same clean stop path.</p>
+<p><code>ntfy-admin stop</code> posts to the control endpoint. The daemon finishes the current message, drops the queue with one log line, joins the outbound and SSE tasks with a 5 s grace and a 6 s bound per task, and removes the lock and the endpoint file; the CLI waits up to 15 s for the pid and reports <code>still running</code> otherwise. A force stop is immediate and leaves the lock file behind; the next start replaces a readable dead pid once. A message in flight can be lost or repeated: restart within the 60-minute replay window. The Windows binary is windowless, so a foreground run receives no Ctrl+C. If the endpoint does not answer, the fallback on Windows is <code>Stop-Process -Id &lt;pid&gt; -Force</code>, which sends no signal; on Linux <code>kill &lt;pid&gt;</code> sends SIGTERM and follows the same clean stop path.</p>
 <p><code>podman stop ntfy</code> stops only the server; the relay keeps running and retries. <code>podman machine stop</code> shuts down WSL2, the container, and <code>wslrelay</code>, so stop the relay first. Stopping the private network client takes the phone route down as well; <code>Stop-Service Tailscale</code> needs an elevated shell.</p>
 <p>Re-enable the watchdog after the next start, or leave it disabled if the stack is meant to stay down:</p>
 <pre><code class="language-powershell">Enable-ScheduledTask -TaskName ntfy-relay-watchdog</code></pre>

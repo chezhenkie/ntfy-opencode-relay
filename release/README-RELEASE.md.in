@@ -30,6 +30,7 @@ podman load -i ntfy-image-@NTFY_VERSION@-amd64.tar
 cp env.example .env
 # set NTFY_BASE_URL to the public HTTPS name
 podman-compose up -d
+# or: docker compose up -d
 ```
 
 The image carries the stable local tag `localhost/ntfy:server`, which
@@ -42,10 +43,10 @@ Windows relay, from the unpacked zip:
 & .\ntfy-deploy.exe install
 ```
 
-Linux relay, from the unpacked tarball:
+Linux relay, from the unpacked tarball. The archive holds the four binaries at its root, so run the installer from that folder:
 
 ```bash
-~/.local/share/ntfy-relay/ntfy-deploy install
+./ntfy-deploy install
 ```
 
 `install` places the four binaries in the relay root, writes the missing
@@ -62,14 +63,17 @@ last line reads `result: installed, without autostart`. The token file is
 copied from the host that runs the container, because `ntfy-auth` drives
 `podman exec` there.
 
-Then:
+Then run `ntfy-auth` from the relay root, which is not on `PATH` by default:
 
-```sh
-ntfy-auth apply
+```text
+# Linux
+~/.local/share/ntfy-relay/ntfy-auth apply
+# Windows
+%LOCALAPPDATA%\ntfy-relay\ntfy-auth.exe apply
 ```
 
-The relay serves `https://<your name>` through a TLS terminator on 443 to the
-container's loopback port; the phone subscribes to the project folders as
+The proxy mode serves `https://<your name>` through a TLS terminator on 443 to the
+container's loopback port; the LAN mode serves plain HTTP on 8810; the phone subscribes to the project folders as
 topics. See `docs/specsheet/10-deploy-mode.md` and `docs/operations.md`.
 
 ## Phone

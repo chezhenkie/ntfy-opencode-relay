@@ -12,7 +12,7 @@ sudo apt install -y curl tar
 cd /tmp
 curl -fL -o ntfy_2.38.2_linux_amd64.tar.gz \
   https://github.com/binwiederhier/ntfy/releases/download/v2.38.2/ntfy_2.38.2_linux_amd64.tar.gz
-echo "e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1  ntfy_2.38.2_linux_amd64.tar.gz" | sha256sum -c -
+echo "2040946f6e1103420e72a79a7048c841fb73cd51c17d45232e0c8f6ac7f0d531  ntfy_2.38.2_linux_amd64.tar.gz" | sha256sum -c -
 tar xzf ntfy_2.38.2_linux_amd64.tar.gz
 ```
 

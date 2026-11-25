@@ -304,7 +304,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
     <h1>07 - reconnect backfill</h1>
   </header>
   <main>
-<p>Status: implemented in 0.7.4. The project-local JS forwarder and the loopback ingest are gone; completed assistant text is recovered from the message API. The decision row is 12 in <code>04-rust-relay-decisions.md</code>. Gate evidence is recorded under Live gate and in <code>docs/operations.md</code> 7.4.</p>
+<p>Status: implemented in the Rust daemon. The project-local JS forwarder and the loopback ingest are gone; completed assistant text is recovered from the message API. The decision row is 12 in <code>04-rust-relay-decisions.md</code>. Gate evidence is recorded under Live gate and in <code>docs/operations.md</code> 7.4.</p>
 <h2><span class="num">1</span>Goal</h2>
 <div class="rule"></div>
 <p>The Rust daemon owns outbound turn text with no JavaScript and no second event feed:</p>
@@ -317,7 +317,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <div class="rule"></div>
 <p>The live OpenCode 2.2.7 server exposes, in <code>/openapi.json</code>:</p>
 <pre><code>GET /api/session/{sessionID}/message
-  ?type=assistant&amp;order=desc&amp;limit=&lt;n&gt;&amp;cursor=&lt;opaque&gt;</code></pre>
+  ?type=assistant&amp;order=desc&amp;limit=&lt;n&gt;</code></pre>
 <p>The response is <code>{ data: Session.Message.Info[], cursor: { previous, next } }</code>. Assistant messages carry:</p>
 <ul>
 <li><code>id</code>: the assistant message id.</li>
@@ -330,7 +330,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <div class="rule"></div>
 <h3>Gap detection</h3>
 <ul>
-<li>The outbound runner records <code>last_event_ms</code> from every accepted envelope.</li>
+<li>The outbound runner records <code>gap_start_ms</code> as the wall time when a stream ends; it does not track the last event time.</li>
 <li>On stream end, it records <code>gap_start_ms</code> as the current wall time. On reconnect or start, it backfills only messages with <code>time.completed &gt;= backfill_from</code>.</li>
 <li><code>backfill_from</code> is <code>gap_start_ms - 60 s</code> for a reconnect. On a cold start it is <code>now - 15 min</code>, matching the seen journal window.</li>
 <li>The backfill runs in the worker after the subscription is established, so live frames arriving during the queries wait in the 256-slot channel, dedupe normally, and can be dropped under a long backfill.</li>
@@ -340,7 +340,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>Reconnect: backfill sessions with an open turn and the session that published the last text.</li>
 <li>Cold start: backfill the newest 20 non-archived sessions per project root, using the existing discovery list. The sessions the state file remembers are always included.</li>
 <li>Cap: 200 messages per reconnect; stop paginating when a page is older than <code>backfill_from</code> or the cap is hit.</li>
-<li>Endpoint calls reuse the 5 s API timeout and the rediscovering client.</li>
+<li>Endpoint calls use a 5 s backfill timeout and the rediscovering client.</li>
 </ul>
 <h3>Text reconstruction</h3>
 <ul>
@@ -378,7 +378,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <div class="rule"></div>
 <p>Unit and integration:</p>
 <ul>
-<li>gap detection uses the last event time, not the reconnect time.</li>
+<li>gap detection starts from the wall time at stream end, not the last event time.</li>
 <li>message pagination follows <code>cursor.next</code> and stops at <code>backfill_from</code>, the cap, or the last page.</li>
 <li>text reconstruction filters reasoning and tool parts and keeps order.</li>
 <li>inline and attachment thresholds reuse the turn path.</li>

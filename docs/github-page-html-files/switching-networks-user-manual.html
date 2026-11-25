@@ -307,7 +307,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <p>How to move the ntfy server between Tailscale, NordVPN Meshnet, and the local network. The tool is <code>ntfy-deploy</code>, which sits beside the relay and never touches it. Install and first-run steps are in <a href="operations.html">operations.md</a>; the phone side is in <a href="phone-app-user-manual.html">phone-app-user-manual.md</a>.</p>
 <h2><span class="num">1</span>1. What a switch does</h2>
 <div class="rule"></div>
-<p><code>ntfy-deploy mode</code> detects the network paths that exist on this host, writes <code>ntfy-deploy.json</code> for the one you pick, recreates the container with that base URL, and prints the phone URL.</p>
+<p><code>ntfy-deploy mode</code> detects the network paths that exist on this host, rewrites <code>ntfy-deploy.json</code> for the one you pick, recreates the container with that base URL, and prints the phone URL. The file must already exist; <code>mode</code> does not create it.</p>
 <table><thead><tr><th></th><th>proxy (Tailscale)</th><th>vpn (Nord Meshnet)</th><th>lan</th></tr></thead><tbody>
 <tr><td>server URL</td><td><code>https://&lt;name&gt;</code></td><td><code>http://&lt;private ip&gt;:8810</code></td><td><code>http://&lt;lan ip&gt;:8810</code></td></tr>
 <tr><td>TLS terminator</td><td>required</td><td>not used</td><td>not used</td></tr>
@@ -322,6 +322,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>Exactly one private network is active on the host: Tailscale or Nord Meshnet. Both use <code>100.64/10</code>, and two routes over that range make the phone path unpredictable.</li>
 <li>On Windows, open an elevated PowerShell. The portproxy step uses <code>netsh</code> and fails with exit 4 without administrator rights.</li>
 <li>The phone is on the same private network and you can reach its ntfy settings.</li>
+<li><code>ntfy-deploy.json</code> exists in the relay root; <code>mode</code> rewrites it and does not create it.</li>
 </ul>
 <p>The commands below run from the repository root, or from the install directory with <code>ntfy-deploy</code> on <code>PATH</code>.</p>
 <h2><span class="num">3</span>3. The three paths</h2>

@@ -304,7 +304,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
     <h1>Rust crate split</h1>
   </header>
   <main>
-<p>Status: agreed process and crate split, implemented and live. <code>core</code>, <code>ntfy</code>, <code>opencode</code>, <code>inbound</code>, <code>outbound</code>, and <code>app</code> build <code>ntfy-relay run|mcp|status</code>; <code>deploy</code> builds <code>ntfy-deploy</code>; <code>auth</code> builds <code>ntfy-auth</code>; <code>admin</code> builds <code>ntfy-admin</code>. <code>control</code> is the shared library for the relay and the CLI (<code>12</code>): types, root policy, runtime file, pid liveness, listener, and client. The daemon owns both directions and the MCP stdio server shares the build. The design context is in <code>03-rust-relay-merge.md</code>; open questions stay in <code>04-rust-relay-decisions.md</code>; the porting pitfalls are in <code>05-js-to-rust-pitfalls.md</code>; deployment modes are in <code>10</code>; the auth bootstrap is in <code>11</code>.</p>
+<p>Status: agreed process and crate split, implemented and live. <code>core</code>, <code>ntfy</code>, <code>opencode</code>, <code>inbound</code>, <code>outbound</code>, and <code>app</code> build <code>ntfy-relay run|mcp|ensure|status</code>; <code>deploy</code> builds <code>ntfy-deploy</code>; <code>auth</code> builds <code>ntfy-auth</code>; <code>admin</code> builds <code>ntfy-admin</code>. <code>control</code> is the shared library for the relay and the CLI (<code>12</code>): types, root policy, runtime file, pid liveness, listener, and client. The daemon owns both directions and the MCP stdio server shares the build. The design context is in <code>03-rust-relay-merge.md</code>; open questions stay in <code>04-rust-relay-decisions.md</code>; the porting pitfalls are in <code>05-js-to-rust-pitfalls.md</code>; deployment modes are in <code>10</code>; the auth bootstrap is in <code>11</code>.</p>
 <p>The implementation has two layers: shipped entry points and internal crates, with the seams between them.</p>
 <h2><span class="num">1</span>Shipped entry points</h2>
 <div class="rule"></div>
@@ -351,7 +351,7 @@ auth     -&gt; none</code></pre>
 <div class="rule"></div>
 <ul>
 <li><code>core</code> is the only place link-safe and the TLD table live. The daemon, the MCP tool, and every ack call the same function. The generated Rust table is checked in; <code>npm run tlds</code> compares it to the text source.</li>
-<li><code>ntfy</code> owns the wire, not the policy. No topic derivation, no link safety, no caller byte budgets. It takes bytes and headers, and keeps the plugin title and message caps because they are part of the serialized request. The two publish styles are explicit here.</li>
+<li><code>ntfy</code> owns the wire, not the policy. No topic derivation, no link safety, no caller byte budgets. It takes bytes and headers, and keeps the plugin title and message caps because they are part of the serialized request. The three publish styles are explicit here.</li>
 <li><code>opencode</code> owns the API and the event types, not the mapping. <code>outbound</code> maps events to pushes; contract tests parse recorded fixtures here.</li>
 <li><code>inbound</code> owns the control table, confirm holds, and cooldowns. Modules, not crates.</li>
 <li><code>app</code> is the composition root only: CLI, lock, supervisor, logging, signals, MCP protocol. No business rules.</li>
@@ -370,7 +370,7 @@ auth     -&gt; none</code></pre>
 <li>The tool works when the daemon is down.</li>
 </ul>
 <p>Cost: a second token read and a second publisher. Both use the same policy code, so there is no drift. Project confinement comes from the single <code>projectRoots</code> entry, not from MCP scoping, so row 2 loses its scoping risk; only rendering and tool naming remain to test.</p>
-<p><code>outbound::send_file</code> is the library function the MCP loop calls. It enforces canonical path, 15 MB cap, <code>oc-out,oc-manual</code>, and link-safe message. The protocol layer stays thin.</p>
+<p><code>outbound::files::send_file</code> is the library function the MCP loop calls. It enforces canonical path, 15 MB cap, <code>oc-out,oc-manual</code>, and link-safe message. The protocol layer stays thin.</p>
 <p>Live since 2026-11-11: <code>mcp.servers.ntfy</code> runs the binary with <code>mcp</code>, <code>cwd: &quot;.&quot;</code>, and <code>codemode: false</code>; a permission allow matches <code>ntfy_send_file</code>. An agent call returned the plugin&#39;s <code>Sent ...</code> text and one <code>oc-out,oc-manual</code> push. One process per directory means a directory outside <code>projectRoots</code> gets refusals, not publishes.</p>
 <h2><span class="num">6</span>Modules</h2>
 <div class="rule"></div>

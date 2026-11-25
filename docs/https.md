@@ -81,9 +81,16 @@ The deploy config switches to proxy mode:
 
 ```json
 {
+  "version": 1,
   "mode": "proxy",
   "baseUrl": "https://ntfy.example.ts.net",
-  "behindProxy": true
+  "behindProxy": true,
+  "port": 8810,
+  "container": {
+    "name": "ntfy",
+    "image": "localhost/ntfy:server",
+    "cacheVolume": "ntfy-cache"
+  }
 }
 ```
 
@@ -92,7 +99,7 @@ ntfy-deploy mode tailscale
 ntfy-deploy status
 ```
 
-`mode tailscale` writes the proxy config from the detected MagicDNS name and applies it; the JSON above is what it produces.
+`mode tailscale` rewrites `mode`, `baseUrl`, and `behindProxy` in the existing `ntfy-deploy.json` from the detected MagicDNS name and applies it; the other keys keep their values. The file must already exist, because `mode` does not create it.
 
 The auth keys from [section 2.3](windows-podman.md#23-build-context) stay unchanged. The terminator ends TLS, so `baseUrl` must be the HTTPS name; `behindProxy: true` makes ntfy read the `X-Forwarded-For` header the terminator sets. Without it, rate limiting and logs see `127.0.0.1` for every client.
 

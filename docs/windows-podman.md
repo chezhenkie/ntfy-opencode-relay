@@ -236,7 +236,7 @@ Most of the size is the 76.6 MB static binary; the base contributes 8.7 MB.
 
 ## 2.5 Run
 
-`ntfy-deploy mode` detects the paths, writes `ntfy-deploy.json` in the relay root, and runs the container with the mode values. `ntfy-deploy apply` runs an existing config without changing it. The manual equivalent:
+`ntfy-deploy mode` detects the paths, rewrites `ntfy-deploy.json` in the relay root, and runs the container with the mode values; the file must already exist. `ntfy-deploy apply` runs an existing config without changing it. The manual equivalent:
 
 ```powershell
 podman run -d --name ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -p 8810:8080 -v ntfy-cache:/var/cache/ntfy -e NTFY_BASE_URL=https://ntfy.example.ts.net -e NTFY_BEHIND_PROXY=true localhost/ntfy:server

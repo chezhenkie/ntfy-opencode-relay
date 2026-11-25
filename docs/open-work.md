@@ -36,7 +36,7 @@ Status 2026-11-25, 0.6.10: the systemd probe gains `systemctl --user show-enviro
 
 Release goal: Linux ships two targets, `linux-gnu` for glibc hosts and `linux-musl` for Alpine. The workspace resolves rustls with the ring provider and no OpenSSL, and musl targets already default to `crt-static`, so the builder needs a C toolchain rather than a second TLS stack. CI tests the gnu target only today, so the musl artifact needs its own job and one `cargo test --workspace` plus a live start on Alpine before the release claims it. The relay does not belong inside the ntfy container: it needs the OpenCode registration, the token files, and the project roots on the host.
 
-The release carries the image tarball from `podman save` (one per claimed architecture; amd64 for now), a compose file, an env example, the binary zips, and SHA256 sums, so a host installs with `podman load` and three commands, without a registry or a clone.
+The release carries the image tarball from `docker save` (one per claimed architecture; amd64 for now), a compose file, an env example, the binary zips, and SHA256 sums, so a host installs with `podman load` and three commands, without a registry or a clone.
 
 ## 10.4 README pass
 

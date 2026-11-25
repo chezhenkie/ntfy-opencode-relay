@@ -28,7 +28,7 @@ Per-topic ACL rows made every new subscription a host step: a topic that was nev
 ```
 
 - Strict JSON: unknown fields, another version, and a missing field fail with exit 2.
-- `container`: the running container name, 1 to 64 characters of letters, digits, dot, dash, or underscore.
+- `container`: the running container name, 1 to 64 characters of letters, digits, dot, dash, or underscore. The first character must be alphanumeric.
 - `user`: 1 to 64 characters of letters, digits, dash, or underscore. A wildcard user is rejected.
 - `topic`: 1 to 64 characters of letters, digits, dash, underscore, or `*`. `*` grants every topic, including one that does not exist yet.
 - `permission`: `rw`, `read`, or `write`. `deny` is rejected: bootstrap with deny is a mistake, not a policy.
@@ -77,7 +77,7 @@ The password is generated in the tool and passed to the podman process through i
 5. Add a token only when the file is missing, unreadable, empty, malformed, or holds a value the server does not list. Write the returned token to the file, 32 characters plus a newline, `0600` on Unix.
 6. A valid file token that the server lists is kept and no command writes.
 
-A wiped token file is restored by one run. A stale file is replaced by a new token; old tokens stay until `tools\rotate-token.ps1 -User phone -RevokeOld` removes them. The tool never revokes.
+A wiped token file is restored by one run. A stale file is replaced by a new token; old tokens stay until `tools\rotate-token.ps1 -User phone -RevokeOld <prefix>` removes them. The tool never revokes.
 
 ## Status
 

@@ -320,7 +320,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <p>Requests carry JSON bodies; GET requests carry none. Every response is JSON:</p>
 <pre><code class="language-json">{&quot;ok&quot;:true,&quot;data&quot;:{...}}
 {&quot;ok&quot;:false,&quot;error&quot;:{&quot;code&quot;:&quot;covered&quot;,&quot;message&quot;:&quot;path is inside a served root&quot;}}</code></pre>
-<p>Codes: <code>invalid</code>, <code>not-found</code>, <code>conflict</code>, <code>unsupported</code>, <code>internal</code>, <code>unauthorized</code>. HTTP status is <code>200</code> for <code>ok:true</code>, <code>400</code> for <code>invalid</code>, <code>401</code> for <code>unauthorized</code>, <code>404</code> for <code>not-found</code>, <code>409</code> for <code>covered</code> and <code>conflict</code>, <code>500</code> for <code>internal</code>, <code>501</code> for <code>unsupported</code>.</p>
+<p>Codes: <code>invalid</code>, <code>not-found</code>, <code>conflict</code>, <code>covered</code>, <code>unsupported</code>, <code>internal</code>, <code>unauthorized</code>. HTTP status is <code>200</code> for <code>ok:true</code>, <code>400</code> for <code>invalid</code>, <code>401</code> for <code>unauthorized</code>, <code>404</code> for <code>not-found</code>, <code>409</code> for <code>covered</code> and <code>conflict</code>, <code>500</code> for <code>internal</code>, <code>501</code> for <code>unsupported</code>.</p>
 <h2><span class="num">4</span>Topic operations</h2>
 <div class="rule"></div>
 <p>A topic is a project folder name. Served folders are those under an entry in <code>projectRoots</code>. The control path edits that list, which is the only user-owned key in the relay config.</p>
@@ -328,7 +328,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <p><code>POST /v1/topics/add</code> with <code>{&quot;path&quot;:&quot;&lt;folder&gt;&quot;}</code>:</p>
 <ul>
 <li><code>~</code> is expanded, the path must be absolute after expansion, must exist, and must be a directory; the stored value is canonicalized with the platform&#39;s case rule.</li>
-<li>A path equal to an entry, or inside one, is <code>409 covered</code>; the config is not written.</li>
+<li>A path inside an entry is <code>409 covered</code>; a path equal to an entry is <code>409 conflict</code> with <code>path is already served</code>. The config is not written in either case.</li>
 <li>A path that contains existing entries replaces them: the contained entries are dropped in the same write, and one log line names them.</li>
 <li>The new list replaces <code>projectRoots</code> wholesale. The file is written to a temporary sibling, flushed, and renamed, so a failure leaves the old config.</li>
 <li>After the write the daemon runs discovery immediately instead of waiting for the tick, then answers with <code>{&quot;roots&quot;:[...],&quot;topics&quot;:[...]}</code>.</li>
@@ -338,7 +338,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <h2><span class="num">5</span>Stop and status</h2>
 <div class="rule"></div>
 <p><code>GET /v1/status</code> returns <code>{&quot;pid&quot;:n,&quot;started&quot;:&quot;&lt;iso&gt;&quot;,&quot;roots&quot;:[...],&quot;topics&quot;:[...]}</code>. It answers only while the daemon runs; the file-based <code>status</code> subcommand stays for a stopped relay.</p>
-<p><code>POST /v1/stop</code> answers <code>{&quot;ok&quot;:true}</code> and then shuts the daemon down through the same path as SIGTERM: finish the current message, drop the queue with one log line, join the SSE task for at most 5 s, remove the lock and the endpoint file. The CLI waits up to 15 s for the pid to exit and reports <code>still running</code> at that point. This is the graceful stop on Windows, where the windowless process receives no console event.</p>
+<p><code>POST /v1/stop</code> answers <code>{&quot;ok&quot;:true}</code> and then shuts the daemon down through the same path as SIGTERM: finish the current message, drop the queue with one log line, join the outbound and SSE tasks with a 5 s grace and a 6 s bound per task, remove the lock and the endpoint file. The CLI waits up to 15 s for the pid to exit and reports <code>still running</code> at that point. This is the graceful stop on Windows, where the windowless process receives no console event.</p>
 <h2><span class="num">6</span>Mode request</h2>
 <div class="rule"></div>
 <p><code>POST /v1/mode/plan</code> with <code>{&quot;mode&quot;:&quot;tailscale&quot;|&quot;nord&quot;|&quot;lan&quot;}</code> answers with the validated mode, the absolute deploy path, and the command line <code>ntfy-deploy mode &lt;name&gt;</code>. The CLI runs the returned deploy path in the current console and shows the phone URL that deploy prints; on Windows the portproxy step needs an elevated shell. The relay never spawns deploy, never runs elevated, and never edits <code>ntfy-deploy.json</code>; <code>10</code> owns the decision and the reasons.</p>

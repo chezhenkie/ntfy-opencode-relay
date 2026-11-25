@@ -46,7 +46,7 @@ Phone says `not authorized` after a token change: the app's user form sends basi
 
 Web UI login: none is available. The page loads, but `phone` has no password and the browser interface is out of scope; the app is the client. If a login is ever wanted, set a password inside the container with `podman exec -e "NTFY_PASSWORD=<new>" ntfy ntfy user change-pass phone`. `reset-pass` needs SMTP and is not usable here.
 
-Startup check missing after logon: confirm the shortcut exists in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` and that its target is the PowerShell script path. Task Scheduler registration fails with `Access is denied` without elevation; the Startup shortcut is the supported path.
+Startup check missing after logon: run `Get-ScheduledTask -TaskName ntfy-relay-startup` and `Get-ScheduledTask -TaskName ntfy-relay-watchdog`. `install` registers both tasks and deletes the legacy Startup shortcut (`ntfy startup check.lnk`); a logon trigger without `<UserId>` fails with `Access is denied`.
 
 Relay not receiving: run `& "$env:NTFY_RELAY_HOME\ntfy-relay.exe" ensure` and read `logs\relay-ensure.log`. A failed start points at `logs\relay-stderr.log` (usually a bad config). A missing token file is not a failure: the relay logs `token: ... is missing or too short; waiting for ntfy-auth apply` and attaches the file when it appears, so check `ntfy-auth status` rather than the start. The relay log is `%LOCALAPPDATA%\ntfy-relay\ntfy-relay.log`; a healthy process prints `subscribed` and a `heartbeat` line every 5 minutes. If the lock pid is stale, ensure replaces it once.
 

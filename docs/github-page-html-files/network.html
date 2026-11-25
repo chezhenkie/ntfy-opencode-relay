@@ -341,11 +341,18 @@ ping &lt;host-private-ip&gt;</code></pre>
 </ul>
 <p>With the terminator active, the deploy config uses the HTTPS name and proxy mode:</p>
 <pre><code class="language-json">{
+  &quot;version&quot;: 1,
   &quot;mode&quot;: &quot;proxy&quot;,
   &quot;baseUrl&quot;: &quot;https://ntfy.example.ts.net&quot;,
-  &quot;behindProxy&quot;: true
+  &quot;behindProxy&quot;: true,
+  &quot;port&quot;: 8810,
+  &quot;container&quot;: {
+    &quot;name&quot;: &quot;ntfy&quot;,
+    &quot;image&quot;: &quot;localhost/ntfy:server&quot;,
+    &quot;cacheVolume&quot;: &quot;ntfy-cache&quot;
+  }
 }</code></pre>
-<p><code>ntfy-deploy mode tailscale</code> writes this config and recreates the container with <code>NTFY_BASE_URL</code> and <code>NTFY_BEHIND_PROXY</code>; <code>ntfy-deploy status</code> shows the result. Then remove the VPN-facing portproxy as shown in <a href="https.html#55-remove-the-vpn-facing-portproxy">section 5.5</a>.</p>
+<p><code>ntfy-deploy mode tailscale</code> rewrites these keys in the existing config and recreates the container with <code>NTFY_BASE_URL</code> and <code>NTFY_BEHIND_PROXY</code>; <code>ntfy-deploy status</code> shows the result. Then remove the VPN-facing portproxy as shown in <a href="https.html#55-remove-the-vpn-facing-portproxy">section 5.5</a>.</p>
 <p>The terminator is reachable only from the private network. Do not enable a public exposure feature.</p>
 <h2><span class="num">4</span>4.4 Linux: direct private reachability</h2>
 <div class="rule"></div>

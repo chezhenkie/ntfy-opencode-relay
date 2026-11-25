@@ -4,7 +4,7 @@ How to move the ntfy server between Tailscale, NordVPN Meshnet, and the local ne
 
 ## 1. What a switch does
 
-`ntfy-deploy mode` detects the network paths that exist on this host, writes `ntfy-deploy.json` for the one you pick, recreates the container with that base URL, and prints the phone URL.
+`ntfy-deploy mode` detects the network paths that exist on this host, rewrites `ntfy-deploy.json` for the one you pick, recreates the container with that base URL, and prints the phone URL. The file must already exist; `mode` does not create it.
 
 | | proxy (Tailscale) | vpn (Nord Meshnet) | lan |
 |---|---|---|---|
@@ -21,6 +21,7 @@ A switch does not rebuild the image, restart the relay, change the token, or edi
 - Exactly one private network is active on the host: Tailscale or Nord Meshnet. Both use `100.64/10`, and two routes over that range make the phone path unpredictable.
 - On Windows, open an elevated PowerShell. The portproxy step uses `netsh` and fails with exit 4 without administrator rights.
 - The phone is on the same private network and you can reach its ntfy settings.
+- `ntfy-deploy.json` exists in the relay root; `mode` rewrites it and does not create it.
 
 The commands below run from the repository root, or from the install directory with `ntfy-deploy` on `PATH`.
 

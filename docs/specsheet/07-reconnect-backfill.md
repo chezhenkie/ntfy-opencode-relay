@@ -1,6 +1,6 @@
 # 07 - reconnect backfill
 
-Status: implemented in 0.7.4. The project-local JS forwarder and the loopback ingest are gone; completed assistant text is recovered from the message API. The decision row is 12 in `04-rust-relay-decisions.md`. Gate evidence is recorded under Live gate and in `docs/operations.md` 7.4.
+Status: implemented in the Rust daemon. The project-local JS forwarder and the loopback ingest are gone; completed assistant text is recovered from the message API. The decision row is 12 in `04-rust-relay-decisions.md`. Gate evidence is recorded under Live gate and in `docs/operations.md` 7.4.
 
 ## Goal
 
@@ -16,7 +16,7 @@ The live OpenCode 2.2.7 server exposes, in `/openapi.json`:
 
 ```
 GET /api/session/{sessionID}/message
-  ?type=assistant&order=desc&limit=<n>&cursor=<opaque>
+  ?type=assistant&order=desc&limit=<n>
 ```
 
 The response is `{ data: Session.Message.Info[], cursor: { previous, next } }`. Assistant messages carry:
@@ -33,7 +33,7 @@ Residual: `permission.asked` and `form.created` are transient and have no histor
 
 ### Gap detection
 
-- The outbound runner records `last_event_ms` from every accepted envelope.
+- The outbound runner records `gap_start_ms` as the wall time when a stream ends; it does not track the last event time.
 - On stream end, it records `gap_start_ms` as the current wall time. On reconnect or start, it backfills only messages with `time.completed >= backfill_from`.
 - `backfill_from` is `gap_start_ms - 60 s` for a reconnect. On a cold start it is `now - 15 min`, matching the seen journal window.
 - The backfill runs in the worker after the subscription is established, so live frames arriving during the queries wait in the 256-slot channel, dedupe normally, and can be dropped under a long backfill.
@@ -43,7 +43,7 @@ Residual: `permission.asked` and `form.created` are transient and have no histor
 - Reconnect: backfill sessions with an open turn and the session that published the last text.
 - Cold start: backfill the newest 20 non-archived sessions per project root, using the existing discovery list. The sessions the state file remembers are always included.
 - Cap: 200 messages per reconnect; stop paginating when a page is older than `backfill_from` or the cap is hit.
-- Endpoint calls reuse the 5 s API timeout and the rediscovering client.
+- Endpoint calls use a 5 s backfill timeout and the rediscovering client.
 
 ### Text reconstruction
 
@@ -80,7 +80,7 @@ Residual: `permission.asked` and `form.created` are transient and have no histor
 
 Unit and integration:
 
-- gap detection uses the last event time, not the reconnect time.
+- gap detection starts from the wall time at stream end, not the last event time.
 - message pagination follows `cursor.next` and stops at `backfill_from`, the cap, or the last page.
 - text reconstruction filters reasoning and tool parts and keeps order.
 - inline and attachment thresholds reuse the turn path.

@@ -40,7 +40,7 @@ The route examples use Tailscale. For Nord Meshnet or LAN mode, check the equiva
 
 ## Start
 
-At logon Windows runs the `ntfy-relay-startup` task, so the usual case needs no manual step. It starts the Podman machine, applies the deployment config, and runs `ensure`; no console window opens. To start by hand, in order:
+At logon Windows runs the `ntfy-relay-startup` task, so the usual case needs no manual step. It starts the Podman machine and runs `ensure`; no console window opens. To start by hand, in order:
 
 ```powershell
 podman machine start
@@ -87,7 +87,7 @@ podman stop ntfy
 podman machine stop
 ```
 
-`ntfy-admin stop` posts to the control endpoint. The daemon finishes the current message, drops the queue with one log line, joins the SSE task for at most 5 s, and removes the lock and the endpoint file; the CLI waits up to 15 s for the pid and reports `still running` otherwise. A force stop is immediate and leaves the lock file behind; the next start replaces a readable dead pid once. A message in flight can be lost or repeated: restart within the 60-minute replay window. The Windows binary is windowless, so a foreground run receives no Ctrl+C. If the endpoint does not answer, the fallback on Windows is `Stop-Process -Id <pid> -Force`, which sends no signal; on Linux `kill <pid>` sends SIGTERM and follows the same clean stop path.
+`ntfy-admin stop` posts to the control endpoint. The daemon finishes the current message, drops the queue with one log line, joins the outbound and SSE tasks with a 5 s grace and a 6 s bound per task, and removes the lock and the endpoint file; the CLI waits up to 15 s for the pid and reports `still running` otherwise. A force stop is immediate and leaves the lock file behind; the next start replaces a readable dead pid once. A message in flight can be lost or repeated: restart within the 60-minute replay window. The Windows binary is windowless, so a foreground run receives no Ctrl+C. If the endpoint does not answer, the fallback on Windows is `Stop-Process -Id <pid> -Force`, which sends no signal; on Linux `kill <pid>` sends SIGTERM and follows the same clean stop path.
 
 `podman stop ntfy` stops only the server; the relay keeps running and retries. `podman machine stop` shuts down WSL2, the container, and `wslrelay`, so stop the relay first. Stopping the private network client takes the phone route down as well; `Stop-Service Tailscale` needs an elevated shell.
 

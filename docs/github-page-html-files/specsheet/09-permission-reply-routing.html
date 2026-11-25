@@ -308,7 +308,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <div class="rule"></div>
 <ul>
 <li>Scope: how <code>/allow</code>, <code>/always</code>, and <code>/deny</code> from the phone select the OpenCode session and permission request they answer.</li>
-<li>Status: implemented and live-verified as 0.9.0 on 2026-11-13. The local audit holds the matrix; cases 1 to 6 pass, the UI-driven ask case stays open.</li>
+<li>Status: implemented and live-verified on 2026-11-13; the UI-driven ask case passed on 2026-11-18. The local audit holds the matrix.</li>
 <li>Related: <code>01-phone-continuation.md</code> (permission contract), <code>08-comms-and-mcp.md</code> (surfaces), <code>../operations.md</code> (notification behavior), <code>../phone-app-user-manual.md</code> (phone commands), <code>../open-work.md</code> item 10.2.</li>
 </ul>
 <h2><span class="num">2</span>1. Problem</h2>
@@ -343,7 +343,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>R1 Bind at publish: an ask enters the registry immediately before its push is published, with session id, request id, title, and push time.</li>
 <li>R2 Reply by record: <code>/allow</code>, <code>/always</code>, <code>/deny</code> resolve a registry record, never a routed session.</li>
 <li>R3 Default target: with no argument, the most recently pushed record. With an argument, the record whose short code matches.</li>
-<li>R4 Short codes: 4 hex characters, extended to 5 or 6 only on collision; displayed in the push; accepted with or without <code>#</code>.</li>
+<li>R4 Short codes: 4 hex characters, extended to 5, 6, or 7 only on collision; displayed in the push; accepted with or without <code>#</code>.</li>
 <li>R5 Ack from the record: the ack names the record&#39;s session title and counts remaining records across the registry.</li>
 <li>R6 Desktop answer: <code>permission.replied</code> removes the record, so a later phone reply cannot target a dead ask.</li>
 <li>R7 Restart: the registry survives a relay restart; entries are optimistic and cleaned when the ask is gone.</li>
@@ -372,7 +372,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>Without a token, take the newest record.</li>
 <li>Post the decision to the record&#39;s session and request id.</li>
 <li>Remove the record on success.</li>
-<li>Ack: <code>approved once in &lt;title&gt; (&lt;code&gt;), N more pending</code>, <code>approved always ...</code>, or <code>rejected ...</code>; <code>N</code> counts all remaining records.</li>
+<li>Ack: <code>approved once in &lt;title&gt; (&lt;code&gt;), N more pending</code>, <code>approved always ...</code>, or <code>rejected ...</code>; <code>N</code> counts all remaining records, and the suffix is dropped when <code>N</code> is 0.</li>
 <li>Empty registry: <code>no pending permission ask</code>. The message must not name a session.</li>
 </ol>
 <p>Server outcomes on reply:</p>
@@ -390,7 +390,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>allocates the code,</li>
 <li>writes the registry entry and persists it,</li>
 <li>publishes the push,</li>
-<li>on a failed publish, removes the entry and logs <code>permission push failed</code>.</li>
+<li>on a failed publish, removes the entry and logs <code>permission ask removed code=&lt;code&gt; reason=publish-failed: &lt;error&gt;</code>.</li>
 </ol>
 <p>The push body adds one line: <code>Reply /allow &lt;code&gt;, /always &lt;code&gt;, or /deny &lt;code&gt;; with one ask, /allow is enough.</code> The code appears in the body only; the title stays <code>&lt;project&gt; - permission requested</code>, so notification actions and previews stay unchanged.</p>
 <p>A persist failure leaves the scheduler entry pending; the next tick retries the same code. After three consecutive failures the entry is dropped with one error log line; the ask remains answerable on the desktop. This bounds a broken state directory without silently spinning.</p>
@@ -412,7 +412,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>Records are verified lazily on reply.</li>
 <li>A relay restart while an ask is pending keeps the notification answerable, because the request id and session id are stable in the OpenCode server.</li>
 <li>An OpenCode restart invalidates the ids; the first reply removes the record and acks already answered.</li>
-<li>The registry is per relay process. Since 0.14.0 the relay serves every root in <code>projectRoots</code>, so one registry covers several topics; a reply resolves by request id, never by topic.</li>
+<li>The registry is per relay process. The relay serves every root in <code>projectRoots</code>, so one registry covers several topics; a reply resolves by request id, never by topic.</li>
 </ul>
 <h2><span class="num">11</span>10. Status and logs</h2>
 <div class="rule"></div>
@@ -421,7 +421,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>Log lines, one each, no full command text:</li>
 <li><code>permission ask code=&lt;code&gt; session=&lt;id&gt; request=&lt;id&gt;</code></li>
 <li><code>permission reply code=&lt;code&gt; decision=&lt;once|always|reject&gt;</code></li>
-<li><code>permission ask removed code=&lt;code&gt; reason=&lt;answered|gone|evicted|publish-failed&gt;</code></li>
+<li><code>permission ask removed code=&lt;code&gt; reason=&lt;answered|evicted|publish-failed&gt;</code></li>
 </ul>
 <h2><span class="num">12</span>11. Tests</h2>
 <div class="rule"></div>
@@ -469,7 +469,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>The registry is <code>ntfy-relay-forms.json</code> in the relay root: 64 forms, the oldest push evicted, 16 in-memory tombstones for 15 minutes, and a corrupt file quarantined like the ask registry.</li>
 <li>The push carries the question and its options and ends with <code>Reply with /answer and your answer in your own words.</code> A form with no visible field is pushed as text with the generic hint and carries no reply line.</li>
 <li><code>/help</code> lists <code>/answer - dismiss the last question and send the rest of the message to the assistant</code>.</li>
-<li>Log lines: <code>form cancelled title=&lt;title&gt; bytes=&lt;n&gt;</code>, <code>answer failed id=&lt;event&gt; &lt;reason&gt;</code>, <code>question form not pushed id=&lt;form&gt; &lt;reason&gt;</code>. The registry count appears in <code>/status</code> only as part of the state file, not as a new line.</li>
+<li>Log lines: <code>form cancelled title=&lt;title&gt; bytes=&lt;n&gt;</code>, <code>answer failed id=&lt;message id&gt;: &lt;reason&gt;</code>, <code>question form not pushed id=&lt;form id&gt;: &lt;reason&gt;</code>. The registry count has no <code>/status</code> line.</li>
 </ul>
   </main>
 </div>

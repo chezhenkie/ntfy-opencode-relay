@@ -308,7 +308,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <div class="rule"></div>
 <ul>
 <li>Status: spec final; migration executed 2026-11-14, the crate is implemented.</li>
-<li>Scope: one cross-platform helper, <code>ntfy-deploy</code>, that switches the ntfy server between proxy, VPN, and LAN modes by recreating the container with environment variables and maintaining the Windows portproxy. It never manages the relay daemon.</li>
+<li>Scope: one cross-platform helper, <code>ntfy-deploy</code>, that switches the ntfy server between proxy, VPN, and LAN modes by recreating the container with environment variables and maintaining the Windows portproxy. <code>install</code> and <code>remove</code> place the binaries, register the startup entries, and stop or start the relay; <code>apply</code> and <code>mode</code> never touch the daemon.</li>
 <li>Supersedes: the baked <code>base-url</code> rebuild path in <code>container\server.yml</code> and <code>tools\build-image.ps1</code>.</li>
 <li>Related: <code>00-overview.md</code> (file ownership), <code>06-rust-crate-split.md</code> (crate boundaries), <code>docs\https.md</code> (current proxy route), <code>docs\switching-networks-user-manual.md</code> (operator workflow).</li>
 </ul>
@@ -337,6 +337,8 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <tr><td><code>ntfy-token.txt</code></td><td>the only token, read by the daemon and the MCP; the app keeps its copy</td></tr>
 <tr><td><code>ntfy-relay-state.json</code></td><td>routing hints, state</td></tr>
 <tr><td><code>ntfy-relay-asks.json</code></td><td>ask registry</td></tr>
+<tr><td><code>ntfy-relay-forms.json</code></td><td>pushed question forms and tombstones</td></tr>
+<tr><td><code>ntfy-relay-endpoint.json</code></td><td>control endpoint port and per-process token</td></tr>
 <tr><td><code>ntfy-relay-seen.jsonl</code></td><td>journal</td></tr>
 <tr><td><code>ntfy-relay.log</code></td><td>daemon log</td></tr>
 </tbody></table>
@@ -385,9 +387,9 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>A mode switch recreates the container. It never rebuilds the image.</li>
 <li>A rebuild is needed for a new ntfy version or a change to the baked keys, and it never waits for a relay release.</li>
 <li>Build source: the tracked context holds the Dockerfile, <code>server.yml</code>, and <code>.dockerignore</code>. The Dockerfile is a standard one; Podman builds it directly, so there is no second builder file, and <code>--format docker</code> selects the image format that keeps the healthcheck. A build stage fetches the pinned ntfy release tarball and checks it against <code>NTFY_SHA256</code> before the binary enters a layer, so the tree holds no binary and no download step precedes the build. A version change updates <code>NTFY_VERSION</code> and <code>NTFY_SHA256</code> together.</li>
-<li>Engine: the artifact is engine-neutral. The Dockerfile is standard, the saved archive is docker-archive, and either <code>podman load</code> or <code>docker load</code> restores the same <code>localhost/ntfy:server</code> tag. <code>ntfy-deploy</code> currently drives the Podman binary through <code>NTFY_PODMAN_BIN</code>; Docker is a manual route until engine detection and installation are designed (open-work 10.10).</li>
+<li>Engine: the artifact is engine-neutral. The Dockerfile is standard, the saved archive is docker-archive, and either <code>podman load</code> or <code>docker load</code> restores the same <code>localhost/ntfy:server</code> tag. <code>ntfy-deploy</code> currently runs <code>podman</code>; only the <code>status</code> rows honor <code>NTFY_PODMAN_BIN</code>. Docker is a manual route until engine detection and installation are designed (open-work 10.10).</li>
 <li>Reference: <code>localhost/ntfy:server</code>, plus <code>:latest</code> as an alias. The tag is stable across ntfy versions; <code>tools\build-image.ps1</code> reads the version pin only to report it. When a rebuild keeps the tag, the image-ID rule in <code>apply</code> replaces the container on the next run, so a server bump is a rebuild and an apply, never a relay release.</li>
-<li>Distribution: no registry. A release ships one <code>podman save --format docker-archive</code> archive per claimed architecture, named <code>ntfy-image-&lt;ntfy version&gt;-&lt;arch&gt;.tar</code> and carrying the <code>server</code> tag and <code>latest</code>; <code>podman load</code> restores both without a build, account, or network, and the docker-archive format also loads in Docker.</li>
+<li>Distribution: no registry. A release ships one <code>docker save</code> archive per claimed architecture, named <code>ntfy-image-&lt;ntfy version&gt;-&lt;arch&gt;.tar</code> and carrying the <code>server</code> tag and <code>latest</code>; <code>podman load</code> restores both without a build, account, or network, and the docker-archive format also loads in Docker.</li>
 <li>Architecture: amd64 is claimed, and the pinned base digest and release checksum name it. Another architecture needs its own base digest and release checksum, and ships only after a live run on that architecture.</li>
 </ul>
 <h2><span class="num">8</span>Modes</h2>
@@ -396,7 +398,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <tr><td><code>baseUrl</code></td><td><code>https://&lt;name&gt;</code></td><td><code>http://&lt;vpn-ip&gt;:8810</code></td><td><code>http://&lt;lan-ip&gt;:8810</code></td></tr>
 <tr><td><code>behindProxy</code></td><td>true</td><td>false</td><td>false</td></tr>
 <tr><td>container publish</td><td>loopback</td><td>loopback</td><td>LAN interface or all</td></tr>
-<tr><td>Windows portproxy</td><td>loopback only</td><td>loopback plus VPN IP</td><td>none</td></tr>
+<tr><td>Windows portproxy</td><td>loopback only</td><td>loopback plus VPN IP</td><td>loopback only</td></tr>
 <tr><td>ingress</td><td>TLS terminator on 443</td><td>VPN client</td><td>LAN</td></tr>
 <tr><td>phone URL</td><td>https name</td><td>http VPN IP</td><td>http host</td></tr>
 </tbody></table>
@@ -496,7 +498,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <ul>
 <li>Config parse, required fields, unknown mode, unknown field.</li>
 <li>URL rules: https any host, http only on a loopback, VPN, or LAN IP literal, no path, no trailing slash, and an HTTP port equal to <code>port</code>.</li>
-<li>Portproxy mapping: proxy removes the VPN entry, VPN adds it, LAN leaves none.</li>
+<li>Portproxy mapping: proxy removes the VPN entry, VPN adds it, LAN leaves the loopback entry only.</li>
 <li>Container argument construction: image, name, volume, publish, env pair per mode.</li>
 <li>Dry-run emits commands and changes nothing.</li>
 <li>Status output for each mode.</li>
@@ -512,7 +514,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <h2><span class="num">14</span>Non-goals</h2>
 <div class="rule"></div>
 <ul>
-<li>No relay lifecycle, restart, or supervision. That is the bridge boundary.</li>
+<li>No relay lifecycle in <code>apply</code> or <code>mode</code>; <code>install</code> and <code>remove</code> stop and start the relay. Supervision belongs to the bridge.</li>
 <li>No writes to OpenCode config or state.</li>
 <li>No edit of the relay config at runtime.</li>
 <li>No auth, cache, or attachment changes.</li>

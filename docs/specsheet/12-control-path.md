@@ -29,7 +29,7 @@ Requests carry JSON bodies; GET requests carry none. Every response is JSON:
 {"ok":false,"error":{"code":"covered","message":"path is inside a served root"}}
 ```
 
-Codes: `invalid`, `not-found`, `conflict`, `unsupported`, `internal`, `unauthorized`. HTTP status is `200` for `ok:true`, `400` for `invalid`, `401` for `unauthorized`, `404` for `not-found`, `409` for `covered` and `conflict`, `500` for `internal`, `501` for `unsupported`.
+Codes: `invalid`, `not-found`, `conflict`, `covered`, `unsupported`, `internal`, `unauthorized`. HTTP status is `200` for `ok:true`, `400` for `invalid`, `401` for `unauthorized`, `404` for `not-found`, `409` for `covered` and `conflict`, `500` for `internal`, `501` for `unsupported`.
 
 ## Topic operations
 
@@ -40,7 +40,7 @@ A topic is a project folder name. Served folders are those under an entry in `pr
 `POST /v1/topics/add` with `{"path":"<folder>"}`:
 
 - `~` is expanded, the path must be absolute after expansion, must exist, and must be a directory; the stored value is canonicalized with the platform's case rule.
-- A path equal to an entry, or inside one, is `409 covered`; the config is not written.
+- A path inside an entry is `409 covered`; a path equal to an entry is `409 conflict` with `path is already served`. The config is not written in either case.
 - A path that contains existing entries replaces them: the contained entries are dropped in the same write, and one log line names them.
 - The new list replaces `projectRoots` wholesale. The file is written to a temporary sibling, flushed, and renamed, so a failure leaves the old config.
 - After the write the daemon runs discovery immediately instead of waiting for the tick, then answers with `{"roots":[...],"topics":[...]}`.
@@ -53,7 +53,7 @@ A write failure is `internal` with the old config intact. The relay logs one lin
 
 `GET /v1/status` returns `{"pid":n,"started":"<iso>","roots":[...],"topics":[...]}`. It answers only while the daemon runs; the file-based `status` subcommand stays for a stopped relay.
 
-`POST /v1/stop` answers `{"ok":true}` and then shuts the daemon down through the same path as SIGTERM: finish the current message, drop the queue with one log line, join the SSE task for at most 5 s, remove the lock and the endpoint file. The CLI waits up to 15 s for the pid to exit and reports `still running` at that point. This is the graceful stop on Windows, where the windowless process receives no console event.
+`POST /v1/stop` answers `{"ok":true}` and then shuts the daemon down through the same path as SIGTERM: finish the current message, drop the queue with one log line, join the outbound and SSE tasks with a 5 s grace and a 6 s bound per task, remove the lock and the endpoint file. The CLI waits up to 15 s for the pid to exit and reports `still running` at that point. This is the graceful stop on Windows, where the windowless process receives no console event.
 
 ## Mode request
 

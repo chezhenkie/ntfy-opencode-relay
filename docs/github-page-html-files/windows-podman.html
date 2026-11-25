@@ -447,7 +447,7 @@ localhost/ntfy:latest   85 MB</code></pre>
 <p>Most of the size is the 76.6 MB static binary; the base contributes 8.7 MB.</p>
 <h2><span class="num">5</span>2.5 Run</h2>
 <div class="rule"></div>
-<p><code>ntfy-deploy mode</code> detects the paths, writes <code>ntfy-deploy.json</code> in the relay root, and runs the container with the mode values. <code>ntfy-deploy apply</code> runs an existing config without changing it. The manual equivalent:</p>
+<p><code>ntfy-deploy mode</code> detects the paths, rewrites <code>ntfy-deploy.json</code> in the relay root, and runs the container with the mode values; the file must already exist. <code>ntfy-deploy apply</code> runs an existing config without changing it. The manual equivalent:</p>
 <pre><code class="language-powershell">podman run -d --name ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -p 8810:8080 -v ntfy-cache:/var/cache/ntfy -e NTFY_BASE_URL=https://ntfy.example.ts.net -e NTFY_BEHIND_PROXY=true localhost/ntfy:server
 podman ps --format &#39;{{.Names}} {{.Status}} {{.Ports}}&#39;</code></pre>
 <pre><code>ntfy Up Less than a second (healthy) 0.0.0.0:8810-&gt;8080/tcp</code></pre>

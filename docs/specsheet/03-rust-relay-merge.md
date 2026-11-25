@@ -1,6 +1,6 @@
 # Rust relay merge plan
 
-Status: the Rust daemon is the live path in both directions. Steps 2 to 6 are implemented, plus the wire (`ntfy`) and OpenCode API (`opencode`) crates and the `app` composition root: 624 tests at 0.6.10. Service discovery reads `~/.local/state/opencode/service.json` and re-reads it after a transport error or HTTP 401; `opencode.baseUrl` remains an override. Outbound is live (`outbound.enabled: true`); the patched publisher plugin is removed and its vendored copy was deleted in 0.7.0. A reconnect or start backfills completed assistant text from the message API, so an `/api/event` gap does not lose turn text and there is no event forwarder. The Node relay was deleted in 0.8.0, so it is not an inbound rollback. Path note: since 0.10.0 the relay reads its config, tokens, state, asks, and journal from the install root, `%LOCALAPPDATA%\ntfy-relay\` on Windows; the config examples below record the earlier layout. See `10-deploy-mode.md`.
+Status: the Rust daemon is the live path in both directions. Steps 2 to 6 are implemented, plus the wire (`ntfy`) and OpenCode API (`opencode`) crates and the `app` composition root: 624 tests at 0.6.12. Service discovery reads `~/.local/state/opencode/service.json` and re-reads it after a transport error or HTTP 401; `opencode.baseUrl` remains an override. Outbound is live (`outbound.enabled: true`); the patched publisher plugin is removed and its vendored copy was deleted in 0.7.0. A reconnect or start backfills completed assistant text from the message API, so an `/api/event` gap does not lose turn text and there is no event forwarder. The Node relay was deleted in 0.8.0, so it is not an inbound rollback. Path note: the relay reads its config, tokens, state, asks, and journal from the install root, `%LOCALAPPDATA%\ntfy-relay\` on Windows; the config examples below record the earlier layout. See `10-deploy-mode.md`.
 
 ## Phase status
 
@@ -70,7 +70,7 @@ rust/
 
 ## 5. Outbound design
 
-Subscribe with `types` set to the minimum: `session.text.ended`, `session.execution.*`, `session.status`, `session.idle`, `permission.*`, `session.created`, `filesystem.changed`. Deltas are not needed if `session.text.ended` carries the complete part text, which the outbound worker relies on.
+Subscribe with `types` set to the minimum: `session.text.ended`, `session.execution.*`, `session.status`, `permission.*`, `session.created`, `filesystem.changed`. Idle comes from `session.status` with type idle or from `session.execution.succeeded`. Deltas are not needed if `session.text.ended` carries the complete part text, which the outbound worker relies on.
 
 Mapping, carried over from patches 1 to 5:
 
@@ -92,7 +92,7 @@ Files stay: terminal scan of files whose birthtime falls inside the turn, allowl
 
 ## 6. Inbound design
 
-Behavior is unchanged: one SSE subscription to ntfy, `oc-out` filter, replay window, duplicate-ID state, routing hints, queue and steer delivery, the JSON control table (`new`, `sessions`, `to`, `auto`, `help`, `status`, `answer`) with its capability gate and confirm hold, `/steer`, `/allow`, `/always`, `/deny`, attachment download to `.ntfy-inbox`, link-safe acks and error pushes. Since 0.11.0 the routing hint replaces the pin; spec 01 section 6.7 defines the order.
+Behavior is unchanged: one SSE subscription to ntfy, `oc-out` filter, replay window, duplicate-ID state, routing hints, queue and steer delivery, the JSON control table (`new`, `sessions`, `to`, `auto`, `help`, `status`) with its capability gate and confirm hold, `/answer` as a native verb, `/steer`, `/allow`, `/always`, `/deny`, attachment download to `.ntfy-inbox`, link-safe acks and error pushes. Since 0.11.0 the routing hint replaces the pin; spec 01 section 6.7 defines the order.
 
 Two changes:
 
