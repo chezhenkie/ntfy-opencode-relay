@@ -126,9 +126,13 @@ fn key(program: &str, args: &[String]) -> String {
     if program != "podman" {
         return program.to_string();
     }
+    let mut index = 1;
+    while args.get(index).map(String::as_str) == Some("-e") {
+        index += 2;
+    }
     match (
-        args.get(3).map(String::as_str),
-        args.get(4).map(String::as_str),
+        args.get(index + 2).map(String::as_str),
+        args.get(index + 3).map(String::as_str),
     ) {
         (Some("user"), Some("list")) => "user list",
         (Some("user"), Some("add")) => "user add",

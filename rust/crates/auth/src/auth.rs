@@ -284,11 +284,15 @@ impl<R: CommandRunner> AuthEngine<R> {
         rest: &[&str],
         env: &[(String, String)],
     ) -> Result<CommandOutput, AuthError> {
-        let mut args = vec![
-            "exec".to_string(),
-            config.container.clone(),
-            "ntfy".to_string(),
-        ];
+        let mut args = vec!["exec".to_string()];
+        // Podman forwards only the variables named with -e from its own
+        // environment; the value never enters the argument list.
+        for (name, _value) in env {
+            args.push("-e".to_string());
+            args.push(name.clone());
+        }
+        args.push(config.container.clone());
+        args.push("ntfy".to_string());
         args.extend(rest.iter().map(|value| value.to_string()));
         let output = self.runner.run(PODMAN, &args, env)?;
         if output.status != 0 {
@@ -458,6 +462,18 @@ mod tests {
         let password = calls[1].2.first().expect("password env");
         assert_eq!(password.0, PASSWORD_ENV);
         assert_eq!(password.1.len(), 32);
+        let call = &calls[1];
+        assert!(
+            call.1
+                .windows(2)
+                .any(|pair| pair[0] == "-e" && pair[1] == PASSWORD_ENV),
+            "exec args: {:?}",
+            call.1
+        );
+        assert!(
+            call.1.iter().all(|arg| arg != &password.1),
+            "password reached the argument list"
+        );
         let text = std::fs::read_to_string(token_file(&dir)).unwrap();
         assert!(is_token(text.trim()), "{text}");
         assert!(!text.contains(password.1.as_str()));
