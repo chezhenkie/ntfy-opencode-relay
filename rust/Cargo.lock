@@ -558,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-admin"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "ntfy-relay-control",
  "serde",
@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-app"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-trait",
  "bytes",
@@ -585,7 +585,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-auth"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "serde",
  "serde_json",
@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-control"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "libc",
  "ntfy-relay-core",
@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-core"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-trait",
  "serde",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-deploy"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "serde",
  "serde_json",
@@ -623,7 +623,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-inbound"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-trait",
  "ntfy-relay-core",
@@ -634,7 +634,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-ntfy"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -649,7 +649,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-opencode"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -665,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "ntfy-relay-outbound"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-trait",
  "bytes",
