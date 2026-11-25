@@ -394,7 +394,7 @@ mod tests {
   "port": 8810,
   "container": {{
     "name": "ntfy",
-    "image": "localhost/ntfy:2.37.2",
+    "image": "localhost/ntfy:server",
     "cacheVolume": "ntfy-cache"
   }},
   "vpn": {{ "ip": "100.64.0.10" }}
@@ -537,7 +537,7 @@ mod tests {
             .replace("\"name\": \"ntfy\"", "\"name\": \"-ntfy\"");
         assert!(DeployConfig::parse_text(&name).is_err());
         let image = example("vpn", "http://100.64.0.10:8810")
-            .replace("localhost/ntfy:2.37.2", "localhost/ntfy 2");
+            .replace("localhost/ntfy:server", "localhost/ntfy 2");
         assert!(DeployConfig::parse_text(&image).is_err());
     }
 

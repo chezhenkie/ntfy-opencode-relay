@@ -144,7 +144,7 @@ Address         Port        Address         Port
   "port": 8810,
   "container": {{
     "name": "ntfy",
-    "image": "localhost/ntfy:2.37.2",
+    "image": "localhost/ntfy:server",
     "cacheVolume": "ntfy-cache"
   }},
   "vpn": {{ "ip": "100.64.0.10" }}
@@ -156,9 +156,9 @@ Address         Port        Address         Port
 
     fn inspect(running: bool) -> String {
         serde_json::json!([{
-            "ImageName": "localhost/ntfy:2.37.2",
+            "ImageName": "localhost/ntfy:server",
             "State": { "Running": running },
-            "Config": { "Env": [], "Image": "localhost/ntfy:2.37.2" },
+            "Config": { "Env": [], "Image": "localhost/ntfy:server" },
             "HostConfig": {
                 "PortBindings": {
                     "8080/tcp": [{ "HostIp": "0.0.0.0", "HostPort": "8810" }]
@@ -230,7 +230,7 @@ Address         Port        Address         Port
         .unwrap();
         assert!(!report.ok);
         assert_eq!(report.container.label(), "stopped");
-        assert_eq!(report.container.image(), Some("localhost/ntfy:2.37.2"));
+        assert_eq!(report.container.image(), Some("localhost/ntfy:server"));
     }
 
     #[test]

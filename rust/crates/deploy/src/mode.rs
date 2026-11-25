@@ -434,7 +434,7 @@ Configuration for interface \"Wi-Fi\"
   "baseUrl": "https://ntfy.example.ts.net",
   "behindProxy": true,
   "port": 8810,
-  "container": { "name": "ntfy", "image": "localhost/ntfy:2.37.2", "cacheVolume": "ntfy-cache" },
+  "container": { "name": "ntfy", "image": "localhost/ntfy:server", "cacheVolume": "ntfy-cache" },
   "vpn": { "ip": "100.64.0.10" }
 }"#,
         )

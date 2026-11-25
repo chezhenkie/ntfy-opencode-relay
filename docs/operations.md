@@ -221,7 +221,7 @@ Auto-attach verified live 2026-11-09: a nested PNG and MP3 created during a turn
 
 Rust outbound verified live 2026-11-11 on `ntfy-proj`: turn text, a long turn (`turn-ses_e343-1794421292.md`, 11361 bytes), a three-file auto-attach set, a `net user` permission ask pushed 15 s later, a question form, and a child session with no push. The MCP tool call returned `Sent gate-set-1.md (3 bytes) to the phone.` with `oc-out,oc-manual`.
 
-The ntfy version is pinned at 2.37.2; re-audit the server and the Android client before upgrading.
+The ntfy version is pinned at 2.38.2; re-audit the server and the Android client before upgrading.
 
 ## 7.5 Phone continuation relay
 

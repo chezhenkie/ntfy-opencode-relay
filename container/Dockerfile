@@ -10,9 +10,9 @@ FROM alpine:3.24.4@sha256:0f49f331d9212aff11b932863be4eb01cdf962969aa86dab7d1ee2
 # the checksum is the linux/amd64 value from the release checksums.txt. The base
 # digest above is the amd64 manifest, so amd64 is the claimed architecture;
 # another one needs its own base digest and release checksum.
-ARG NTFY_VERSION=2.37.2
+ARG NTFY_VERSION=2.38.2
 ARG NTFY_ARCH=amd64
-ARG NTFY_SHA256=e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1
+ARG NTFY_SHA256=2040946f6e1103420e72a79a7048c841fb73cd51c17d45232e0c8f6ac7f0d531
 
 RUN set -eux; \
     wget -q -O /tmp/ntfy.tgz "https://github.com/binwiederhier/ntfy/releases/download/v${NTFY_VERSION}/ntfy_${NTFY_VERSION}_linux_${NTFY_ARCH}.tar.gz"; \

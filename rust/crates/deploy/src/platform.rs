@@ -247,7 +247,7 @@ Address         Port        Address         Port
   "port": 8810,
   "container": {{
     "name": "ntfy",
-    "image": "localhost/ntfy:2.37.2",
+    "image": "localhost/ntfy:server",
     "cacheVolume": "ntfy-cache"
   }},
   "vpn": {{ "ip": "100.64.0.10" }}

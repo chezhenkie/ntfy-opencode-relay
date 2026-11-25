@@ -58,7 +58,7 @@ After the pick it prints the written config path, the apply report, and the phon
 config written: C:\Users\me\AppData\Local\ntfy-relay\ntfy-deploy.json
 mode: proxy
 base url: https://ntfy.example.ts.net
-container: ntfy (localhost/ntfy:2.37.2)
+container: ntfy (localhost/ntfy:server)
 publish: 8810:8080
 container state: recreated
 health: 200

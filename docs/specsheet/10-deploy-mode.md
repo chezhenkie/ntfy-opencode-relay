@@ -47,7 +47,7 @@ Contents:
   "port": 8810,
   "container": {
     "name": "ntfy",
-    "image": "localhost/ntfy:2.37.2",
+    "image": "localhost/ntfy:server",
     "cacheVolume": "ntfy-cache"
   },
   "vpn": {
@@ -81,10 +81,10 @@ A mode switch is never started by the relay. The relay validates the request and
 - `container\server.yml` drops `base-url` and `behind-proxy`. Every deployment supplies `NTFY_BASE_URL` and `NTFY_BEHIND_PROXY` at container creation.
 - The rest of the file stays baked: auth file, cache, attachments, deny-all default.
 - A mode switch recreates the container. It never rebuilds the image.
-- A rebuild is needed only for a new ntfy version or a change to the baked keys.
+- A rebuild is needed for a new ntfy version or a change to the baked keys, and it never waits for a relay release.
 - Build source: the tracked context holds the Dockerfile, `server.yml`, and `.dockerignore`. A build stage fetches the pinned ntfy release tarball and checks it against `NTFY_SHA256` before the binary enters a layer, so the tree holds no binary and no download step precedes the build. A version change updates `NTFY_VERSION` and `NTFY_SHA256` together.
-- Reference: `localhost/ntfy:<ntfy version>`, plus `:latest`. `tools\build-image.ps1` reads the version from the Dockerfile, so tag and pin cannot drift. When a rebuild keeps the tag, the image-ID rule in `apply` replaces the container on the next run.
-- Distribution: no registry. A release ships one `podman save --format docker-archive` archive per claimed architecture, named `ntfy-image-<ntfy version>-<arch>.tar` and carrying the version tag and `latest`; `podman load` restores both without a build, account, or network.
+- Reference: `localhost/ntfy:server`, plus `:latest` as an alias. The tag is stable across ntfy versions; `tools\build-image.ps1` reads the version pin only to report it. When a rebuild keeps the tag, the image-ID rule in `apply` replaces the container on the next run, so a server bump is a rebuild and an apply, never a relay release.
+- Distribution: no registry. A release ships one `podman save --format docker-archive` archive per claimed architecture, named `ntfy-image-<ntfy version>-<arch>.tar` and carrying the `server` tag and `latest`; `podman load` restores both without a build, account, or network.
 - Architecture: amd64 is claimed, and the pinned base digest and release checksum name it. Another architecture needs its own base digest and release checksum, and ships only after a live run on that architecture.
 
 ## Modes

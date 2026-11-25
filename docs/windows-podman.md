@@ -120,9 +120,9 @@ FROM alpine:3.24.4@sha256:0f49f331d9212aff11b932863be4eb01cdf962969aa86dab7d1ee2
 # the checksum is the linux/amd64 value from the release checksums.txt. The base
 # digest above is the amd64 manifest, so amd64 is the claimed architecture;
 # another one needs its own base digest and release checksum.
-ARG NTFY_VERSION=2.37.2
+ARG NTFY_VERSION=2.38.2
 ARG NTFY_ARCH=amd64
-ARG NTFY_SHA256=e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1
+ARG NTFY_SHA256=2040946f6e1103420e72a79a7048c841fb73cd51c17d45232e0c8f6ac7f0d531
 
 RUN set -eux; \
     wget -q -O /tmp/ntfy.tgz "https://github.com/binwiederhier/ntfy/releases/download/v${NTFY_VERSION}/ntfy_${NTFY_VERSION}_linux_${NTFY_ARCH}.tar.gz"; \
@@ -207,10 +207,10 @@ ntfy_*.tar.gz
 .\tools\build-image.ps1
 ```
 
-The script reads the version pin from the Dockerfile, then builds `container\` in place and tags `localhost/ntfy:2.37.2` and `localhost/ntfy:latest`. Nothing has to be downloaded first; the build fetches the pinned release and checks its checksum. A plain `podman build` against `container` also works:
+The script reads the ntfy version pin from the Dockerfile, then builds `container\` in place and tags `localhost/ntfy:server`, with `localhost/ntfy:latest` as an alias. The tag is stable across ntfy versions: a server bump rebuilds the same tag, and `ntfy-deploy apply` replaces the container because the image ID changed. Nothing has to be downloaded first; the build fetches the pinned release and checks its checksum. A plain `podman build` against `container` also works:
 
 ```powershell
-podman build --format docker -t localhost/ntfy:2.37.2 -t localhost/ntfy:latest container
+podman build --format docker -t localhost/ntfy:server -t localhost/ntfy:latest container
 ```
 
 `--format docker` is required. With the default OCI format Podman drops `HEALTHCHECK`:
@@ -222,11 +222,11 @@ level=warning msg="HEALTHCHECK is not supported for OCI image format and will be
 Confirm:
 
 ```powershell
-podman image inspect localhost/ntfy:2.37.2 --format '{{json .Config.Healthcheck}}'
+podman image inspect localhost/ntfy:server --format '{{json .Config.Healthcheck}}'
 ```
 
 ```
-localhost/ntfy:2.37.2   85 MB
+localhost/ntfy:server   85 MB
 localhost/ntfy:latest   85 MB
 ```
 
@@ -237,7 +237,7 @@ Most of the size is the 76.6 MB static binary; the base contributes 8.7 MB.
 `ntfy-deploy mode` detects the paths, writes `ntfy-deploy.json` in the relay root, and runs the container with the mode values. `ntfy-deploy apply` runs an existing config without changing it. The manual equivalent:
 
 ```powershell
-podman run -d --name ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -p 8810:8080 -v ntfy-cache:/var/cache/ntfy -e NTFY_BASE_URL=https://ntfy.example.ts.net -e NTFY_BEHIND_PROXY=true localhost/ntfy:2.37.2
+podman run -d --name ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -p 8810:8080 -v ntfy-cache:/var/cache/ntfy -e NTFY_BASE_URL=https://ntfy.example.ts.net -e NTFY_BEHIND_PROXY=true localhost/ntfy:server
 podman ps --format '{{.Names}} {{.Status}} {{.Ports}}'
 ```
 

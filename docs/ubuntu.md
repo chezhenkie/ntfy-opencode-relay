@@ -8,18 +8,18 @@ Install dependencies and download the release:
 sudo apt update
 sudo apt install -y curl tar
 cd /tmp
-curl -fL -o ntfy_2.37.2_linux_amd64.tar.gz \
-  https://github.com/binwiederhier/ntfy/releases/download/v2.37.2/ntfy_2.37.2_linux_amd64.tar.gz
-echo "e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1  ntfy_2.37.2_linux_amd64.tar.gz" | sha256sum -c -
-tar xzf ntfy_2.37.2_linux_amd64.tar.gz
+curl -fL -o ntfy_2.38.2_linux_amd64.tar.gz \
+  https://github.com/binwiederhier/ntfy/releases/download/v2.38.2/ntfy_2.38.2_linux_amd64.tar.gz
+echo "e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1  ntfy_2.38.2_linux_amd64.tar.gz" | sha256sum -c -
+tar xzf ntfy_2.38.2_linux_amd64.tar.gz
 ```
 
-On arm64 use `ntfy_2.37.2_linux_arm64.tar.gz` and its checksum from `checksums.txt`.
+On arm64 use `ntfy_2.38.2_linux_arm64.tar.gz` and its checksum from `checksums.txt`.
 
 Install the binary and directories:
 
 ```bash
-sudo install -m 755 ntfy_2.37.2_linux_amd64/ntfy /usr/local/bin/ntfy
+sudo install -m 755 ntfy_2.38.2_linux_amd64/ntfy /usr/local/bin/ntfy
 sudo useradd --system --home-dir /var/lib/ntfy --shell /usr/sbin/nologin ntfy
 sudo mkdir -p /etc/ntfy /var/cache/ntfy/attachments
 sudo chown -R ntfy:ntfy /var/cache/ntfy
@@ -98,13 +98,15 @@ Copy the `container` directory to the Ubuntu host. The image build fetches the p
 
 ```bash
 cd ~/ntfy-proj
-podman build --format docker -t localhost/ntfy:2.37.2 -t localhost/ntfy:latest container
+podman build --format docker -t localhost/ntfy:server -t localhost/ntfy:latest container
 ```
+
+The tag is stable across ntfy versions, so a newer server version is a rebuild of the same tag plus an `apply`, not a new tag and not a relay release.
 
 Run rootless. `ntfy-deploy mode` writes the config from the detected path and applies it; `ntfy-deploy apply` runs an existing config. The manual equivalent:
 
 ```bash
-podman run -d --name ntfy -p 8810:8080 -v ntfy-cache:/var/cache/ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -e NTFY_BASE_URL=http://192.168.1.20:8810 -e NTFY_BEHIND_PROXY=false localhost/ntfy:2.37.2
+podman run -d --name ntfy -p 8810:8080 -v ntfy-cache:/var/cache/ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -e NTFY_BASE_URL=http://192.168.1.20:8810 -e NTFY_BEHIND_PROXY=false localhost/ntfy:server
 podman ps --format '{{.Names}} {{.Status}} {{.Ports}}'
 ```
 
