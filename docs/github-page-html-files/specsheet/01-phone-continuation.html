@@ -337,11 +337,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <p>The split follows from how plugins run. A plugin runs per loaded location, so an inbound listener there would duplicate prompts with two locations open and die when a location unloads. The relay is exactly one process, independent of which locations are open; the Rust daemon runs both directions as two supervised tasks.</p>
 <h2><span class="num">3</span>3. Topic contract</h2>
 <div class="rule"></div>
-<p>Input is the project canonical path:</p>
-<ul>
-<li>Plugin: <code>ctx.location.project.canonical</code>.</li>
-<li>Relay: <code>canonical</code> field from <code>GET /api/project</code>.</li>
-</ul>
+<p>Input is the project canonical path: the <code>canonical</code> field from <code>GET /api/project</code>.</p>
 <p>Algorithm:</p>
 <ol>
 <li>Trim trailing path separators, except for a filesystem root.</li>
@@ -377,19 +373,19 @@ podman exec ntfy ntfy token add --label=owner phone</code></pre>
 <li>Anonymous publish and subscribe return 403.</li>
 <li>No other principal exists.</li>
 </ul>
-<h2><span class="num">5</span>5. Outbound plugin</h2>
+<h2><span class="num">5</span>5. Outbound contract</h2>
 <div class="rule"></div>
-<p>Base: pinned <code>opencode-ntfy-with-questions@0.2.1</code> with patches 1 to 3. Add patches 4 to 6.</p>
-<h3>5.1 Patch 4: per-project topic</h3>
+<p>The contract below ran in <code>opencode-ntfy-with-questions@0.2.1</code> with patches 1 to 3 plus the four patches recorded here. Since 0.7.0 the plugin is gone and <code>rust\crates\outbound</code> implements it; the text stays as the behavior record.</p>
+<h3>5.1 Per-project topic</h3>
 <ul>
 <li>Derive the topic from <code>ctx.location.project.canonical</code>.</li>
 <li>Use the project folder name unchanged as the topic.</li>
 <li>Publish nothing when the canonical is missing or the folder name is not a valid ntfy topic.</li>
+<li>No location gate is needed: one subscriber sees every location; the topic comes from the session&#39;s project canonical.</li>
 <li>Every published message gets tag <code>oc-out</code>.</li>
-<li>Keep the session-directory gate from patch 3. A terminal frame may only publish from the instance that owns the session.</li>
 <li>Keep subagent suppression.</li>
 </ul>
-<h3>5.2 Patch 5: turn text</h3>
+<h3>5.2 Turn text</h3>
 <p>Events:</p>
 <ul>
 <li><code>session.execution.started</code>: reset the text buffer for the session, mark the turn window.</li>
@@ -416,7 +412,7 @@ podman exec ntfy ntfy token add --label=owner phone</code></pre>
 <li>Tags: <code>oc-out</code>.</li>
 <li>The attachment carries the buffered text up to the 2 MB turn cap; nothing else is cut.</li>
 </ul>
-<h3>5.3 Patch 6: files</h3>
+<h3>5.3 Files</h3>
 <p>Auto-attach:</p>
 <ul>
 <li>Subscribe to <code>filesystem.changed</code> events.</li>
@@ -444,7 +440,7 @@ zip 7z tar gz</code></pre>
 <pre><code>.git node_modules .cache .ntfy-inbox .opencode logs dist build bin target venv .venv __pycache__ temp resources .scratch</code></pre>
 <p>Explicit tool:</p>
 <ul>
-<li>Add <code>ntfy_send_file</code> through <code>ctx.tool.transform</code> and <code>ToolEditor.add</code>.</li>
+<li>Serve <code>ntfy_send_file</code> from <code>ntfy-relay mcp</code>; the live registration is <code>mcp.servers.ntfy</code> with <code>codemode: false</code>.</li>
 <li>Input: <code>path</code> string, optional <code>message</code> string.</li>
 <li>Description: send a local file to the user&#39;s phone only when the user explicitly asks for it.</li>
 <li>Resolve relative paths against <code>ctx.location.directory</code>; reject paths outside the project canonical; reject non-regular files and files over 15 MB.</li>
@@ -453,7 +449,7 @@ zip 7z tar gz</code></pre>
 <li>Return a short success or failure string to the model. Never throw.</li>
 </ul>
 <p>Existing permission, question, and error notifications retarget to the project topic and keep their current behavior.</p>
-<h3>5.4 Patch 7: link safety</h3>
+<h3>5.4 Link safety</h3>
 <p>The phone client linkifies any token that looks like a domain. <code>.md</code> is Moldova&#39;s top-level domain, so <code>readme.md</code> in a turn push opened a scam site in the browser. Extensions must never be read as links.</p>
 <ul>
 <li>Every outgoing turn text body, file title, and file message passes through <code>core::link_safe</code>. The same filter covers acks and error pushes.</li>
@@ -644,6 +640,7 @@ zip 7z tar gz</code></pre>
 <tr><td><code>/deny</code></td><td>Reject the first pending permission</td></tr>
 <tr><td><code>/yes</code></td><td>Confirm a held action</td></tr>
 <tr><td><code>/no</code></td><td>Cancel a held action</td></tr>
+<tr><td><code>/answer &lt;text&gt;</code></td><td>Cancel the newest live question form with the text as its reason</td></tr>
 </tbody></table>
 <p><code>/usr/bin/env is missing</code> is a prompt. <code>/nope</code> is a prompt. A command without its required argument gets a usage ack.</p>
 <h2><span class="num">7</span>7. Message formats</h2>
@@ -662,18 +659,14 @@ zip 7z tar gz</code></pre>
 <h2><span class="num">8</span>8. Portability rules</h2>
 <div class="rule"></div>
 <ul>
-<li>No absolute paths in source. Paths come from config, <code>os.homedir()</code>, or OpenCode data.</li>
-<li>Use <code>node:path</code> for every join, resolve, relative, and basename.</li>
-<li>Case-insensitive path comparison only when <code>process.platform === &quot;win32&quot;</code>.</li>
-<li>Use <code>node:fs/promises</code>, <code>node:child_process</code>, <code>global fetch</code>, <code>AbortController</code>. No npm dependencies.</li>
-<li>Config and state live in the relay install root: <code>%LOCALAPPDATA%\ntfy-relay\</code> on Windows, the install directory on Linux. No relay file lives under the OpenCode config or state directories. The XDG paths were the design target before 0.10.0.</li>
-<li>Startup wrappers are deployment artifacts per OS, separate from the relay code:</li>
-<li>Windows: <code>.vbs</code> or shortcut in the Startup folder, running <code>node.exe</code> hidden.</li>
-<li>Windows wrappers resolve node from <code>NTFY_RELAY_NODE</code>, then <code>Get-Command node.exe</code>, then fail with a clear log line. The state path comes from the relay config through a shared <code>relay-config.ps1</code> helper, never from a hardcoded default.</li>
-<li>Linux: systemd user unit.</li>
-<li>macOS: launchd plist is untested and not a supported target. Case folding is Windows-only, so a case-insensitive macOS filesystem can fail containment.</li>
-<li>The plugin change uses only <code>node:path</code> and the existing ntfy client.</li>
-<li>Unit tests run on Windows and WSL. Fixtures cover both path styles.</li>
+<li>No absolute paths in source. Paths come from the config, the install root, or the environment; no user name, drive letter, or machine name is compiled in.</li>
+<li>Use <code>std::path</code> for every join, resolve, and file name; containment checks resolve <code>..</code> and symlinks where the code requires it.</li>
+<li>Case-insensitive path comparison only on Windows; the code branches on the platform.</li>
+<li>The relay is Rust with no Node runtime and no npm dependencies. Node is used only by the <code>tools\</code> scripts and the docs site.</li>
+<li>Config, state, logs, asks, forms, and journal live in the install root: <code>%LOCALAPPDATA%\ntfy-relay\</code> on Windows, the install directory on Linux. No relay file lives under the OpenCode config or state directories.</li>
+<li>Startup is a deployment artifact per OS: two scheduled tasks with a generated VBS on Windows, three systemd user units on Linux, or the no-autostart path when <code>systemctl --version</code> or <code>systemctl --user show-environment</code> fails.</li>
+<li>macOS is untested and unsupported. Case folding is Windows-only, so a case-insensitive macOS filesystem can fail containment.</li>
+<li>Tests run in CI on Linux and Windows; fixtures cover both path styles.</li>
 </ul>
 <h2><span class="num">9</span>9. Errors and limits</h2>
 <div class="rule"></div>
@@ -687,7 +680,7 @@ zip 7z tar gz</code></pre>
 </ul>
 <h2><span class="num">10</span>10. Testing</h2>
 <div class="rule"></div>
-<p>Unit, <code>node --test</code>, no dependencies:</p>
+<p>Unit and integration tests run with <code>cargo test</code>. The workspace holds 624 tests at 0.6.10: 94 in <code>deploy</code>, 89 in <code>outbound</code>, 86 in <code>inbound</code>, 99 in <code>app</code>, 75 in <code>core</code>, 54 in <code>ntfy</code>, 50 in <code>opencode</code>, 30 in <code>control</code>, 28 in <code>auth</code>, and 19 in <code>admin</code>. No test uses the network; test directories stay inside the workspace.</p>
 <ul>
 <li>Topic derivation: Windows and POSIX paths, trailing separators, invalid characters, length limit, empty basename, duplicate folder names.</li>
 <li>Filter: <code>oc-out</code>, stale, oversized, empty, attachment-only, duplicate ID.</li>
@@ -721,7 +714,7 @@ zip 7z tar gz</code></pre>
 <li>Two locations loaded produce exactly one push per turn and one prompt per phone message.</li>
 <li>Relay restart does not re-execute an already processed message.</li>
 <li>Reboot with no TUI: first phone message still reaches the session.</li>
-<li>Unit tests pass on Windows and WSL.</li>
+<li>Tests pass in CI on Linux and Windows; <code>cfg(unix)</code> tests do not run on Windows.</li>
 </ol>
 <p>Acceptance criteria:</p>
 <ul>
@@ -732,12 +725,12 @@ zip 7z tar gz</code></pre>
 <li>Deny-all auth preserved; private network only; no Google components.</li>
 <li>Portable code and config-driven roots.</li>
 </ul>
-<h2><span class="num">11</span>11. Rollout</h2>
+<h2><span class="num">11</span>11. Rollout (completed)</h2>
 <div class="rule"></div>
 <p>Phase 1, auth and relay text:</p>
 <ol>
 <li>Create <code>phone</code>, the token, and the <code>*</code> row.</li>
-<li>Start <code>ntfy-relay run</code> from <code>rust\crates\app</code>. The Node files this step originally named were deleted in 0.8.0.</li>
+<li>Start the installed <code>ntfy-relay run</code> from the install root. The Node files this step originally named were deleted in 0.8.0.</li>
 <li>Run the relay in the foreground against <code>ntfy-proj</code>.</li>
 <li>Send text with the phone token; confirm the prompt lands in the existing session and the relay logs one accepted message.</li>
 </ol>
@@ -748,14 +741,14 @@ zip 7z tar gz</code></pre>
 </ol>
 <p>Phase 3, files and permissions:</p>
 <ol>
-<li>Patch 6 and <code>ntfy_send_file</code>.</li>
+<li>File auto-attach and <code>ntfy_send_file</code>.</li>
 <li>Inbound attachment download and prompt <code>files</code>.</li>
 <li>Permission commands.</li>
 <li>Run the live acceptance matrix.</li>
 </ol>
 <p>Phase 4, lifecycle and docs:</p>
 <ol>
-<li>Startup wrapper and single-instance lock.</li>
+<li>Startup tasks or units and the single-instance lock.</li>
 <li>Startup-check integration: relay alive and heartbeating.</li>
 <li>Reboot and wake tests.</li>
 <li>Update the manual under <code>docs\</code> and the changelog.</li>
@@ -779,8 +772,8 @@ zip 7z tar gz</code></pre>
 <h2><span class="num">13</span>13. Risks</h2>
 <div class="rule"></div>
 <ul>
-<li>The plugin patch surface grows to seven patches. Re-audit on any upgrade.</li>
-<li>The relay depends on <code>opencode api</code> CLI behavior. Pin the version in docs and test after upgrades.</li>
+<li>The MCP registration, the event stream, and the session API can change with an OpenCode upgrade. Re-run the smoke suite and the live gates after one.</li>
+<li>A systemd host without a live user manager takes the no-autostart path; the relay then needs <code>ntfy-relay ensure</code> after each boot.</li>
 <li>After a reboot with no TUI, the first phone message reached the session in the verified run; re-check after an OpenCode upgrade.</li>
 <li>Duplicate folder names merge topics by design.</li>
 <li>A second relay on another machine would double-handle messages. Run one relay per ntfy account; document it.</li>

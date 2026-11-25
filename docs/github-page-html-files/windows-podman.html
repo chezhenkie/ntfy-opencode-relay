@@ -304,6 +304,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
     <h1>2. Windows path: Podman</h1>
   </header>
   <main>
+<p>The image and its tarball are engine-neutral: one standard Dockerfile, one docker-archive. This page uses Podman, the tested path on Windows. Docker Desktop takes the same <code>build</code>, <code>load</code>, and <code>run</code> commands with <code>docker</code> in place of <code>podman</code> and has no machine step; <code>ntfy-deploy</code> currently drives Podman, so a Docker user runs the container from <code>compose.yml</code> or the <code>docker run</code> line below.</p>
 <h2><span class="num">1</span>2.1 Install Podman</h2>
 <div class="rule"></div>
 <p>The winget package failed because its download hit the same GitHub 504:</p>
@@ -370,9 +371,9 @@ FROM alpine:3.24.4@sha256:0f49f331d9212aff11b932863be4eb01cdf962969aa86dab7d1ee2
 # the checksum is the linux/amd64 value from the release checksums.txt. The base
 # digest above is the amd64 manifest, so amd64 is the claimed architecture;
 # another one needs its own base digest and release checksum.
-ARG NTFY_VERSION=2.37.2
+ARG NTFY_VERSION=2.38.2
 ARG NTFY_ARCH=amd64
-ARG NTFY_SHA256=e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1
+ARG NTFY_SHA256=2040946f6e1103420e72a79a7048c841fb73cd51c17d45232e0c8f6ac7f0d531
 
 RUN set -eux; \
     wget -q -O /tmp/ntfy.tgz &quot;https://github.com/binwiederhier/ntfy/releases/download/v${NTFY_VERSION}/ntfy_${NTFY_VERSION}_linux_${NTFY_ARCH}.tar.gz&quot;; \
@@ -435,19 +436,19 @@ ntfy_*.tar.gz</code></pre>
 <h2><span class="num">4</span>2.4 Build the image</h2>
 <div class="rule"></div>
 <pre><code class="language-powershell">.\tools\build-image.ps1</code></pre>
-<p>The script reads the version pin from the Dockerfile, then builds <code>container\</code> in place and tags <code>localhost/ntfy:2.37.2</code> and <code>localhost/ntfy:latest</code>. Nothing has to be downloaded first; the build fetches the pinned release and checks its checksum. A plain <code>podman build</code> against <code>container</code> also works:</p>
-<pre><code class="language-powershell">podman build --format docker -t localhost/ntfy:2.37.2 -t localhost/ntfy:latest container</code></pre>
-<p><code>--format docker</code> is required. With the default OCI format Podman drops <code>HEALTHCHECK</code>:</p>
+<p>The script reads the ntfy version pin from the Dockerfile, then builds <code>container\</code> in place and tags <code>localhost/ntfy:server</code>, with <code>localhost/ntfy:latest</code> as an alias. The tag is stable across ntfy versions: a server bump rebuilds the same tag, and <code>ntfy-deploy apply</code> replaces the container because the image ID changed. Nothing has to be downloaded first; the build fetches the pinned release and checks its checksum. A plain <code>podman build</code> against <code>container</code> also works:</p>
+<pre><code class="language-powershell">podman build --format docker -t localhost/ntfy:server -t localhost/ntfy:latest container</code></pre>
+<p>The file is a standard Dockerfile. Podman builds it directly, so there is no second Podmanfile and no Docker-only build path; <code>--format docker</code> selects the output image format, not the build language. It is required because the default OCI format drops <code>HEALTHCHECK</code>:</p>
 <pre><code>level=warning msg=&quot;HEALTHCHECK is not supported for OCI image format and will be ignored. Must use `docker` format&quot;</code></pre>
 <p>Confirm:</p>
-<pre><code class="language-powershell">podman image inspect localhost/ntfy:2.37.2 --format &#39;{{json .Config.Healthcheck}}&#39;</code></pre>
-<pre><code>localhost/ntfy:2.37.2   85 MB
+<pre><code class="language-powershell">podman image inspect localhost/ntfy:server --format &#39;{{json .Config.Healthcheck}}&#39;</code></pre>
+<pre><code>localhost/ntfy:server   85 MB
 localhost/ntfy:latest   85 MB</code></pre>
 <p>Most of the size is the 76.6 MB static binary; the base contributes 8.7 MB.</p>
 <h2><span class="num">5</span>2.5 Run</h2>
 <div class="rule"></div>
 <p><code>ntfy-deploy mode</code> detects the paths, writes <code>ntfy-deploy.json</code> in the relay root, and runs the container with the mode values. <code>ntfy-deploy apply</code> runs an existing config without changing it. The manual equivalent:</p>
-<pre><code class="language-powershell">podman run -d --name ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -p 8810:8080 -v ntfy-cache:/var/cache/ntfy -e NTFY_BASE_URL=https://ntfy.example.ts.net -e NTFY_BEHIND_PROXY=true localhost/ntfy:2.37.2
+<pre><code class="language-powershell">podman run -d --name ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -p 8810:8080 -v ntfy-cache:/var/cache/ntfy -e NTFY_BASE_URL=https://ntfy.example.ts.net -e NTFY_BEHIND_PROXY=true localhost/ntfy:server
 podman ps --format &#39;{{.Names}} {{.Status}} {{.Ports}}&#39;</code></pre>
 <pre><code>ntfy Up Less than a second (healthy) 0.0.0.0:8810-&gt;8080/tcp</code></pre>
 <p>The named volume <code>ntfy-cache</code> survives container replacement. <code>--read-only</code> is safe because the process writes only under <code>/var/cache/ntfy</code>; <code>/tmp</code> is a tmpfs. The process listens on 8080, so <code>--cap-drop=ALL</code> removes no needed capability.</p>

@@ -304,19 +304,20 @@ pre code{background:none;color:inherit;border:0;padding:0}
     <h1>3. Ubuntu/Xubuntu path</h1>
   </header>
   <main>
+<p>The server image is engine-neutral: one standard Dockerfile, one docker-archive. Every container command in this chapter works with <code>docker</code> in place of <code>podman</code>, and <code>docker load</code> opens the same tarball; the container sections use Podman because it is the tested rootless path, and <code>ntfy-deploy</code> currently drives Podman only.</p>
 <h2><span class="num">1</span>3.1 Native binary with systemd</h2>
 <div class="rule"></div>
 <p>Install dependencies and download the release:</p>
 <pre><code class="language-bash">sudo apt update
 sudo apt install -y curl tar
 cd /tmp
-curl -fL -o ntfy_2.37.2_linux_amd64.tar.gz \
-  https://github.com/binwiederhier/ntfy/releases/download/v2.37.2/ntfy_2.37.2_linux_amd64.tar.gz
-echo &quot;e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1  ntfy_2.37.2_linux_amd64.tar.gz&quot; | sha256sum -c -
-tar xzf ntfy_2.37.2_linux_amd64.tar.gz</code></pre>
-<p>On arm64 use <code>ntfy_2.37.2_linux_arm64.tar.gz</code> and its checksum from <code>checksums.txt</code>.</p>
+curl -fL -o ntfy_2.38.2_linux_amd64.tar.gz \
+  https://github.com/binwiederhier/ntfy/releases/download/v2.38.2/ntfy_2.38.2_linux_amd64.tar.gz
+echo &quot;e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1  ntfy_2.38.2_linux_amd64.tar.gz&quot; | sha256sum -c -
+tar xzf ntfy_2.38.2_linux_amd64.tar.gz</code></pre>
+<p>On arm64 use <code>ntfy_2.38.2_linux_arm64.tar.gz</code> and its checksum from <code>checksums.txt</code>.</p>
 <p>Install the binary and directories:</p>
-<pre><code class="language-bash">sudo install -m 755 ntfy_2.37.2_linux_amd64/ntfy /usr/local/bin/ntfy
+<pre><code class="language-bash">sudo install -m 755 ntfy_2.38.2_linux_amd64/ntfy /usr/local/bin/ntfy
 sudo useradd --system --home-dir /var/lib/ntfy --shell /usr/sbin/nologin ntfy
 sudo mkdir -p /etc/ntfy /var/cache/ntfy/attachments
 sudo chown -R ntfy:ntfy /var/cache/ntfy</code></pre>
@@ -368,9 +369,10 @@ sudo apt install -y podman
 podman --version</code></pre>
 <p>Copy the <code>container</code> directory to the Ubuntu host. The image build fetches the pinned ntfy release and checks its checksum, so the directory holds no binary and the host needs outbound HTTPS to GitHub. <code>server.yml</code> holds only baked keys; the deployment base URL and proxy flag come from <code>ntfy-deploy.json</code> in the relay install root. Then build:</p>
 <pre><code class="language-bash">cd ~/ntfy-proj
-podman build --format docker -t localhost/ntfy:2.37.2 -t localhost/ntfy:latest container</code></pre>
+podman build --format docker -t localhost/ntfy:server -t localhost/ntfy:latest container</code></pre>
+<p>The tag is stable across ntfy versions, so a newer server version is a rebuild of the same tag plus an <code>apply</code>, not a new tag and not a relay release. The Dockerfile is the standard build format; Podman builds it directly, with no separate Podmanfile, and <code>--format docker</code> keeps the healthcheck.</p>
 <p>Run rootless. <code>ntfy-deploy mode</code> writes the config from the detected path and applies it; <code>ntfy-deploy apply</code> runs an existing config. The manual equivalent:</p>
-<pre><code class="language-bash">podman run -d --name ntfy -p 8810:8080 -v ntfy-cache:/var/cache/ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -e NTFY_BASE_URL=http://192.168.1.20:8810 -e NTFY_BEHIND_PROXY=false localhost/ntfy:2.37.2
+<pre><code class="language-bash">podman run -d --name ntfy -p 8810:8080 -v ntfy-cache:/var/cache/ntfy --restart unless-stopped --read-only --tmpfs /tmp --cap-drop=ALL --security-opt no-new-privileges -e NTFY_BASE_URL=http://192.168.1.20:8810 -e NTFY_BEHIND_PROXY=false localhost/ntfy:server
 podman ps --format &#39;{{.Names}} {{.Status}} {{.Ports}}&#39;</code></pre>
 <p>Keep the container running without an active login and restore it on boot:</p>
 <pre><code class="language-bash">sudo loginctl enable-linger $USER

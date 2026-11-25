@@ -307,7 +307,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <h2><span class="num">1</span>1.1 GitHub 504 workaround</h2>
 <div class="rule"></div>
 <p>Direct release downloads returned 504 through the network edge:</p>
-<pre><code>https://github.com/binwiederhier/ntfy/releases/download/v2.37.2/...
+<pre><code>https://github.com/binwiederhier/ntfy/releases/download/v2.38.2/...
 HTTP/1.1 504 Gateway Time-out
 x-github-edge-region: fra</code></pre>
 <p>The GitHub API asset endpoint worked. Resolve asset IDs first:</p>
@@ -318,31 +318,31 @@ $j.assets | Select-Object id,name,size</code></pre>
 <p>Download an asset by ID:</p>
 <pre><code class="language-powershell">New-Item -ItemType Directory -Force resources | Out-Null
 curl.exe -sS -L -H &quot;Accept: application/octet-stream&quot; -H &quot;User-Agent: opencode&quot; `
-  -o resources\ntfy_2.37.2_windows_amd64.zip `
-  &quot;https://api.github.com/repos/binwiederhier/ntfy/releases/assets/707826293&quot;</code></pre>
+  -o resources\ntfy_2.38.2_windows_amd64.zip `
+  &quot;https://api.github.com/repos/binwiederhier/ntfy/releases/assets/787293801&quot;</code></pre>
 <p>On Linux the same works with <code>curl -L -H &quot;Accept: application/octet-stream&quot;</code>.</p>
 <h2><span class="num">2</span>1.2 Checksums</h2>
 <div class="rule"></div>
-<pre><code>72a1ad4f8976ee9986a77670d68e3d58a5b9a6b9fbbcaf43fc6dd24255b2d44c  ntfy_2.37.2_windows_amd64.zip
-e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1  ntfy_2.37.2_linux_amd64.tar.gz</code></pre>
+<pre><code>3549ff885b65325e3ee35047a2d76a3c8be30aa045b478ca17309233f157c2e7  ntfy_2.38.2_windows_amd64.zip
+2040946f6e1103420e72a79a7048c841fb73cd51c17d45232e0c8f6ac7f0d531  ntfy_2.38.2_linux_amd64.tar.gz</code></pre>
 <p>The container build pins the Linux value as <code>NTFY_SHA256</code> in <code>container\Dockerfile</code> and checks the tarball before it unpacks it. An arm64 checksum is in the release <code>checksums.txt</code>; the image targets amd64 only.</p>
 <p>Windows verification:</p>
-<pre><code class="language-powershell">(Get-FileHash resources\ntfy_2.37.2_windows_amd64.zip -Algorithm SHA256).Hash.ToLower()</code></pre>
+<pre><code class="language-powershell">(Get-FileHash resources\ntfy_2.38.2_windows_amd64.zip -Algorithm SHA256).Hash.ToLower()</code></pre>
 <p>Linux verification:</p>
-<pre><code class="language-bash">echo &quot;e67f53d7fbed529b83faf3993b584110921ef3567b0ac0b033c6910879a4ffd1  ntfy_2.37.2_linux_amd64.tar.gz&quot; | sha256sum -c -</code></pre>
+<pre><code class="language-bash">echo &quot;2040946f6e1103420e72a79a7048c841fb73cd51c17d45232e0c8f6ac7f0d531  ntfy_2.38.2_linux_amd64.tar.gz&quot; | sha256sum -c -</code></pre>
 <h2><span class="num">3</span>1.3 Windows binary</h2>
 <div class="rule"></div>
-<pre><code class="language-powershell">Expand-Archive -Path resources\ntfy_2.37.2_windows_amd64.zip -DestinationPath resources -Force
-.\resources\ntfy_2.37.2_windows_amd64\ntfy.exe --version</code></pre>
-<pre><code>ntfy version 2.37.2</code></pre>
+<pre><code class="language-powershell">Expand-Archive -Path resources\ntfy_2.38.2_windows_amd64.zip -DestinationPath resources -Force
+.\resources\ntfy_2.38.2_windows_amd64\ntfy.exe --version</code></pre>
+<pre><code>ntfy version 2.38.2</code></pre>
 <h2><span class="num">4</span>1.4 Linux binary for images</h2>
 <div class="rule"></div>
-<p>The build fetches this file itself. <code>container\Dockerfile</code> downloads <code>ntfy_2.37.2_linux_amd64.tar.gz</code> in a build stage, checks it against <code>NTFY_SHA256</code>, and copies the unpacked binary into the image. A version change updates <code>NTFY_VERSION</code> and <code>NTFY_SHA256</code> together.</p>
+<p>The build fetches this file itself. <code>container\Dockerfile</code> downloads <code>ntfy_2.38.2_linux_amd64.tar.gz</code> in a build stage, checks it against <code>NTFY_SHA256</code>, and copies the unpacked binary into the image. A version change updates <code>NTFY_VERSION</code> and <code>NTFY_SHA256</code> together.</p>
 <p>To check the pin by hand (1.1 is the workaround when the download returns 504):</p>
 <pre><code class="language-powershell">New-Item -ItemType Directory -Force temp | Out-Null
-curl.exe -sS -L -o temp\ntfy_2.37.2_linux_amd64.tar.gz `
-  &quot;https://github.com/binwiederhier/ntfy/releases/download/v2.37.2/ntfy_2.37.2_linux_amd64.tar.gz&quot;
-(Get-FileHash temp\ntfy_2.37.2_linux_amd64.tar.gz -Algorithm SHA256).Hash.ToLower()</code></pre>
+curl.exe -sS -L -o temp\ntfy_2.38.2_linux_amd64.tar.gz `
+  &quot;https://github.com/binwiederhier/ntfy/releases/download/v2.38.2/ntfy_2.38.2_linux_amd64.tar.gz&quot;
+(Get-FileHash temp\ntfy_2.38.2_linux_amd64.tar.gz -Algorithm SHA256).Hash.ToLower()</code></pre>
 <p>The binary is statically linked, so the image needs no runtime libraries, no ca-certificates, and no tzdata. The base is Alpine 3.24.4, pinned by digest in <code>container\Dockerfile</code>.</p>
   </main>
 </div>

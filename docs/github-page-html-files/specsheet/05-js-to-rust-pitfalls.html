@@ -445,7 +445,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <tr><td>Time is injected (<code>Control({now})</code>, <code>Relay({deps.now})</code>, <code>withRetry({sleep})</code>, <code>phone-outbound</code> <code>now</code> and <code>timers</code>).</td><td><code>tokio::time::pause</code> covers tokio timers only, not <code>SystemTime::now()</code> inside logic.</td><td>Decided (04 row 10): inject <code>Clock::now_ms</code>; replay uses wall time, control windows use the monotonic source.</td></tr>
 <tr><td>Concurrency: two <code>acquireLock</code> calls with different pids in one process.</td><td>Two tasks or two processes; the pid is a parameter in JS.</td><td>Keep <code>pid</code> injectable in the Rust signature.</td></tr>
 <tr><td>JS-only cases: <code>undefined</code> versus null, <code>Number(&quot;...&quot;)</code>, stable <code>sort</code>, <code>localeCompare</code>, <code>toISOString</code>, <code>for await</code> over a body.</td><td>Rust must choose an explicit behavior.</td><td>Add a test per case; do not rely on the type system to guess the old behavior.</td></tr>
-<tr><td>Outbound turn and file behavior lived in <code>tools/verify-ntfy-patch.mjs</code>, not in <code>tests/</code>.</td><td>The verifier was deleted with the publisher plugin in 0.7.0.</td><td>The contract is now held by the Rust suites: the 68 tests in <code>rust\crates\outbound</code>, the inbound suite, and the app MCP test.</td></tr>
+<tr><td>Outbound turn and file behavior lived in <code>tools/verify-ntfy-patch.mjs</code>, not in <code>tests/</code>.</td><td>The verifier was deleted with the publisher plugin in 0.7.0.</td><td>The contract is now held by the Rust suites: the 89 tests in <code>rust\crates\outbound</code>, the inbound suite, and the app MCP test.</td></tr>
 </tbody></table>
 <h2><span class="num">13</span>Per-module risk</h2>
 <div class="rule"></div>
@@ -497,7 +497,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li><code>03</code> says &quot;3400 UTF-8 bytes inline&quot;; the plugin also has <code>MAX_MESSAGE_BYTES</code> 4096 and <code>boundQuestionMessage</code> with a <code>(truncated)</code> marker. <code>core::text</code> carries the 3400 ack budget; <code>ntfy::header</code> carries the plugin 1024/4096 caps.</li>
 <li><code>04</code> covers the clock choice (row 10) and the wire format (row 11), but has no row for duplicate-key policy or unknown-field strictness. Config parses through <code>serde_json::Value</code>, so a duplicate key takes the last value; typed state rejects a duplicate field.</li>
 <li><code>03</code> section 6 says the OpenCode calls go through HTTP directly. The Rust adapter retries no-status and 5xx twice, 1 s then 2 s, matching the Node classifier; the parser is gone.</li>
-<li>The 94 Node tests cover inbound, control, and the inbox prune. Outbound turn, file, gap, and backfill behavior is pinned by the 68 tests in <code>rust\crates\outbound</code> and the app MCP test; outbound and the MCP tool are live, and the publisher plugin is deleted.</li>
+<li>The 94 Node tests cover inbound, control, and the inbox prune. Outbound turn, file, gap, and backfill behavior is pinned by the 89 tests in <code>rust\crates\outbound</code> and the app MCP test; outbound and the MCP tool are live, and the publisher plugin is deleted.</li>
 </ul>
   </main>
 </div>

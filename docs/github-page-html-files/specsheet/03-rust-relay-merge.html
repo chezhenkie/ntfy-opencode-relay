@@ -304,16 +304,16 @@ pre code{background:none;color:inherit;border:0;padding:0}
     <h1>Rust relay merge plan</h1>
   </header>
   <main>
-<p>Status: the Rust daemon is the live path in both directions. Steps 2 to 6 are implemented, plus the wire (<code>ntfy</code>) and OpenCode API (<code>opencode</code>) crates and the <code>app</code> composition root: 485 tests at the 0.14.0 gate. Service discovery reads <code>~/.local/state/opencode/service.json</code> and re-reads it after a transport error or HTTP 401; <code>opencode.baseUrl</code> remains an override. Outbound is live (<code>outbound.enabled: true</code>); the patched publisher plugin is removed and its vendored copy was deleted in 0.7.0. A reconnect or start backfills completed assistant text from the message API, so an <code>/api/event</code> gap does not lose turn text and there is no event forwarder. The Node relay was deleted in 0.8.0, so it is not an inbound rollback. Path note: since 0.10.0 the relay reads its config, tokens, state, asks, and journal from the install root, <code>%LOCALAPPDATA%\ntfy-relay\</code> on Windows; the config examples below record the earlier layout. See <code>10-deploy-mode.md</code>.</p>
+<p>Status: the Rust daemon is the live path in both directions. Steps 2 to 6 are implemented, plus the wire (<code>ntfy</code>) and OpenCode API (<code>opencode</code>) crates and the <code>app</code> composition root: 624 tests at 0.6.10. Service discovery reads <code>~/.local/state/opencode/service.json</code> and re-reads it after a transport error or HTTP 401; <code>opencode.baseUrl</code> remains an override. Outbound is live (<code>outbound.enabled: true</code>); the patched publisher plugin is removed and its vendored copy was deleted in 0.7.0. A reconnect or start backfills completed assistant text from the message API, so an <code>/api/event</code> gap does not lose turn text and there is no event forwarder. The Node relay was deleted in 0.8.0, so it is not an inbound rollback. Path note: since 0.10.0 the relay reads its config, tokens, state, asks, and journal from the install root, <code>%LOCALAPPDATA%\ntfy-relay\</code> on Windows; the config examples below record the earlier layout. See <code>10-deploy-mode.md</code>.</p>
 <h2><span class="num">1</span>Phase status</h2>
 <div class="rule"></div>
 <table><thead><tr><th>Step</th><th>State</th><th>Evidence</th></tr></thead><tbody>
 <tr><td>1. Freeze and fixtures</td><td>done</td><td>seven fixtures under <code>rust\crates\opencode\tests\fixtures</code>; permission responses are not captured</td></tr>
-<tr><td>2. Core</td><td>done</td><td><code>rust\crates\core</code>, 33 tests</td></tr>
-<tr><td>Wire and API clients</td><td>done</td><td><code>rust\crates\ntfy</code> 40 tests, <code>rust\crates\opencode</code> 53 tests</td></tr>
-<tr><td>3. Inbound</td><td>done</td><td><code>rust\crates\inbound</code>, 52 tests</td></tr>
-<tr><td>App composition</td><td>done</td><td><code>rust\crates\app</code>, 49 tests; <code>run</code>, <code>mcp</code>, <code>status</code>, and the task supervisor</td></tr>
-<tr><td>4. Outbound</td><td>done</td><td><code>rust\crates\outbound</code>, 68 tests; question asks map from <code>form.created</code>; the MCP loop ships in <code>rust\crates\app</code></td></tr>
+<tr><td>2. Core</td><td>done</td><td><code>rust\crates\core</code>, 75 tests</td></tr>
+<tr><td>Wire and API clients</td><td>done</td><td><code>rust\crates\ntfy</code> 54 tests, <code>rust\crates\opencode</code> 50 tests</td></tr>
+<tr><td>3. Inbound</td><td>done</td><td><code>rust\crates\inbound</code>, 86 tests</td></tr>
+<tr><td>App composition</td><td>done</td><td><code>rust\crates\app</code>, 99 tests; <code>run</code>, <code>mcp</code>, <code>status</code>, and the task supervisor</td></tr>
+<tr><td>4. Outbound</td><td>done</td><td><code>rust\crates\outbound</code>, 89 tests; question asks map from <code>form.created</code>; the MCP loop ships in <code>rust\crates\app</code></td></tr>
 <tr><td>5. Cutover</td><td>done</td><td>inbound live since 0.4.2; outbound, plugin removal, and MCP live since 0.5.0; restart dedupe and lock fix in 0.6.1; reconnect backfill in 0.7.4; gates in <code>docs\operations.md</code> 7.4</td></tr>
 <tr><td>6. Cleanup</td><td>done</td><td>plugin and verifier deleted in 0.7.0; forwarder and loopback ingest deleted in 0.7.4; the Node relay was deleted in 0.8.0</td></tr>
 </tbody></table>
@@ -367,7 +367,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 </ul>
 <h2><span class="num">6</span>5. Outbound design</h2>
 <div class="rule"></div>
-<p>Subscribe with <code>types</code> set to the minimum: <code>session.text.ended</code>, <code>session.execution.*</code>, <code>session.status</code>, <code>session.idle</code>, <code>permission.*</code>, <code>session.created</code>, <code>filesystem.changed</code>. Deltas are not needed if <code>session.text.ended</code> carries the complete part text, which the current plugin already relies on.</p>
+<p>Subscribe with <code>types</code> set to the minimum: <code>session.text.ended</code>, <code>session.execution.*</code>, <code>session.status</code>, <code>session.idle</code>, <code>permission.*</code>, <code>session.created</code>, <code>filesystem.changed</code>. Deltas are not needed if <code>session.text.ended</code> carries the complete part text, which the outbound worker relies on.</p>
 <p>Mapping, carried over from patches 1 to 5:</p>
 <table><thead><tr><th>Event</th><th>Push</th></tr></thead><tbody>
 <tr><td><code>session.execution.succeeded</code></td><td>idle</td></tr>
@@ -383,7 +383,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <p><code>ntfy_send_file</code> moved to the Rust app: <code>ntfy-relay mcp</code> serves one <code>send_file</code> tool over stdio with the same contract (project-confined path from the process working directory, 15 MB cap, <code>oc-out,oc-manual</code>, link-safe message, never throws). The live registration is <code>mcp.servers.ntfy</code> with <code>codemode: false</code>; OpenCode renders the tool as <code>ntfy_send_file</code>. A live agent call returned the plugin&#39;s <code>Sent ...</code> text and one file push. The plugin fallback was not needed.</p>
 <h2><span class="num">7</span>6. Inbound design</h2>
 <div class="rule"></div>
-<p>Behavior is unchanged: one SSE subscription to ntfy, <code>oc-out</code> filter, replay window, duplicate-ID state, routing hints, queue and steer delivery, the JSON control table (<code>new</code>, <code>sessions</code>, <code>to</code>, <code>auto</code>, <code>help</code>, <code>status</code>) with its capability gate and confirm hold, <code>/steer</code>, <code>/allow</code>, <code>/always</code>, <code>/deny</code>, attachment download to <code>.ntfy-inbox</code>, link-safe acks and error pushes. Since 0.11.0 the routing hint replaces the pin; spec 01 section 6.7 defines the order.</p>
+<p>Behavior is unchanged: one SSE subscription to ntfy, <code>oc-out</code> filter, replay window, duplicate-ID state, routing hints, queue and steer delivery, the JSON control table (<code>new</code>, <code>sessions</code>, <code>to</code>, <code>auto</code>, <code>help</code>, <code>status</code>, <code>answer</code>) with its capability gate and confirm hold, <code>/steer</code>, <code>/allow</code>, <code>/always</code>, <code>/deny</code>, attachment download to <code>.ntfy-inbox</code>, link-safe acks and error pushes. Since 0.11.0 the routing hint replaces the pin; spec 01 section 6.7 defines the order.</p>
 <p>Two changes:</p>
 <ul>
 <li>The OpenCode calls go through HTTP directly instead of the <code>opencode api</code> CLI, so the process needs no child shell and no PATH assumptions.</li>

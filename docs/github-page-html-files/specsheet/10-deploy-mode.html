@@ -350,7 +350,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
   &quot;port&quot;: 8810,
   &quot;container&quot;: {
     &quot;name&quot;: &quot;ntfy&quot;,
-    &quot;image&quot;: &quot;localhost/ntfy:2.37.2&quot;,
+    &quot;image&quot;: &quot;localhost/ntfy:server&quot;,
     &quot;cacheVolume&quot;: &quot;ntfy-cache&quot;
   },
   &quot;vpn&quot;: {
@@ -383,10 +383,11 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li><code>container\server.yml</code> drops <code>base-url</code> and <code>behind-proxy</code>. Every deployment supplies <code>NTFY_BASE_URL</code> and <code>NTFY_BEHIND_PROXY</code> at container creation.</li>
 <li>The rest of the file stays baked: auth file, cache, attachments, deny-all default.</li>
 <li>A mode switch recreates the container. It never rebuilds the image.</li>
-<li>A rebuild is needed only for a new ntfy version or a change to the baked keys.</li>
-<li>Build source: the tracked context holds the Dockerfile, <code>server.yml</code>, and <code>.dockerignore</code>. A build stage fetches the pinned ntfy release tarball and checks it against <code>NTFY_SHA256</code> before the binary enters a layer, so the tree holds no binary and no download step precedes the build. A version change updates <code>NTFY_VERSION</code> and <code>NTFY_SHA256</code> together.</li>
-<li>Reference: <code>localhost/ntfy:&lt;ntfy version&gt;</code>, plus <code>:latest</code>. <code>tools\build-image.ps1</code> reads the version from the Dockerfile, so tag and pin cannot drift. When a rebuild keeps the tag, the image-ID rule in <code>apply</code> replaces the container on the next run.</li>
-<li>Distribution: no registry. A release ships one <code>podman save --format docker-archive</code> archive per claimed architecture, named <code>ntfy-image-&lt;ntfy version&gt;-&lt;arch&gt;.tar</code> and carrying the version tag and <code>latest</code>; <code>podman load</code> restores both without a build, account, or network.</li>
+<li>A rebuild is needed for a new ntfy version or a change to the baked keys, and it never waits for a relay release.</li>
+<li>Build source: the tracked context holds the Dockerfile, <code>server.yml</code>, and <code>.dockerignore</code>. The Dockerfile is a standard one; Podman builds it directly, so there is no second builder file, and <code>--format docker</code> selects the image format that keeps the healthcheck. A build stage fetches the pinned ntfy release tarball and checks it against <code>NTFY_SHA256</code> before the binary enters a layer, so the tree holds no binary and no download step precedes the build. A version change updates <code>NTFY_VERSION</code> and <code>NTFY_SHA256</code> together.</li>
+<li>Engine: the artifact is engine-neutral. The Dockerfile is standard, the saved archive is docker-archive, and either <code>podman load</code> or <code>docker load</code> restores the same <code>localhost/ntfy:server</code> tag. <code>ntfy-deploy</code> currently drives the Podman binary through <code>NTFY_PODMAN_BIN</code>; Docker is a manual route until engine detection and installation are designed (open-work 10.10).</li>
+<li>Reference: <code>localhost/ntfy:server</code>, plus <code>:latest</code> as an alias. The tag is stable across ntfy versions; <code>tools\build-image.ps1</code> reads the version pin only to report it. When a rebuild keeps the tag, the image-ID rule in <code>apply</code> replaces the container on the next run, so a server bump is a rebuild and an apply, never a relay release.</li>
+<li>Distribution: no registry. A release ships one <code>podman save --format docker-archive</code> archive per claimed architecture, named <code>ntfy-image-&lt;ntfy version&gt;-&lt;arch&gt;.tar</code> and carrying the <code>server</code> tag and <code>latest</code>; <code>podman load</code> restores both without a build, account, or network, and the docker-archive format also loads in Docker.</li>
 <li>Architecture: amd64 is claimed, and the pinned base digest and release checksum name it. Another architecture needs its own base digest and release checksum, and ships only after a live run on that architecture.</li>
 </ul>
 <h2><span class="num">8</span>Modes</h2>
