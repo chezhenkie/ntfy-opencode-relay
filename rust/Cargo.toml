@@ -3,6 +3,6 @@ resolver = "2"
 members = ["crates/core", "crates/inbound", "crates/ntfy", "crates/opencode", "crates/outbound", "crates/control", "crates/app", "crates/deploy", "crates/auth", "crates/admin"]
 
 [workspace.package]
-version = "0.6.10"
+version = "0.6.11"
 edition = "2021"
 license = "MIT"
