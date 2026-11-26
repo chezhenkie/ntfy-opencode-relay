@@ -6,7 +6,7 @@
 
 use std::fmt;
 use std::fs;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -357,7 +357,19 @@ fn validate_vpn_ip(text: &str) -> Result<(), ConfigError> {
 }
 
 pub fn is_private_host(host: &str) -> bool {
-    Ipv4Addr::from_str(host).map(is_private_v4).unwrap_or(false)
+    if let Ok(ip) = Ipv4Addr::from_str(host) {
+        return is_private_v4(ip);
+    }
+    Ipv6Addr::from_str(host).map(is_private_v6).unwrap_or(false)
+}
+
+/// Loopback, fc00::/7 unique local, and fe80::/10 link local.
+fn is_private_v6(ip: Ipv6Addr) -> bool {
+    if ip.is_loopback() {
+        return true;
+    }
+    let first = ip.segments()[0];
+    (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
 }
 
 fn is_loopback_host(host: &str) -> bool {
@@ -471,6 +483,10 @@ mod tests {
         assert_eq!(config.mode, Mode::Vpn);
         let lan = DeployConfig::parse_text(&example("lan", "http://192.168.1.20:8810")).unwrap();
         assert_eq!(lan.mode, Mode::Lan);
+        let v6 = DeployConfig::parse_text(&example("lan", "http://[fd00::1]:8810")).unwrap();
+        assert_eq!(v6.base_url().unwrap().host(), "fd00::1");
+        let link = DeployConfig::parse_text(&example("lan", "http://[fe80::1]:8810")).unwrap();
+        assert_eq!(link.base_url().unwrap().host(), "fe80::1");
     }
 
     #[test]

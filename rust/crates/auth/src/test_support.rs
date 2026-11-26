@@ -40,6 +40,7 @@ impl Drop for TempDir {
 #[derive(Default)]
 struct State {
     users: Vec<String>,
+    admins: Vec<String>,
     rows: Vec<(String, Permission, String)>,
     tokens: Vec<(String, String)>,
     calls: Vec<RecordedCall>,
@@ -67,6 +68,13 @@ impl FakeRunner {
     pub fn with_user(name: &str) -> Self {
         let runner = Self::new();
         runner.state.lock().unwrap().users.push(name.to_string());
+        runner
+    }
+
+    /// A user the listing shows with `role: admin`, which `apply` must refuse.
+    pub fn with_admin(name: &str) -> Self {
+        let runner = Self::with_user(name);
+        runner.state.lock().unwrap().admins.push(name.to_string());
         runner
     }
 
@@ -188,7 +196,12 @@ impl CommandRunner for FakeRunner {
             "user list" => {
                 let mut text = String::new();
                 for user in &state.users {
-                    text.push_str(&format!("user {user} (role: user, tier: none)\n"));
+                    let role = if state.admins.contains(user) {
+                        "admin"
+                    } else {
+                        "user"
+                    };
+                    text.push_str(&format!("user {user} (role: {role}, tier: none)\n"));
                     for (name, permission, topic) in &state.rows {
                         if name == user {
                             text.push_str(&format!(

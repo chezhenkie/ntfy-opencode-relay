@@ -125,6 +125,8 @@ impl StatusReport {
 
 struct Snapshot {
     user: bool,
+    /// The role text of an existing configured user, when the listing names it.
+    role: Option<String>,
     access: bool,
     tokens: Vec<String>,
     file_token: Option<String>,
@@ -151,6 +153,14 @@ impl<R: CommandRunner> AuthEngine<R> {
         let mut access = Change::Kept;
         let mut token = Change::Kept;
 
+        if let Some(role) = snapshot.role.as_deref() {
+            if !role.is_empty() && !role.eq_ignore_ascii_case("user") {
+                return Err(AuthError::Config(ConfigError::new(format!(
+                    "user {} exists with role {role}; expected user",
+                    config.user
+                ))));
+            }
+        }
         if !snapshot.user {
             user = Change::Created;
             plan.push(format!(
@@ -254,7 +264,12 @@ impl<R: CommandRunner> AuthEngine<R> {
         let users = self
             .exec(config, "user list", &["user", "list"], &[])?
             .stdout;
-        let user = parse_users(&users).iter().any(|name| name == &config.user);
+        let rows = parse_users(&users);
+        let role = rows
+            .iter()
+            .find(|row| row.name == config.user)
+            .map(|row| row.role.clone());
+        let user = role.is_some();
         let (access, tokens) = if user {
             let rows = self
                 .exec(config, "access", &["access", &config.user], &[])?
@@ -271,6 +286,7 @@ impl<R: CommandRunner> AuthEngine<R> {
         };
         Ok(Snapshot {
             user,
+            role,
             access,
             tokens,
             file_token: read_token_file(token_path)?,
@@ -302,11 +318,24 @@ impl<R: CommandRunner> AuthEngine<R> {
     }
 }
 
-fn parse_users(text: &str) -> Vec<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UserRow {
+    name: String,
+    role: String,
+}
+
+fn parse_users(text: &str) -> Vec<UserRow> {
     text.lines()
         .filter_map(|line| {
             let rest = line.strip_prefix("user ")?;
-            rest.split_whitespace().next().map(str::to_string)
+            let name = rest.split_whitespace().next()?.to_string();
+            let role = rest
+                .split_once("(role:")
+                .and_then(|(_, tail)| tail.split([',', ')']).next())
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string();
+            Some(UserRow { name, role })
         })
         .collect()
 }
@@ -499,6 +528,24 @@ mod tests {
     }
 
     #[test]
+    fn an_existing_admin_user_is_refused() {
+        let dir = TempDir::new("admin");
+        let runner = FakeRunner::with_admin("phone");
+        let engine = AuthEngine::new(&runner);
+        let error = engine
+            .apply(&config(), &token_file(&dir), false)
+            .unwrap_err();
+        assert_eq!(error.exit_code(), 2);
+        assert!(
+            error
+                .to_string()
+                .contains("user phone exists with role admin; expected user"),
+            "{error}"
+        );
+        assert!(mutating(&runner.keys()).is_empty(), "{:?}", runner.keys());
+    }
+
+    #[test]
     fn a_valid_token_file_is_kept() {
         let dir = TempDir::new("keep");
         let token = fake_token("keep");
@@ -678,7 +725,12 @@ mod tests {
         let text = "user phone (role: user, tier: none)\n\
                     - read-write access to topic *\n\
                     user * (role: anonymous, tier: none)\n";
-        assert_eq!(parse_users(text), vec!["phone", "*"]);
+        let rows = parse_users(text);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "phone");
+        assert_eq!(rows[0].role, "user");
+        assert_eq!(rows[1].name, "*");
+        assert_eq!(rows[1].role, "anonymous");
     }
 
     #[test]

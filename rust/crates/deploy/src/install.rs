@@ -859,10 +859,33 @@ fn env_is_set(runner: &dyn CommandRunner, root: &Path) -> Result<bool, DeployErr
     if output.status != 0 {
         return Ok(false);
     }
-    Ok(output
-        .stdout
-        .to_ascii_lowercase()
-        .contains(&root.to_string_lossy().to_ascii_lowercase()))
+    let Some(value) = registry_value(&output.stdout, ENV_NAME) else {
+        return Ok(false);
+    };
+    let wanted = root.to_string_lossy();
+    Ok(value
+        .split(';')
+        .any(|entry| entry.trim().eq_ignore_ascii_case(&wanted)))
+}
+
+/// The data column of one `reg query /v` line. The value may carry spaces, so
+/// only the name and type are split off; a sibling prefix never matches.
+fn registry_value<'a>(stdout: &'a str, name: &str) -> Option<&'a str> {
+    for line in stdout.lines() {
+        let trimmed = line.trim_start();
+        let mut parts = trimmed.split_whitespace();
+        if parts.next() != Some(name) {
+            continue;
+        }
+        let kind = parts.next()?;
+        if !kind.starts_with("REG_") {
+            continue;
+        }
+        let rest = trimmed.strip_prefix(name)?;
+        let offset = name.len() + rest.find(kind)? + kind.len();
+        return Some(trimmed[offset..].trim());
+    }
+    None
 }
 
 fn set_env(
@@ -1679,6 +1702,44 @@ mod tests {
             .lines
             .contains(&"env: kept NTFY_RELAY_HOME".to_string()));
         assert!(runner.calls().iter().all(|(program, _)| program != "setx"));
+    }
+
+    #[test]
+    fn a_sibling_prefix_is_not_the_configured_variable() {
+        let scratch = Scratch::new("env-prefix");
+        let (source, root) = release(&scratch, b"one");
+        let runner = windows_runner();
+        runner.set_stdout(
+            "reg",
+            &format!("    NTFY_RELAY_HOME    REG_SZ    {}-old\n", root.display()),
+        );
+        let report = install(
+            &runner,
+            Platform::Windows,
+            &paths(source, root.clone(), &scratch),
+            false,
+        )
+        .unwrap();
+        assert!(report
+            .lines
+            .contains(&"env: set NTFY_RELAY_HOME".to_string()));
+        let calls = runner.calls();
+        let setx = calls.iter().find(|(program, _)| program == "setx").unwrap();
+        assert_eq!(setx.1[1], root.display().to_string());
+    }
+
+    #[test]
+    fn the_registry_value_is_read_exactly() {
+        let text = "\r\nHKEY_CURRENT_USER\\Environment\r\n    NTFY_RELAY_HOME    REG_EXPAND_SZ    C:\\A B\\relay;C:\\other\r\n\r\n";
+        assert_eq!(
+            registry_value(text, "NTFY_RELAY_HOME"),
+            Some("C:\\A B\\relay;C:\\other")
+        );
+        assert_eq!(registry_value(text, "OTHER"), None);
+        assert_eq!(
+            registry_value("    NTFY_RELAY_HOME    REG_SZ\r\n", "NTFY_RELAY_HOME"),
+            Some("")
+        );
     }
 
     #[test]
