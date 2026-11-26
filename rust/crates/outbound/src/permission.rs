@@ -70,6 +70,12 @@ impl PermissionScheduler {
         if self.delay_ms <= 0 {
             return Some(notice);
         }
+        if let Some(pending) = self.pending.get_mut(request_id) {
+            // A replay refreshes the notice text but keeps the original
+            // deadline, so it cannot postpone its own push.
+            pending.1 = notice;
+            return None;
+        }
         if self.pending_count() >= MAX_PENDING {
             if !self.overflow_warned {
                 self.overflow_warned = true;
@@ -197,6 +203,19 @@ mod tests {
         scheduler.asked("per_1", notice(), 1_000);
         scheduler.asked("per_1", notice(), 1_500);
         assert_eq!(scheduler.pending_count(), 1);
+    }
+
+    #[test]
+    fn a_replayed_ask_keeps_its_deadline_and_takes_the_new_text() {
+        let mut scheduler = scheduler(15_000);
+        scheduler.asked("per_1", notice(), 1_000);
+        let mut changed = notice();
+        changed.permission = "edit".to_string();
+        scheduler.asked("per_1", changed, 5_000);
+        assert!(scheduler.tick(15_999).is_empty());
+        let due = scheduler.tick(16_000);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].1.permission, "edit");
     }
 
     #[test]

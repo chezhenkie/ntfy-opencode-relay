@@ -51,8 +51,9 @@ pub const EVENT_TYPES: &[&str] = &[
 ];
 
 pub const CHANNEL_CAPACITY: usize = 256;
-/// Persist attempts before a due ask is dropped.
-const ASK_REGISTER_ATTEMPTS: u8 = 3;
+/// A due ask survives a failing registry write for this long; the retry ramp
+/// runs inside the budget.
+pub const ASK_REGISTER_BUDGET_MS: i64 = 30_000;
 /// Delivery attempts for a body push before its ids are left to backfill.
 const PUBLISH_ATTEMPTS: u8 = 5;
 /// Per-session warnings kept so one bad project cannot spam the log.
@@ -141,6 +142,9 @@ pub struct Timings {
     pub debounce_ms: i64,
     pub ttl_ms: i64,
     pub tick_ms: u64,
+    /// How long a due ask survives a failing registry write before it is
+    /// dropped: the retry ramp runs inside this budget.
+    pub ask_register_budget_ms: i64,
 }
 
 impl Default for Timings {
@@ -149,6 +153,7 @@ impl Default for Timings {
             debounce_ms: crate::turn::TURN_DEBOUNCE_MS,
             ttl_ms: crate::turn::TURN_BUFFER_TTL_MS,
             tick_ms: 250,
+            ask_register_budget_ms: ASK_REGISTER_BUDGET_MS,
         }
     }
 }
@@ -265,6 +270,7 @@ pub async fn run(options: OutboundOptions) -> Result<(), String> {
         last_text_session: None,
         permissions: PermissionScheduler::new(config.permission_delay_ms as i64, log.clone()),
         ask_attempts: HashMap::new(),
+        ask_budget_ms: timings.ask_register_budget_ms,
         retries: VecDeque::new(),
         lane: lane_sender,
         tasks: Vec::new(),
@@ -369,8 +375,9 @@ struct Worker {
     focus: Arc<dyn Fn() -> Vec<String> + Send + Sync>,
     last_text_session: Option<String>,
     permissions: PermissionScheduler,
-    /// Persist attempts per due request; a third failure drops the entry.
-    ask_attempts: HashMap<String, u8>,
+    /// Persist retries per due request, bounded by `ask_budget_ms`.
+    ask_attempts: HashMap<String, AskRetry>,
+    ask_budget_ms: i64,
     /// Body pushes that failed once and still hold unseen message ids.
     retries: VecDeque<RetryPush>,
     /// Results from spawned lane tasks.
@@ -394,6 +401,24 @@ struct Worker {
     warned: HashSet<String>,
     warned_order: VecDeque<String>,
     seen: SeenEvents,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AskRetry {
+    attempts: u32,
+    first_at: i64,
+    next_at: i64,
+}
+
+/// 250 ms, 500 ms, 1 s, 2 s, then 4 s between registry write attempts.
+fn ask_backoff_ms(attempts: u32) -> i64 {
+    match attempts {
+        0 => 250,
+        1 => 500,
+        2 => 1_000,
+        3 => 2_000,
+        _ => 4_000,
+    }
 }
 
 impl Worker {
@@ -937,9 +962,15 @@ impl Worker {
     }
 
     /// Registers the ask before its push, publishes the code, and completes the
-    /// scheduler entry. A persist failure keeps the entry pending; three
-    /// consecutive failures drop it. A publish failure removes the record.
+    /// scheduler entry. A persist failure keeps the entry pending and retries on
+    /// a 250 ms to 4 s ramp inside a 30 s budget, then drops it with one error
+    /// line. A publish failure removes the record.
     async fn publish_ask(&mut self, request_id: &str, notice: PendingNotice, now: i64) {
+        if let Some(retry) = self.ask_attempts.get(request_id) {
+            if retry.next_at > now {
+                return;
+            }
+        }
         let registered = match self.register_ask(request_id, &notice, now).await {
             Ok(registered) => registered,
             Err(RegisterError::CodeCollision { .. }) => {
@@ -950,20 +981,35 @@ impl Worker {
                 return;
             }
             Err(RegisterError::Io(error)) => {
-                let attempts = self.ask_attempts.entry(request_id.to_string()).or_insert(0);
-                *attempts += 1;
-                let failures = *attempts;
+                let (attempts, elapsed, delay, drop) = {
+                    let retry =
+                        self.ask_attempts
+                            .entry(request_id.to_string())
+                            .or_insert(AskRetry {
+                                attempts: 0,
+                                first_at: now,
+                                next_at: now,
+                            });
+                    retry.attempts += 1;
+                    let delay = ask_backoff_ms(retry.attempts - 1);
+                    let elapsed = now - retry.first_at;
+                    let drop = elapsed + delay > self.ask_budget_ms;
+                    if !drop {
+                        retry.next_at = now + delay;
+                    }
+                    (retry.attempts, elapsed, delay, drop)
+                };
                 self.log.warn(&format!(
-                    "permission ask persist failed request={request_id} attempt={failures}: {}",
+                    "permission ask persist failed request={request_id} attempt={attempts} retry_in={delay}ms: {}",
                     clip(&error.to_string(), 200)
                 ));
-                if failures < ASK_REGISTER_ATTEMPTS {
+                if !drop {
                     return;
                 }
                 self.ask_attempts.remove(request_id);
                 self.permissions.complete(request_id);
                 self.log.error(&format!(
-                    "permission push dropped request={request_id} reason=persist-failed"
+                    "permission push dropped request={request_id} reason=persist-failed after {elapsed} ms"
                 ));
                 return;
             }
@@ -1824,6 +1870,7 @@ mod tests {
                 debounce_ms: 20,
                 ttl_ms: 1000,
                 tick_ms: 5,
+                ask_register_budget_ms: 120,
             },
             feed: feed.clone(),
             focus,
@@ -2039,7 +2086,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn three_persist_failures_drop_the_ask_without_a_push() {
+    async fn a_persist_failure_past_the_budget_drops_the_ask_without_a_push() {
         let root = temp_root("permission-persist");
         let blocked = root.join("asks-blocked");
         std::fs::create_dir_all(&blocked).unwrap();
@@ -2049,10 +2096,19 @@ mod tests {
             "id": "e2", "type": "permission.asked",
             "data": { "id": "per_1", "sessionID": "ses_a", "action": "bash", "resources": [] }
         }));
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
         assert!(
             harness.transport.requests.lock().unwrap().is_empty(),
             "a persist failure suppresses the push"
+        );
+        assert!(
+            harness
+                .log
+                .warnings()
+                .iter()
+                .any(|line| line.contains("permission ask persist failed")),
+            "{:?}",
+            harness.log.warnings()
         );
         assert!(
             harness
@@ -2065,6 +2121,12 @@ mod tests {
             harness.log.errors()
         );
         harness.stop().await.unwrap();
+    }
+
+    #[test]
+    fn the_ask_retry_ramp_reaches_four_seconds() {
+        let ramp: Vec<i64> = (0..6).map(ask_backoff_ms).collect();
+        assert_eq!(ramp, vec![250, 500, 1_000, 2_000, 4_000, 4_000]);
     }
 
     #[tokio::test]
