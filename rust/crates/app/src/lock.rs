@@ -3,7 +3,9 @@
 //! Mirrors `acquireLock` and `releaseLock` in `ntfy-inbox-relay.mjs`: create
 //! `wx`, write the pid, and on contention read the existing file. A live pid
 //! from the same image wins, a dead or reused pid is replaced once, and an
-//! unreadable file fails closed.
+//! unreadable file fails closed. The body also carries the start phase, so
+//! `ensure` and `status` can tell a relay that is waiting for its token from
+//! one that is subscribed, and the image path that holds it.
 
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -16,6 +18,56 @@ use ntfy_relay_control::process::pid_alive;
 use serde_json::{json, Value};
 
 use crate::logger::format_timestamp;
+
+pub const PHASE_STARTING: &str = "starting";
+pub const PHASE_READY: &str = "ready";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockBody {
+    pub pid: u32,
+    pub started: String,
+    pub phase: String,
+    pub exe: String,
+}
+
+impl LockBody {
+    fn to_value(&self) -> Value {
+        json!({
+            "pid": self.pid,
+            "started": self.started,
+            "phase": self.phase,
+            "exe": self.exe,
+        })
+    }
+
+    /// A lock written before the phase field reads as `starting`, the safe
+    /// answer: it never claims a relay is subscribed when it may not be.
+    fn from_value(value: &Value) -> Option<Self> {
+        let pid = value
+            .get("pid")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)?;
+        Some(Self {
+            pid,
+            started: value
+                .get("started")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            phase: value
+                .get("phase")
+                .and_then(Value::as_str)
+                .unwrap_or(PHASE_STARTING)
+                .to_string(),
+            exe: value
+                .get("exe")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Acquired {
@@ -41,10 +93,15 @@ pub fn acquire_lock(path: &Path, pid: u32, now_ms: i64) -> io::Result<Acquired> 
             fs::create_dir_all(parent)?;
         }
     }
-    let body = json!({
-        "pid": pid,
-        "started": format_timestamp(now_ms),
-    })
+    let body = LockBody {
+        pid,
+        started: format_timestamp(now_ms),
+        phase: PHASE_STARTING.to_string(),
+        exe: std::env::current_exe()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    }
+    .to_value()
     .to_string();
 
     for _attempt in 0..2 {
@@ -83,12 +140,7 @@ pub fn acquire_lock(path: &Path, pid: u32, now_ms: i64) -> io::Result<Acquired> 
         let Some(existing) = existing else {
             return Ok(Acquired::Unreadable);
         };
-        let Some(existing_pid) = existing
-            .get("pid")
-            .and_then(Value::as_u64)
-            .and_then(|value| u32::try_from(value).ok())
-            .filter(|value| *value > 0)
-        else {
+        let Some(existing_pid) = LockBody::from_value(&existing).map(|body| body.pid) else {
             return Ok(Acquired::Unreadable);
         };
         if existing_pid != pid && pid_is_relay(existing_pid) {
@@ -97,6 +149,38 @@ pub fn acquire_lock(path: &Path, pid: u32, now_ms: i64) -> io::Result<Acquired> 
         fs::remove_file(path)?;
     }
     Ok(Acquired::Contended)
+}
+
+/// Rewrites the phase of a lock that still names `pid`. A missing lock or a
+/// lock owned by another process is left alone; the write is a temp sibling
+/// renamed over the file, so a reader never sees half a body.
+pub fn set_phase(path: &Path, pid: u32, phase: &str) -> io::Result<()> {
+    let Some(mut body) = read_lock_body(path)? else {
+        return Ok(());
+    };
+    if body.pid != pid || body.phase == phase {
+        return Ok(());
+    }
+    body.phase = phase.to_string();
+    write_lock_body(path, &body)
+}
+
+fn write_lock_body(path: &Path, body: &LockBody) -> io::Result<()> {
+    let temp = path.with_extension("lock.tmp");
+    let text = body.to_value().to_string();
+    let mut handle = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&temp)?;
+    if let Err(error) = handle.write_all(text.as_bytes()) {
+        drop(handle);
+        let _ = fs::remove_file(&temp);
+        return Err(error);
+    }
+    handle.sync_all()?;
+    drop(handle);
+    fs::rename(&temp, path)
 }
 
 pub fn release_lock(path: &Path, pid: u32) {
@@ -111,7 +195,7 @@ pub fn release_lock(path: &Path, pid: u32) {
     }
 }
 
-pub fn read_lock_pid(path: &Path) -> io::Result<Option<u32>> {
+pub fn read_lock_body(path: &Path) -> io::Result<Option<LockBody>> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -119,21 +203,22 @@ pub fn read_lock_pid(path: &Path) -> io::Result<Option<u32>> {
     };
     let value: Value = serde_json::from_str(&text)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    Ok(value
-        .get("pid")
-        .and_then(Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok())
-        .filter(|value| *value > 0))
+    Ok(LockBody::from_value(&value))
 }
 
-/// The lock pid when it names a live relay image. A dead pid, a pid reused by
-/// another program, or a missing lock reads as `None`; a corrupt file is an
-/// error, because a second relay would fail closed on it too.
-pub fn lock_owner(path: &Path) -> io::Result<Option<u32>> {
-    match read_lock_pid(path)? {
-        Some(pid) if pid_is_relay(pid) => Ok(Some(pid)),
+/// The lock body when its pid names a live relay image. A dead pid, a pid
+/// reused by another program, or a missing lock reads as `None`; a corrupt
+/// file is an error, because a second relay would fail closed on it too.
+pub fn live_lock(path: &Path) -> io::Result<Option<LockBody>> {
+    match read_lock_body(path)? {
+        Some(body) if pid_is_relay(body.pid) => Ok(Some(body)),
         _ => Ok(None),
     }
+}
+
+/// The lock pid when it names a live relay image.
+pub fn lock_owner(path: &Path) -> io::Result<Option<u32>> {
+    Ok(live_lock(path)?.map(|body| body.pid))
 }
 
 impl fmt::Display for Acquired {
@@ -241,7 +326,7 @@ mod tests {
         fs::write(&path, r#"{"pid":999999999,"started":"x"}"#).unwrap();
         let pid = std::process::id();
         assert_eq!(acquire_lock(&path, pid, 1).unwrap(), Acquired::Yes);
-        assert_eq!(read_lock_pid(&path).unwrap(), Some(pid));
+        assert_eq!(read_lock_body(&path).unwrap().unwrap().pid, pid);
     }
 
     #[cfg(any(windows, target_os = "linux"))]
@@ -309,7 +394,7 @@ mod tests {
         fs::write(&path, "not json").unwrap();
         assert_eq!(acquire_lock(&path, 1, 1).unwrap(), Acquired::Unreadable);
         assert_eq!(
-            read_lock_pid(&path).unwrap_err().kind(),
+            read_lock_body(&path).unwrap_err().kind(),
             io::ErrorKind::InvalidData
         );
     }
@@ -324,6 +409,65 @@ mod tests {
         assert_eq!(lock_owner(&path).unwrap(), Some(pid));
         fs::write(&path, r#"{"pid":999999999,"started":"x"}"#).unwrap();
         assert_eq!(lock_owner(&path).unwrap(), None);
+    }
+
+    #[test]
+    fn the_lock_starts_in_the_starting_phase_and_carries_the_exe() {
+        let dir = temp_dir("phase");
+        let path = dir.join("state.lock");
+        let pid = std::process::id();
+        assert_eq!(acquire_lock(&path, pid, 1).unwrap(), Acquired::Yes);
+        let body = live_lock(&path).unwrap().expect("live body");
+        assert_eq!(body.pid, pid);
+        assert_eq!(body.phase, PHASE_STARTING);
+        assert_eq!(
+            body.exe,
+            std::env::current_exe()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        );
+        set_phase(&path, pid, PHASE_READY).unwrap();
+        assert_eq!(live_lock(&path).unwrap().unwrap().phase, PHASE_READY);
+        set_phase(&path, pid, PHASE_READY).unwrap();
+        assert_eq!(live_lock(&path).unwrap().unwrap().phase, PHASE_READY);
+        assert!(!path.with_extension("lock.tmp").exists());
+        release_lock(&path, pid);
+    }
+
+    #[test]
+    fn a_phase_write_only_touches_the_named_pid() {
+        let dir = temp_dir("phase-owner");
+        let path = dir.join("state.lock");
+        fs::write(
+            &path,
+            format!(
+                r#"{{"pid":{},"started":"x","phase":"starting"}}"#,
+                std::process::id()
+            ),
+        )
+        .unwrap();
+        set_phase(&path, 999_999_999, PHASE_READY).unwrap();
+        assert_eq!(
+            read_lock_body(&path).unwrap().unwrap().phase,
+            PHASE_STARTING
+        );
+        set_phase(&path, std::process::id(), PHASE_READY).unwrap();
+        assert_eq!(read_lock_body(&path).unwrap().unwrap().phase, PHASE_READY);
+    }
+
+    #[test]
+    fn a_lock_without_a_phase_reads_as_starting() {
+        let dir = temp_dir("phase-old");
+        let path = dir.join("state.lock");
+        fs::write(
+            &path,
+            format!(r#"{{"pid":{},"started":"x"}}"#, std::process::id()),
+        )
+        .unwrap();
+        let body = read_lock_body(&path).unwrap().unwrap();
+        assert_eq!(body.phase, PHASE_STARTING);
+        assert_eq!(body.exe, "");
     }
 
     #[test]

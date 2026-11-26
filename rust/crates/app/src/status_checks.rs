@@ -7,14 +7,20 @@
 
 use std::env;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use ntfy_relay_ntfy::http::{HttpRequest, Method, ReqwestTransport, Transport};
 
 const HEALTH_TIMEOUT_SECS: u64 = 8;
 const HEALTH_MAX_BYTES: u64 = 16 * 1024;
+/// A hung podman machine, tailscale daemon, or network stack must not hold
+/// `status` open; each platform command gets this long.
+pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+const COMMAND_POLL: Duration = Duration::from_millis(25);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
@@ -97,6 +103,7 @@ pub struct Tools {
     pub opencode_dirs: Vec<PathBuf>,
     pub port: u16,
     pub health_url: String,
+    pub elevated: bool,
 }
 
 impl Tools {
@@ -112,6 +119,7 @@ impl Tools {
             opencode_dirs: opencode_dirs(),
             port: server_port(server),
             health_url,
+            elevated: is_elevated(),
         }
     }
 }
@@ -169,6 +177,64 @@ fn opencode_dirs() -> Vec<PathBuf> {
     ]
 }
 
+/// Whether the current process holds administrator rights. The agent runs with
+/// the daemon's rights, so an elevated relay is reported, never repaired here.
+#[cfg(windows)]
+pub fn is_elevated() -> bool {
+    use windows_sys::Win32::Foundation::BOOL;
+    use windows_sys::Win32::Security::{
+        AllocateAndInitializeSid, CheckTokenMembership, FreeSid, SECURITY_NT_AUTHORITY,
+    };
+    const SECURITY_BUILTIN_DOMAIN_RID: u32 = 0x20;
+    const DOMAIN_ALIAS_RID_ADMINS: u32 = 0x220;
+    let mut sid = std::ptr::null_mut();
+    let allocated = unsafe {
+        AllocateAndInitializeSid(
+            &SECURITY_NT_AUTHORITY,
+            2,
+            SECURITY_BUILTIN_DOMAIN_RID,
+            DOMAIN_ALIAS_RID_ADMINS,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut sid,
+        )
+    };
+    if allocated == 0 {
+        return false;
+    }
+    let mut member: BOOL = 0;
+    let checked = unsafe { CheckTokenMembership(std::ptr::null_mut(), sid, &mut member) };
+    unsafe {
+        FreeSid(sid);
+    }
+    checked != 0 && member != 0
+}
+
+#[cfg(unix)]
+pub fn is_elevated() -> bool {
+    extern "C" {
+        fn geteuid() -> u32;
+    }
+    unsafe { geteuid() == 0 }
+}
+
+#[cfg(not(any(windows, unix)))]
+pub fn is_elevated() -> bool {
+    false
+}
+
+fn elevated_detail() -> &'static str {
+    if cfg!(windows) {
+        "running as administrator"
+    } else {
+        "running as uid 0"
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Health {
     Answer { status: u16, healthy: bool },
@@ -201,19 +267,64 @@ pub trait CommandRunner {
     fn run(&self, program: &Path, args: &[&str]) -> Result<String, String>;
 }
 
-pub struct SystemRunner;
+pub struct SystemRunner {
+    pub timeout: Duration,
+}
+
+impl Default for SystemRunner {
+    fn default() -> Self {
+        Self {
+            timeout: COMMAND_TIMEOUT,
+        }
+    }
+}
 
 impl CommandRunner for SystemRunner {
+    /// Spawns with piped output, reads both pipes on their own threads, and
+    /// polls the child so the deadline is enforced and the child is killed.
     fn run(&self, program: &Path, args: &[&str]) -> Result<String, String> {
-        let output = Command::new(program)
+        let mut child = Command::new(program)
             .args(args)
-            .output()
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .map_err(|error| format!("{}: {error}", program.display()))?;
-        if output.status.success() {
-            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+        let stdout = child.stdout.take().map(collect_reader);
+        let stderr = child.stderr.take().map(collect_reader);
+        let deadline = Instant::now() + self.timeout;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {}
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("{}: {error}", program.display()));
+                }
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "{} timed out after {} s",
+                    program.display(),
+                    self.timeout.as_secs_f64()
+                ));
+            }
+            thread::sleep(COMMAND_POLL);
+        };
+        let stdout = stdout
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_default();
+        let stderr = stderr
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_default();
+        if status.success() {
+            return Ok(String::from_utf8_lossy(&stdout).trim().to_string());
         }
-        let code = output.status.code().unwrap_or(-1);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let code = status.code().unwrap_or(-1);
+        let stderr = String::from_utf8_lossy(&stderr);
         let detail = stderr.trim();
         if detail.is_empty() {
             Err(format!("{} exit {code}", program.display()))
@@ -221,6 +332,14 @@ impl CommandRunner for SystemRunner {
             Err(format!("{} exit {code}: {detail}", program.display()))
         }
     }
+}
+
+fn collect_reader<R: Read + Send + 'static>(mut reader: R) -> thread::JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let mut buffer = Vec::new();
+        let _ = reader.read_to_end(&mut buffer);
+        buffer
+    })
 }
 
 /// Every row, in the startup check's order. The runner is a seam for tests;
@@ -231,7 +350,7 @@ pub fn gather(
     runner: &dyn CommandRunner,
     health: Health,
 ) -> Vec<Row> {
-    let mut rows = Vec::with_capacity(8);
+    let mut rows = Vec::with_capacity(9);
 
     let podman_ok = match runner.run(&tools.podman, &["--version"]) {
         Ok(version) => {
@@ -358,6 +477,12 @@ pub fn gather(
         ),
         Health::Error(error) => Row::fail("https-health", format!("{} {error}", tools.health_url)),
     });
+
+    if tools.elevated {
+        rows.push(Row::fail("elevated", elevated_detail()));
+    } else {
+        rows.push(Row::pass("elevated", "no"));
+    }
 
     rows
 }
@@ -488,6 +613,7 @@ Address         Port        Address         Port
             opencode_dirs: dirs,
             port: 8810,
             health_url: "http://127.0.0.1:8810/v1/health".to_string(),
+            elevated: false,
         }
     }
 
@@ -538,7 +664,7 @@ Address         Port        Address         Port
                 healthy: true,
             },
         );
-        assert_eq!(rows.len(), 8);
+        assert_eq!(rows.len(), 9);
         assert!(
             rows.iter().all(|row| row.verdict == Verdict::Pass),
             "{rows:#?}"
@@ -651,6 +777,65 @@ Address         Port        Address         Port
         assert_eq!(hits.len(), 1);
         assert!(hits[0].ends_with("notification-ntfy.json"));
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_elevated_relay_fails_the_elevated_row() {
+        let dir = empty_dir("elevated");
+        let mut elevated = tools(vec![dir.clone()]);
+        elevated.elevated = true;
+        let rows = gather(
+            Platform::Windows,
+            &elevated,
+            &passing_runner(),
+            Health::Answer {
+                status: 200,
+                healthy: true,
+            },
+        );
+        assert_eq!(row(&rows, "elevated").verdict, Verdict::Fail);
+        assert_eq!(row(&rows, "elevated").detail, elevated_detail());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_wedged_platform_command_hits_the_deadline() {
+        let runner = SystemRunner {
+            timeout: Duration::from_millis(200),
+        };
+        let (program, args) = slow_command();
+        let started = Instant::now();
+        let error = runner.run(Path::new(program), args).unwrap_err();
+        assert!(error.contains("timed out"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_successful_command_still_returns_stdout() {
+        let runner = SystemRunner::default();
+        let (program, args) = echo_command();
+        let output = runner.run(Path::new(program), args).unwrap();
+        assert_eq!(output, "ok");
+    }
+
+    #[cfg(windows)]
+    fn slow_command() -> (&'static str, &'static [&'static str]) {
+        ("cmd.exe", &["/c", "ping", "-n", "8", "127.0.0.1"])
+    }
+
+    #[cfg(target_os = "linux")]
+    fn slow_command() -> (&'static str, &'static [&'static str]) {
+        ("sleep", &["10"])
+    }
+
+    #[cfg(windows)]
+    fn echo_command() -> (&'static str, &'static [&'static str]) {
+        ("cmd.exe", &["/c", "echo ok"])
+    }
+
+    #[cfg(target_os = "linux")]
+    fn echo_command() -> (&'static str, &'static [&'static str]) {
+        ("echo", &["ok"])
     }
 
     #[test]

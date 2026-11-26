@@ -229,7 +229,7 @@ pub fn start(
         calls: calls_tx,
         deploy,
     });
-    let server = Server::start(token.clone(), handler)
+    let mut server = Server::start(token.clone(), handler)
         .map_err(|error| format!("control: cannot bind 127.0.0.1: {error}"))?;
     let file = ControlFile {
         pid: std::process::id(),
@@ -237,7 +237,8 @@ pub fn start(
         token,
     };
     if let Err(error) = file.write(root) {
-        logger.error(&format!(
+        server.stop();
+        return Err(format!(
             "control: cannot write {}: {error}",
             ControlFile::path(root).display()
         ));
@@ -254,6 +255,23 @@ pub fn start(
         },
         calls,
     ))
+}
+
+/// Posts `stop` to the endpoint under `root`. `Ok(false)` means no runtime
+/// file or no listener, which is what a host without a relay looks like.
+pub fn request_stop(root: &Path) -> Result<bool, String> {
+    use ntfy_relay_control::client::{Client, ClientError};
+    let client = match Client::connect(root) {
+        Ok(client) => client,
+        Err(ClientError::NoRelay) => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    match client.request("POST", "/v1/stop", None) {
+        Ok((200, _)) => Ok(true),
+        Ok((status, _)) => Err(format!("control stop answered {status}")),
+        Err(ClientError::NoRelay) => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 impl Endpoint {
@@ -436,6 +454,48 @@ mod tests {
 
     fn quiet_logger() -> Logger {
         Logger::new(None, ntfy_relay_core::config::LogLevel::Info, false, 1024)
+    }
+
+    #[test]
+    fn an_unwritable_runtime_file_fails_the_start() {
+        let root = temp("runtime-fail");
+        fs::create_dir_all(ControlFile::path(&root)).unwrap();
+        let result = start(&root, &quiet_logger());
+        let error = match result {
+            Ok(_) => panic!("start succeeded without a runtime file"),
+            Err(error) => error,
+        };
+        assert!(error.contains("cannot write"), "{error}");
+    }
+
+    #[test]
+    fn a_stop_without_a_runtime_file_is_not_an_error() {
+        let root = temp("stop-missing");
+        assert_eq!(request_stop(&root), Ok(false));
+    }
+
+    struct StopHandler;
+
+    impl Handler for StopHandler {
+        fn handle(&self, request: Request) -> Response {
+            assert_eq!(request.path, "/v1/stop");
+            Response::new(200, "{\"ok\":true}".to_string())
+        }
+    }
+
+    #[test]
+    fn a_stop_request_reaches_the_endpoint() {
+        let root = temp("stop-live");
+        let server = Server::start("tok".to_string(), Arc::new(StopHandler)).unwrap();
+        ControlFile {
+            pid: std::process::id(),
+            port: server.port(),
+            token: "tok".to_string(),
+        }
+        .write(&root)
+        .unwrap();
+        assert_eq!(request_stop(&root), Ok(true));
+        ControlFile::remove(&root);
     }
 
     #[test]

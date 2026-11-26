@@ -12,7 +12,7 @@ use ntfy_relay_control::process::pid_alive;
 use ntfy_relay_core::config::load_config;
 use ntfy_relay_core::state::read_state;
 
-use crate::lock::{lock_path_for, read_lock_pid};
+use crate::lock::{lock_path_for, read_lock_body};
 use crate::status_checks;
 
 const LOG_TAIL_BYTES: u64 = 4096;
@@ -22,11 +22,13 @@ pub async fn print(config_path: &Path) -> Result<(), String> {
     println!("config {} ok", config_path.display());
 
     let lock_file = lock_path_for(&config.state_file);
-    match read_lock_pid(&lock_file) {
-        Ok(Some(pid)) => println!(
-            "lock {} pid={pid} {}",
+    match read_lock_body(&lock_file) {
+        Ok(Some(body)) => println!(
+            "lock {} pid={} {} phase={}",
             lock_file.display(),
-            if pid_alive(pid) { "alive" } else { "dead" }
+            body.pid,
+            if pid_alive(body.pid) { "alive" } else { "dead" },
+            body.phase
         ),
         Ok(None) => println!("lock {} missing", lock_file.display()),
         Err(error) => println!("lock {} unreadable: {error}", lock_file.display()),
@@ -60,7 +62,7 @@ pub async fn print(config_path: &Path) -> Result<(), String> {
     let rows = status_checks::gather(
         status_checks::Platform::current(),
         &tools,
-        &status_checks::SystemRunner,
+        &status_checks::SystemRunner::default(),
         health,
     );
     for row in rows {

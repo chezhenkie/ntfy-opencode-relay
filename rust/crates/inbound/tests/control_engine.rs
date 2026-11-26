@@ -398,6 +398,7 @@ fn status_reports_topics_queue_target_and_asks() {
         target: Some("ntfy-proj=ses_1234".to_string()),
         asks: 3,
         uptime_seconds: None,
+        sse: None,
     };
     let adapter = FakeAdapter::new(all_capabilities());
     let clock = FakeClock::new(0);
@@ -406,6 +407,21 @@ fn status_reports_topics_queue_target_and_asks() {
     let run = expect_run(control.resolve("/status", "t"));
     let text = block_on(control.execute(run, &entry())).expect("status");
     assert_eq!(text, "topics 2\nqueue 1\ntarget ntfy-proj=ses_1234\nasks 3");
+}
+
+#[test]
+fn status_reports_a_refused_subscription() {
+    let status = || Status {
+        uptime_seconds: Some(5),
+        sse: Some("refused".to_string()),
+        ..Default::default()
+    };
+    let adapter = FakeAdapter::new(all_capabilities());
+    let clock = FakeClock::new(0);
+    let mut control = Control::new(builtin_control_table(), &adapter, &clock).with_status(&status);
+    let run = expect_run(control.resolve("/status", "t"));
+    let text = block_on(control.execute(run, &entry())).expect("status");
+    assert!(text.ends_with("uptime 5 s\nsse refused"), "{text}");
 }
 
 #[test]

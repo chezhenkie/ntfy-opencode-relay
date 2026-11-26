@@ -33,6 +33,8 @@ pub struct Status {
     pub target: Option<String>,
     pub asks: usize,
     pub uptime_seconds: Option<u64>,
+    /// `Some("refused")` when the subscription token is being rejected.
+    pub sse: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -570,6 +572,9 @@ impl<'a> Control<'a> {
         ];
         if let Some(seconds) = status.uptime_seconds {
             lines.push(format!("uptime {seconds} s"));
+        }
+        if let Some(sse) = status.sse {
+            lines.push(format!("sse {sse}"));
         }
         lines.join("\n")
     }

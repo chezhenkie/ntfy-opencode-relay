@@ -45,6 +45,7 @@ use crate::lock::{acquire_lock, lock_path_for, Acquired};
 use crate::logger::{format_timestamp, Logger, MAX_LOG_BYTES};
 use crate::relay::Relay;
 use crate::sse::SseTask;
+use crate::status_checks;
 use crate::store::StateStore;
 use crate::supervisor::{self, RestartPolicy, TASK_STOP_GRACE};
 use crate::util::{clip, now_ms};
@@ -97,8 +98,21 @@ pub async fn run(config_path: PathBuf) -> Result<(), String> {
     })?;
 
     if !config.enabled {
-        logger.info("relay disabled by config, exiting");
+        logger.info("relay disabled by config, stopping any live relay");
+        if let Some(root) = install_root() {
+            match control_endpoint::request_stop(&root) {
+                Ok(true) => logger.info("control stop sent to the live relay"),
+                Ok(false) => logger.info("no live relay to stop"),
+                Err(error) => logger.warn(&format!("control stop failed: {error}")),
+            }
+        }
         return Ok(());
+    }
+
+    if status_checks::is_elevated() {
+        logger.warn(
+            "relay is running with elevated rights; every agent it drives inherits them, so stop it and start it as the normal user",
+        );
     }
 
     let root =
@@ -407,8 +421,18 @@ pub async fn run(config_path: PathBuf) -> Result<(), String> {
     let sse_last_event_at = last_event_at.clone();
     let sse_topics = topics_rx;
     let sse_shutdown = shutdown_rx.clone();
+    let sse_refused = Arc::new(AtomicBool::new(false));
+    let task_refused = sse_refused.clone();
 
-    prune_now(&config, &logger).await;
+    let ready_file = lock_file.clone();
+    let ready_pid = std::process::id();
+    let ready_logger = logger.clone();
+    let sse_ready: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        if let Err(error) = crate::lock::set_phase(&ready_file, ready_pid, crate::lock::PHASE_READY)
+        {
+            ready_logger.warn(&format!("lock: cannot mark the relay ready: {error}"));
+        }
+    });
 
     let mut sse_supervisor = Some(supervisor::spawn(
         "inbound sse",
@@ -427,6 +451,8 @@ pub async fn run(config_path: PathBuf) -> Result<(), String> {
                 queue_len: sse_queue_len.clone(),
                 last_processed: sse_last_processed.clone(),
                 last_event_at: sse_last_event_at.clone(),
+                ready: sse_ready.clone(),
+                refused: task_refused.clone(),
             };
             let topics = sse_topics.clone();
             let shutdown = sse_shutdown.clone();
@@ -436,6 +462,10 @@ pub async fn run(config_path: PathBuf) -> Result<(), String> {
             }
         },
     ));
+
+    // The subscription is live before the inbox walk, so startup latency stays
+    // off the replay window.
+    prune_now(&config, &logger).await;
 
     let signal_logger = logger.clone();
     let signal_shutdown = shutdown_tx.clone();
@@ -453,12 +483,16 @@ pub async fn run(config_path: PathBuf) -> Result<(), String> {
     let status_topics = topics_count.clone();
     let status_queue = queue_len.clone();
     let status_asks = asks.clone();
+    let status_sse_refused = sse_refused.clone();
     let status = move || Status {
         topics: status_topics.load(Ordering::Relaxed),
         queue: status_queue.load(Ordering::Relaxed),
         target: Some(status_store.target_summary()),
         asks: status_asks.count(),
         uptime_seconds: Some(start.elapsed().as_secs()),
+        sse: status_sse_refused
+            .load(Ordering::Relaxed)
+            .then(|| "refused".to_string()),
     };
     let target_store = store.clone();
     let hint_now = || now_ms();
@@ -954,6 +988,12 @@ async fn apply_root_change(
         warning_signature,
         detail_signature,
     );
+    // The filtered map is already live and the reply goes out before the query,
+    // so a slow or timing-out discovery never turns a landed edit into a CLI
+    // timeout. The next tick publishes anything the query adds.
+    let _ = reply.send(Response::ok(control_endpoint::topics_data(
+        config, projects,
+    )));
     discover_once(
         api,
         config,
@@ -980,9 +1020,6 @@ async fn apply_root_change(
         config.project_roots.len(),
         projects.len()
     ));
-    let _ = reply.send(Response::ok(control_endpoint::topics_data(
-        config, projects,
-    )));
 }
 
 async fn prune_now(config: &Config, logger: &Logger) {

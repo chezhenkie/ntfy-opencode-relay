@@ -6,7 +6,7 @@
 //! discovered topic set changes. Frames enter the bounded inbound queue; the
 //! main loop drains them one at a time.
 
-use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -33,6 +33,8 @@ pub const SSE_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 pub const SSE_DETAIL_TIMEOUT: Duration = Duration::from_secs(10);
 const BACKOFF_START_MS: i64 = 1_000;
 const BACKOFF_MAX_MS: i64 = 60_000;
+/// Consecutive 401/403 answers before the relay reports `sse=refused`.
+const REFUSED_AFTER: u32 = 5;
 
 pub struct SseTask {
     pub server: NtfyServer,
@@ -45,6 +47,11 @@ pub struct SseTask {
     pub queue_len: Arc<AtomicUsize>,
     pub last_processed: Arc<AtomicI64>,
     pub last_event_at: Arc<AtomicI64>,
+    /// Called once when the relay can be called ready: the first accepted
+    /// subscription, or an empty topic list where there is nothing to subscribe.
+    pub ready: Arc<dyn Fn() + Send + Sync>,
+    /// Set after five consecutive 401/403 answers; cleared on a 2xx stream.
+    pub refused: Arc<AtomicBool>,
 }
 
 enum Wait {
@@ -60,9 +67,15 @@ impl SseTask {
         mut shutdown: watch::Receiver<bool>,
     ) {
         let mut backoff = BACKOFF_START_MS;
+        let mut ready = false;
+        let mut auth_failures = 0u32;
         loop {
             let current = topics.borrow_and_update().clone();
             if current.is_empty() {
+                if !ready {
+                    ready = true;
+                    (self.ready)();
+                }
                 if matches!(
                     self.wait(5_000, &mut topics, &mut shutdown).await,
                     Wait::Stop
@@ -117,6 +130,17 @@ impl SseTask {
                 } else {
                     format!("sse HTTP {status} {}", clip(&detail, 200))
                 };
+                if status == 401 || status == 403 {
+                    auth_failures += 1;
+                    if auth_failures == REFUSED_AFTER && !self.refused.swap(true, Ordering::Relaxed)
+                    {
+                        self.logger.error(&format!(
+                            "sse: the token was refused {REFUSED_AFTER} times; status shows sse=refused"
+                        ));
+                    }
+                } else {
+                    auth_failures = 0;
+                }
                 if status < 500 && status != 429 {
                     self.logger.error(&format!("subscribe failed: {message}"));
                     if matches!(
@@ -137,6 +161,14 @@ impl SseTask {
             }
 
             self.logger.info("subscribed");
+            auth_failures = 0;
+            if self.refused.swap(false, Ordering::Relaxed) {
+                self.logger.info("sse: the token is accepted again");
+            }
+            if !ready {
+                ready = true;
+                (self.ready)();
+            }
             let connected_at = Instant::now();
             let mut resubscribe = false;
             let mut failure = None;
@@ -388,6 +420,14 @@ mod tests {
         }
     }
 
+    fn status_response(status: u16) -> StreamResponse {
+        StreamResponse {
+            status,
+            headers: Vec::new(),
+            chunks: stream::empty::<Result<Bytes, HttpError>>().boxed(),
+        }
+    }
+
     fn task(transport: Arc<dyn StreamTransport>) -> SseTask {
         SseTask {
             server: NtfyServer::parse("https://ntfy.test").unwrap(),
@@ -400,6 +440,8 @@ mod tests {
             queue_len: Arc::new(AtomicUsize::new(0)),
             last_processed: Arc::new(AtomicI64::new(0)),
             last_event_at: Arc::new(AtomicI64::new(0)),
+            ready: Arc::new(|| {}),
+            refused: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -461,6 +503,45 @@ mod tests {
         };
         let detail = read_detail_with(response, Duration::from_millis(20)).await;
         assert_eq!(detail, "detail timed out");
+    }
+
+    #[tokio::test]
+    async fn an_empty_topic_list_marks_the_relay_ready() {
+        let fake = Arc::new(FakeStream::new(vec![]));
+        let mut sse = task(fake);
+        let marked = Arc::new(AtomicBool::new(false));
+        let flag = marked.clone();
+        sse.ready = Arc::new(move || flag.store(true, Ordering::Relaxed));
+        let (_topics_tx, topics_rx) = watch::channel(Vec::new());
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let handle = tokio::spawn(sse.run(topics_rx, shutdown_rx));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(marked.load(Ordering::Relaxed));
+        shutdown_tx.send(true).unwrap();
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn five_auth_refusals_set_the_refused_flag() {
+        let fake = Arc::new(FakeStream::new(
+            (0..5).map(|_| status_response(403)).collect(),
+        ));
+        let sse = task(fake.clone());
+        let refused = sse.refused.clone();
+        let (_topics_tx, topics_rx) = watch::channel(vec!["oc-x".to_string()]);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let handle = tokio::spawn(sse.run(topics_rx, shutdown_rx));
+        for _ in 0..10 {
+            tokio::time::advance(Duration::from_secs(61)).await;
+            tokio::task::yield_now().await;
+            if refused.load(Ordering::Relaxed) {
+                break;
+            }
+        }
+        assert!(refused.load(Ordering::Relaxed));
+        assert!(fake.requests.lock().unwrap().len() >= 5);
+        shutdown_tx.send(true).unwrap();
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
     }
 
     #[tokio::test(start_paused = true)]

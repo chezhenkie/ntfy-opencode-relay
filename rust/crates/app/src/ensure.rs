@@ -14,7 +14,8 @@ use std::time::{Duration, Instant};
 
 use ntfy_relay_core::config::{install_root, load_config};
 
-use crate::lock::{lock_owner, lock_path_for};
+use crate::control_endpoint;
+use crate::lock::{live_lock, lock_owner, lock_path_for, PHASE_READY};
 use crate::logger::format_timestamp;
 use crate::util::now_ms;
 
@@ -27,18 +28,33 @@ const LOG_LIMIT: u64 = 1024 * 1024;
 pub fn ensure(config_path: &Path) -> Result<(), String> {
     let config = load_config(config_path).map_err(|error| error.to_string())?;
     let lock_file = lock_path_for(&config.state_file);
-    if let Some(pid) =
-        lock_owner(&lock_file).map_err(|error| format!("lock {}: {error}", lock_file.display()))?
-    {
-        println!("running pid={pid}");
-        return Ok(());
-    }
+    let root = install_root();
+
     if !config.enabled {
+        let live = live_lock(&lock_file)
+            .map_err(|error| format!("lock {}: {error}", lock_file.display()))?;
+        if let (Some(body), Some(root)) = (live, root.as_deref()) {
+            if let Err(error) = control_endpoint::request_stop(root) {
+                append_line(
+                    &root.join("logs").join("relay-ensure.log"),
+                    &format!("FAIL stop pid={} {error}", body.pid),
+                );
+                println!("disabled, stop failed: {error}");
+                return Ok(());
+            }
+        }
         println!("disabled");
         return Ok(());
     }
 
-    let root = install_root().ok_or_else(|| "cannot determine the install root".to_string())?;
+    if let Some(body) =
+        live_lock(&lock_file).map_err(|error| format!("lock {}: {error}", lock_file.display()))?
+    {
+        println!("{}", live_line(&body));
+        return Ok(());
+    }
+
+    let root = root.ok_or_else(|| "cannot determine the install root".to_string())?;
     let logs = root.join("logs");
     fs::create_dir_all(&logs).map_err(|error| format!("logs {}: {error}", logs.display()))?;
     let ensure_log = logs.join("relay-ensure.log");
@@ -69,6 +85,14 @@ pub fn ensure(config_path: &Path) -> Result<(), String> {
 /// the relay is alive, so a healthy five-minute tick writes nothing.
 fn append_line(file: &Path, text: &str) {
     let _ = write_line(file, text);
+}
+
+fn live_line(body: &crate::lock::LockBody) -> String {
+    if body.phase == PHASE_READY {
+        format!("running pid={}", body.pid)
+    } else {
+        format!("starting pid={}", body.pid)
+    }
 }
 
 fn write_line(file: &Path, text: &str) -> io::Result<()> {
@@ -169,6 +193,22 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn only_a_ready_lock_reports_running() {
+        let ready = crate::lock::LockBody {
+            pid: 42,
+            started: "x".to_string(),
+            phase: PHASE_READY.to_string(),
+            exe: String::new(),
+        };
+        assert_eq!(live_line(&ready), "running pid=42");
+        let starting = crate::lock::LockBody {
+            phase: crate::lock::PHASE_STARTING.to_string(),
+            ..ready
+        };
+        assert_eq!(live_line(&starting), "starting pid=42");
     }
 
     #[test]

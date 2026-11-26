@@ -51,7 +51,7 @@ podman start ntfy                             # only after an explicit container
 
 The machine start restores the container through the `unless-stopped` policy and `podman-restart.service`; `podman start ntfy` is for a container that was stopped on purpose. If the container is gone, `& "$env:NTFY_RELAY_HOME\ntfy-deploy.exe" apply` recreates it from `%LOCALAPPDATA%\ntfy-relay\ntfy-deploy.json`. Do not use a bare `podman run`: the image has no base URL and the container exits.
 
-`ensure` is idempotent. It prints `running pid=<n>` and exits 0 when the lock names a live relay; otherwise it starts the binary detached, prints `started pid=<n>` when the lock appears, and exits 1 with a FAIL line in `logs\relay-ensure.log` when the child dies first or the lock does not appear within 60 s. The watchdog task runs this subcommand every five minutes. Do not start a second relay by hand: two processes against one state file handle every phone message twice.
+`ensure` is idempotent. It prints `running pid=<n>` and exits 0 when the lock names a live, subscribed relay; `starting pid=<n>` when the relay is alive but still waiting for its token; `disabled` when the config sets `enabled: false`, after it stops a live relay. Otherwise it starts the binary detached, prints `started pid=<n>` when the lock appears, and exits 1 with a FAIL line in `logs\relay-ensure.log` when the child dies first or the lock does not appear within 60 s. The watchdog task runs this subcommand every five minutes. Do not start a second relay by hand: two processes against one state file handle every phone message twice.
 
 The Tailscale service is Automatic and needs no manual start. `Start-Service Tailscale` is the recovery step, and it needs an elevated shell.
 
