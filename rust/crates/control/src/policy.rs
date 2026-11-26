@@ -121,7 +121,7 @@ pub fn remove(roots: &[PathBuf], target: &Path) -> Result<Vec<PathBuf>, PolicyEr
     let mut next = Vec::with_capacity(roots.len());
     let mut found = false;
     for root in roots {
-        if same(root, target) {
+        if same_path(root, target) {
             found = true;
         } else {
             next.push(root.clone());
@@ -136,6 +136,18 @@ pub fn remove(roots: &[PathBuf], target: &Path) -> Result<Vec<PathBuf>, PolicyEr
 
 fn same(left: &Path, right: &Path) -> bool {
     components_prefix(left, right) && components_prefix(right, left)
+}
+
+/// Equality after resolving both sides, so another spelling of an existing
+/// folder (a symlink, an 8.3 name, a differently cased path) matches the root.
+fn same_path(left: &Path, right: &Path) -> bool {
+    if same(left, right) {
+        return true;
+    }
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(a), Ok(b)) => same(&strip_verbatim(a), &strip_verbatim(b)),
+        _ => false,
+    }
 }
 
 fn components_prefix(prefix: &Path, path: &Path) -> bool {
@@ -217,6 +229,18 @@ mod tests {
         let home = dir("home");
         let text = format!("{}/..", home.path().to_string_lossy());
         assert_eq!(resolve(&text, home.path()), Err(PolicyError::ParentDir));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_matches_another_spelling_of_the_same_folder() {
+        let home = dir("home");
+        let root = home.path().join("root");
+        fs::create_dir_all(&root).expect("root");
+        let link = home.path().join("link");
+        std::os::unix::fs::symlink(&root, &link).expect("symlink");
+        let next = remove(&[root], &link).expect("removed");
+        assert!(next.is_empty());
     }
 
     #[test]

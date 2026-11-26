@@ -1389,7 +1389,7 @@ mod tests {
         .await;
 
         let response = reply_rx.recv_timeout(Duration::from_secs(1)).unwrap();
-        assert_eq!(response.status, 200);
+        assert_eq!(response.status, 200, "roots={:?}", config.project_roots);
         assert!(map.get("proj").is_some());
         assert!(
             map.get("other").is_none(),
