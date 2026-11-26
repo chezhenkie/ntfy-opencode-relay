@@ -34,7 +34,7 @@ Type commands in the message bar the same way as a normal message. A message wit
 | --- | --- |
 | `/help` | list the commands |
 | `/status` | relay status: topics, queue, target, pending asks, uptime |
-| `/new <title>` | create a session titled `<title>` in the project and send the next message to it; the title is capped at 200 characters |
+| `/new [title]` | create a session in the project and send the next message to it; the title is optional and capped at 200 characters |
 | `/sessions [count]` | list recent sessions with numbers and titles |
 | `/to` | list up to five sessions with numbers, for the next message |
 | `/to 2` | send the next message to entry 2 of that list |
@@ -50,7 +50,8 @@ Type commands in the message bar the same way as a normal message. A message wit
 Notes:
 
 - Normal use needs no command. A message goes to the session you last used on the host. Typing in a chat is what counts; merely opening it changes nothing.
-- Free text never creates a session. Only `/new` does; the argument is the title, and the next message becomes that session's first prompt.
+- Free text never creates a session. Only `/new` does; the optional argument is the title, and the next message becomes that session's first prompt. The session exists on the server at once and gets no tab on the desktop by itself: open it there with `/sessions` (`Ctrl+X` then `L`) or `Ctrl+O`.
+- The topic list is chronological, oldest at the top. New messages arrive at the bottom, so an ack or a reply can sit below the command that caused it; read down for the newest.
 - `/to` and `/new` set one target for one message, or ten minutes. No command takes a session id.
 - A confirmation window is 60 seconds. After that the held action is dropped; send the command again.
 - `/always` can satisfy a matching ask silently later. Use `/allow` when you want a single approval.
