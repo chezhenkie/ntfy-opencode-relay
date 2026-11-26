@@ -1918,6 +1918,19 @@ mod tests {
             .expect("publish timeout")
         }
 
+        async fn wait_warning(&self, needle: &str) {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if self.log.warnings().iter().any(|line| line.contains(needle)) {
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| panic!("warning timeout: {needle}"));
+        }
+
         async fn stop(self) -> Result<(), String> {
             self.shutdown.send(true).unwrap();
             self.handle.await.unwrap()
@@ -2071,17 +2084,8 @@ mod tests {
             "data": { "id": "per_1", "sessionID": "ses_a", "action": "bash", "resources": [] }
         }));
         harness.wait_requests(1).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        harness.wait_warning("reason=publish-failed").await;
         assert_eq!(harness.asks.count(), 0);
-        assert!(
-            harness
-                .log
-                .warnings()
-                .iter()
-                .any(|line| line.contains("reason=publish-failed")),
-            "{:?}",
-            harness.log.warnings()
-        );
         harness.stop().await.unwrap();
     }
 
