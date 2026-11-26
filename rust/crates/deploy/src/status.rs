@@ -105,6 +105,9 @@ pub fn gather(
                     };
                     listeners.push(format!("{address}:{port}"));
                 }
+                rules_ok = info.port_bindings.iter().any(|(host, port)| {
+                    plan.host_allowed(host) && port == &config.port.to_string()
+                });
             }
         }
     }
@@ -260,6 +263,20 @@ Address         Port        Address         Port
         assert!(report.ok);
         assert_eq!(report.listeners, vec!["0.0.0.0:8810".to_string()]);
         assert!(report.active_portproxy.is_empty());
+    }
+
+    #[test]
+    fn a_linux_proxy_status_rejects_a_wildcard_binding() {
+        let runner = FakeRunner::with_inspect(&inspect(true));
+        let report = gather(
+            &runner,
+            &FakeProbe::always(200),
+            Platform::Linux,
+            &config("proxy", "https://ntfy.example.ts.net"),
+        )
+        .unwrap();
+        assert!(!report.ok);
+        assert_eq!(report.listeners, vec!["0.0.0.0:8810".to_string()]);
     }
 
     #[test]

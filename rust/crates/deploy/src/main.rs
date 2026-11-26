@@ -352,6 +352,9 @@ fn print_report(report: &Report) {
     for entry in &summary.portproxy {
         println!("portproxy: {entry}");
     }
+    for warning in &report.warnings {
+        println!("warning: {warning}");
+    }
     for command in &report.commands {
         println!("changed: {command}");
     }

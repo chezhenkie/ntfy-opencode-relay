@@ -197,6 +197,18 @@ impl<'a> Plan<'a> {
         format!("http://127.0.0.1:{}/v1/health", self.config.port)
     }
 
+    /// The host a matching container must bind. Windows publishes inside the
+    /// WSL VM, so its container is a wildcard in every mode; on Linux only
+    /// proxy mode binds loopback, and the other modes bind all interfaces.
+    pub(crate) fn host_allowed(&self, host: &str) -> bool {
+        let host = host.trim();
+        let wildcard = host.is_empty() || host == "0.0.0.0" || host == "::";
+        match (self.platform, self.config.mode) {
+            (Platform::Linux, Mode::Proxy) => host == LOOPBACK_ADDRESS || host == "::1",
+            _ => wildcard,
+        }
+    }
+
     pub fn inspect_command(&self) -> PlatformCommand {
         PlatformCommand {
             program: PODMAN,
@@ -314,6 +326,7 @@ impl Deployer {
                 health: None,
                 state: ApplyState::Planned,
                 commands: plan.planned_lines(),
+                warnings: Vec::new(),
                 dry_run: true,
             });
         }
@@ -323,6 +336,15 @@ impl Deployer {
             Some(_) => self.local_image_id(&plan)?,
             None => None,
         };
+        let mut warnings = Vec::new();
+        if let Some(info) = &info {
+            if info.image_id.is_empty() || local_image.is_none() {
+                warnings.push(
+                    "image-id unknown: the container and tag image ids cannot be compared; recreating"
+                        .to_string(),
+                );
+            }
+        }
         let reusable = info
             .as_ref()
             .is_some_and(|info| info.matches(&plan, local_image.as_deref()));
@@ -372,6 +394,7 @@ impl Deployer {
             health: Some(health),
             state,
             commands,
+            warnings,
             dry_run: false,
         })
     }
@@ -456,6 +479,8 @@ pub struct Report {
     pub health: Option<u16>,
     pub state: ApplyState,
     pub commands: Vec<String>,
+    /// Conditions that changed the decision without failing the run.
+    pub warnings: Vec<String>,
     pub dry_run: bool,
 }
 
@@ -467,6 +492,9 @@ pub(crate) struct InspectInfo {
     pub port_bindings: Vec<(String, String)>,
     pub restart: String,
     pub readonly: bool,
+    pub cap_drop: Vec<String>,
+    pub security_opt: Vec<String>,
+    pub tmpfs: Vec<String>,
 }
 
 impl InspectInfo {
@@ -477,10 +505,19 @@ impl InspectInfo {
             && self.env.iter().any(|value| value == &plan.env[0])
             && self.env.iter().any(|value| value == &plan.env[1])
             && self.port_bindings.iter().any(|(host, port)| {
-                host_ip_ok(plan.platform, host) && port == &plan.config.port.to_string()
+                plan.host_allowed(host) && port == &plan.config.port.to_string()
             })
             && self.restart == "unless-stopped"
             && self.readonly
+            && self
+                .cap_drop
+                .iter()
+                .any(|value| value.eq_ignore_ascii_case("ALL"))
+            && self
+                .security_opt
+                .iter()
+                .any(|value| value.starts_with("no-new-privileges"))
+            && self.tmpfs.iter().any(|value| value == "/tmp")
     }
 }
 
@@ -492,13 +529,12 @@ fn image_matches(actual: &str, wanted: &str) -> bool {
     !last.contains(':') && actual == format!("{wanted}:latest")
 }
 
-/// Reuse needs the container to run the image the tag points at now. When
-/// either id is missing the check cannot run, and the reference comparison
-/// alone decides.
+/// Reuse needs the container to run the image the tag points at now. An id the
+/// host cannot resolve cannot prove a match, so the container is recreated.
 fn image_content_matches(container_id: &str, local_id: Option<&str>) -> bool {
     match local_id {
-        Some(local) if !normalize_id(container_id).is_empty() => same_image_id(container_id, local),
-        _ => true,
+        Some(local) => same_image_id(container_id, local),
+        None => false,
     }
 }
 
@@ -517,16 +553,6 @@ fn same_image_id(actual: &str, wanted: &str) -> bool {
 
 fn normalize_id(id: &str) -> String {
     id.trim().trim_start_matches("sha256:").to_ascii_lowercase()
-}
-
-/// Windows reports a wildcard bind as `0.0.0.0`; Linux reports the address the
-/// publish rule selected. The Linux plan always uses loopback or all
-/// interfaces, so a wildcard is accepted there too.
-fn host_ip_ok(platform: Platform, host: &str) -> bool {
-    if host.is_empty() || host == "0.0.0.0" || host == "::" {
-        return true;
-    }
-    platform == Platform::Linux && host.parse::<Ipv4Addr>().is_ok()
 }
 
 pub(crate) fn parse_inspect(text: &str) -> Option<InspectInfo> {
@@ -596,6 +622,33 @@ pub(crate) fn parse_inspect(text: &str) -> Option<InspectInfo> {
         .and_then(|h| h.get("ReadonlyRootfs"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let cap_drop = host
+        .and_then(|h| h.get("CapDrop"))
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let security_opt = host
+        .and_then(|h| h.get("SecurityOpt"))
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let tmpfs = host
+        .and_then(|h| h.get("Tmpfs"))
+        .and_then(Value::as_object)
+        .map(|values| values.keys().cloned().collect())
+        .unwrap_or_default();
     Some(InspectInfo {
         running: state
             .get("Running")
@@ -607,6 +660,9 @@ pub(crate) fn parse_inspect(text: &str) -> Option<InspectInfo> {
         port_bindings,
         restart,
         readonly,
+        cap_drop,
+        security_opt,
+        tmpfs,
     })
 }
 
@@ -666,22 +722,39 @@ Address         Port        Address         Port
     }
 
     fn inspect(config: &DeployConfig, running: bool, extra_env: bool, image_id: &str) -> String {
+        inspect_at(config, running, extra_env, image_id, "0.0.0.0", true)
+    }
+
+    fn inspect_at(
+        config: &DeployConfig,
+        running: bool,
+        extra_env: bool,
+        image_id: &str,
+        host: &str,
+        hardening: bool,
+    ) -> String {
         let mut env = vec!["container=podman".to_string()];
         if extra_env {
             env.push(format!("NTFY_BASE_URL={}", config.base_url));
             env.push(format!("NTFY_BEHIND_PROXY={}", config.behind_proxy));
         }
+        let mut host_config = serde_json::json!({
+            "PortBindings": {
+                "8080/tcp": [{ "HostIp": host, "HostPort": config.port.to_string() }]
+            },
+            "RestartPolicy": { "Name": "unless-stopped" },
+            "ReadonlyRootfs": true
+        });
+        if hardening {
+            host_config["CapDrop"] = serde_json::json!(["ALL"]);
+            host_config["SecurityOpt"] = serde_json::json!(["no-new-privileges"]);
+            host_config["Tmpfs"] = serde_json::json!({ "/tmp": "" });
+        }
         let mut entry = serde_json::json!({
             "ImageName": config.container.image,
             "State": { "Running": running },
             "Config": { "Env": env, "Image": config.container.image },
-            "HostConfig": {
-                "PortBindings": {
-                    "8080/tcp": [{ "HostIp": "0.0.0.0", "HostPort": config.port.to_string() }]
-                },
-                "RestartPolicy": { "Name": "unless-stopped" },
-                "ReadonlyRootfs": true
-            }
+            "HostConfig": host_config
         });
         if !image_id.is_empty() {
             entry["Image"] = serde_json::Value::String(image_id.to_string());
@@ -724,7 +797,9 @@ Address         Port        Address         Port
     #[test]
     fn a_matching_healthy_container_is_reused() {
         let config = config("proxy", "https://ntfy.example.ts.net");
-        let runner = Arc::new(FakeRunner::with_inspect(&inspect(&config, true, true, "")));
+        let id = "6c7427154d80501f7d6e4a467ed1ca369af28e4a1c2c2603640e0a71f83fea33";
+        let runner = Arc::new(FakeRunner::with_inspect(&inspect(&config, true, true, id)));
+        runner.set_image_id(id);
         runner.set_show(SHOW_LOOPBACK);
         let probe = Arc::new(FakeProbe::always(200));
         let deployer = deployer(runner.clone(), probe, Platform::Windows);
@@ -737,6 +812,81 @@ Address         Port        Address         Port
         assert!(!record
             .iter()
             .any(|(_, args)| args.first().map(String::as_str) == Some("stop")));
+    }
+
+    #[test]
+    fn an_unknown_image_id_is_recreated_with_a_warning() {
+        let config = config("proxy", "https://ntfy.example.ts.net");
+        let runner = Arc::new(FakeRunner::with_inspect(&inspect(&config, true, true, "")));
+        runner.set_show(SHOW_LOOPBACK);
+        let probe = Arc::new(FakeProbe::always(200));
+        let deployer = deployer(runner, probe, Platform::Windows);
+        let report = deployer.apply(&config, false).unwrap();
+        assert_eq!(report.state, ApplyState::Recreated);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|line| line.contains("image-id unknown")),
+            "{:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn a_linux_proxy_container_on_a_wildcard_is_recreated() {
+        let config = config("proxy", "https://ntfy.example.ts.net");
+        let id = "6c7427154d80501f7d6e4a467ed1ca369af28e4a1c2c2603640e0a71f83fea33";
+        let runner = Arc::new(FakeRunner::with_inspect(&inspect_at(
+            &config, true, true, id, "0.0.0.0", true,
+        )));
+        runner.set_image_id(id);
+        let probe = Arc::new(FakeProbe::always(200));
+        let deployer = deployer(runner.clone(), probe, Platform::Linux);
+        let report = deployer.apply(&config, false).unwrap();
+        assert_eq!(report.state, ApplyState::Recreated);
+        assert!(runner
+            .calls()
+            .iter()
+            .any(|(_, args)| args.first().map(String::as_str) == Some("run")));
+    }
+
+    #[test]
+    fn a_linux_proxy_container_on_loopback_is_reused() {
+        let config = config("proxy", "https://ntfy.example.ts.net");
+        let id = "6c7427154d80501f7d6e4a467ed1ca369af28e4a1c2c2603640e0a71f83fea33";
+        let runner = Arc::new(FakeRunner::with_inspect(&inspect_at(
+            &config,
+            true,
+            true,
+            id,
+            "127.0.0.1",
+            true,
+        )));
+        runner.set_image_id(id);
+        let probe = Arc::new(FakeProbe::always(200));
+        let deployer = deployer(runner, probe, Platform::Linux);
+        let report = deployer.apply(&config, false).unwrap();
+        assert_eq!(report.state, ApplyState::Reused);
+    }
+
+    #[test]
+    fn a_container_without_hardening_is_recreated() {
+        let config = config("proxy", "https://ntfy.example.ts.net");
+        let id = "6c7427154d80501f7d6e4a467ed1ca369af28e4a1c2c2603640e0a71f83fea33";
+        let runner = Arc::new(FakeRunner::with_inspect(&inspect_at(
+            &config,
+            true,
+            true,
+            id,
+            "127.0.0.1",
+            false,
+        )));
+        runner.set_image_id(id);
+        let probe = Arc::new(FakeProbe::always(200));
+        let deployer = deployer(runner, probe, Platform::Linux);
+        let report = deployer.apply(&config, false).unwrap();
+        assert_eq!(report.state, ApplyState::Recreated);
     }
 
     #[test]
