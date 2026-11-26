@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // End-to-end smoke against the live ntfy server: health, the auth gate,
-// header and JSON publish, poll read-back, SSE delivery, and an attachment
-// round trip. The suite speaks only to ntfy over its HTTP API.
+// signup and bad-token refusal, header and JSON publish, poll read-back, SSE
+// delivery, and an attachment round trip. The suite speaks only to ntfy over
+// its HTTP API; the optional cleanup also edits a local cache file.
 //
 // The container, host route, and relay process are covered by
 // tools\startup-check.ps1 and ntfy-deploy status; this suite proves the wire
@@ -25,6 +26,8 @@ function usage() {
   --token-file <path>  bearer token file (env NTFY_TOKEN_FILE, else the relay root)
   --topic <name>       test topic (default ${DEFAULT_TOPIC})
   --timeout <ms>       per-request timeout (default ${DEFAULT_TIMEOUT_MS})
+  --cache-db <path>    local cache.db to clean the topic from (env NTFY_CACHE_DB)
+  --attachment-dir <path>  attachment directory beside cache.db (env NTFY_ATTACHMENT_DIR)
   --help               print this text`);
 }
 
@@ -34,6 +37,8 @@ function parseArgs(argv) {
     tokenFile: process.env.NTFY_TOKEN_FILE || '',
     topic: DEFAULT_TOPIC,
     timeoutMs: DEFAULT_TIMEOUT_MS,
+    cacheDb: process.env.NTFY_CACHE_DB || '',
+    attachmentDir: process.env.NTFY_ATTACHMENT_DIR || '',
   };
   const value = (index, flag) => {
     const raw = argv[index];
@@ -60,6 +65,10 @@ function parseArgs(argv) {
         throw new Error(`--timeout must be a positive number, got ${raw}`);
       }
       options.timeoutMs = parsed;
+    } else if (arg === '--cache-db') {
+      options.cacheDb = value((index += 1), arg);
+    } else if (arg === '--attachment-dir') {
+      options.attachmentDir = value((index += 1), arg);
     } else {
       throw new Error(`unknown argument ${arg}`);
     }
@@ -267,6 +276,35 @@ check('read-denied-anonymous', async (ctx) => {
   return `status=${response.status}`;
 });
 
+check('signup-refused', async (ctx) => {
+  const username = `e2e${Date.now().toString(36)}`;
+  const response = await request('POST', `${ctx.baseUrl}/v1/account`, {
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, password: 'not-a-real-password' }),
+    timeoutMs: ctx.timeoutMs,
+  });
+  // The account route can answer 4xx or 404; only a 2xx means signup is open.
+  assert(response.status < 200 || response.status >= 300, `signup returned ${response.status}`);
+  return `status=${response.status}`;
+});
+
+check('token-random-refused', async (ctx) => {
+  const token = `tk_${randomBytes(16).toString('hex')}`;
+  const publish = await request('POST', `${ctx.baseUrl}/${encodeTopic(ctx.topic)}`, {
+    token,
+    headers: { Title: 'e2e smoke bad token', 'content-type': 'text/plain;charset=UTF-8' },
+    body: marker('bad-token'),
+    timeoutMs: ctx.timeoutMs,
+  });
+  assert(publish.status === 401 || publish.status === 403, `publish returned ${publish.status}`);
+  const read = await request('GET', `${ctx.baseUrl}/${encodeTopic(ctx.topic)}/json?poll=1&since=0`, {
+    token,
+    timeoutMs: ctx.timeoutMs,
+  });
+  assert(read.status === 401 || read.status === 403, `read returned ${read.status}`);
+  return `publish=${publish.status} read=${read.status}`;
+});
+
 check('publish-header', async (ctx) => {
   const body = marker('header');
   const response = await request('POST', `${ctx.baseUrl}/${encodeTopic(ctx.topic)}`, {
@@ -349,6 +387,38 @@ check('attachment-roundtrip', async (ctx) => {
   return `bytes=${payload.length} host=${fileUrl.host}`;
 });
 
+// The server has no HTTP route that removes published messages, so a local
+// cache file is the only cleanup path. The database is opened beside the
+// running server; the poll reads the same rows, so the topic is empty after.
+async function cleanupTopic(ctx) {
+  if (!ctx.cacheDb) {
+    console.log('cleanup skipped: no --cache-db given');
+    return;
+  }
+  if (!fs.existsSync(ctx.cacheDb)) {
+    throw new Error(`cache-db not found: ${ctx.cacheDb}`);
+  }
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(ctx.cacheDb);
+  try {
+    const rows = db.prepare('SELECT mid FROM messages WHERE topic = ?').all(ctx.topic);
+    db.prepare('DELETE FROM messages WHERE topic = ?').run(ctx.topic);
+    const left = db.prepare('SELECT COUNT(*) AS n FROM messages WHERE topic = ?').get(ctx.topic).n;
+    const attachDir = ctx.attachmentDir || path.join(path.dirname(ctx.cacheDb), 'attachments');
+    let removed = 0;
+    for (const row of rows) {
+      const file = path.join(attachDir, String(row.mid));
+      if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+        removed += 1;
+      }
+    }
+    console.log(`cleanup topic=${ctx.topic} messages=${rows.length} attachments=${removed} left=${left}`);
+  } finally {
+    db.close();
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const token = readToken(options.tokenFile);
@@ -357,8 +427,18 @@ async function main() {
     token,
     topic: options.topic,
     timeoutMs: options.timeoutMs,
+    cacheDb: options.cacheDb,
+    attachmentDir: options.attachmentDir,
   };
   console.log(`ntfy e2e smoke base=${ctx.baseUrl} topic=${ctx.topic}`);
+  const probe = await request('GET', `${ctx.baseUrl}/${encodeTopic(ctx.topic)}/json?poll=1&since=0`, {
+    token: ctx.token,
+    timeoutMs: ctx.timeoutMs,
+  });
+  if (probe.status === 401 || probe.status === 403) {
+    throw new Error('token: refused');
+  }
+  assert(probe.status === 200, `token: poll returned ${probe.status}`);
   let failures = 0;
   for (const { name, run } of checks) {
     const started = Date.now();
@@ -371,6 +451,12 @@ async function main() {
       const elapsed = Date.now() - started;
       console.log(`FAIL ${name} ${short(error)} (${elapsed} ms)`);
     }
+  }
+  try {
+    await cleanupTopic(ctx);
+  } catch (error) {
+    failures += 1;
+    console.log(`FAIL cleanup ${short(error)}`);
   }
   console.log(failures === 0 ? `RESULT ${checks.length} passed` : `RESULT ${failures} of ${checks.length} failed`);
   process.exitCode = failures === 0 ? 0 : 1;

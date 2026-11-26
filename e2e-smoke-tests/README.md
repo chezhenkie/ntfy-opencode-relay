@@ -1,6 +1,6 @@
 # End-to-end smoke tests
 
-One Node script, `smoke.mjs`, exercises the live ntfy server over its HTTP API: the anonymous health endpoint, the deny-all gate, header and JSON publish, poll read-back, SSE delivery, and an attachment round trip.
+One Node script, `smoke.mjs`, exercises the live ntfy server over its HTTP API: the anonymous health endpoint, the deny-all gate, signup refusal, a bad token, header and JSON publish, poll read-back, SSE delivery, and an attachment round trip.
 
 It needs no npm packages and speaks only to the server. The container, host route, and relay process are covered by `ntfy-relay status` and `ntfy-deploy status`.
 
@@ -35,11 +35,15 @@ bash e2e-smoke-tests/run-linux.sh --base-url https://ntfy.example.ts.net
 | `health-anonymous` | `/v1/health` answers 200 with `healthy:true` and needs no token |
 | `publish-denied-anonymous` | an untokened publish returns 403 and stores nothing |
 | `read-denied-anonymous` | an untokened poll returns 401 or 403 |
+| `signup-refused` | `POST /v1/account` does not answer 2xx, so signup is closed |
+| `token-random-refused` | a random `tk_` token is refused on publish and on read |
 | `publish-header` | token publish to `/<topic>` with `Title`, `Tags`, and a text body returns one 12-character message id |
 | `read-back` | `/<topic>/json?poll=1&since=` returns that id with the same body, title, and `oc-out` tag |
 | `sse-live` | `/<topic>/sse?since=` opens, a later publish arrives as a message frame with the same body |
 | `publish-json` | JSON publish to the base URL returns a message that reads back with the same title; the priority is reported but not compared |
 | `attachment-roundtrip` | a `PUT` upload stores the file, and the attachment URL returns the same bytes |
+
+Before the checks, the suite polls the topic once with the configured token. A 401 or 403 ends the run with `FAIL setup token: refused` and exit code 2 instead of ten separate check failures.
 
 ## Options
 
@@ -49,9 +53,15 @@ bash e2e-smoke-tests/run-linux.sh --base-url https://ntfy.example.ts.net
 | `--token-file` | `NTFY_TOKEN_FILE` | relay root `ntfy-token.txt` |
 | `--topic` | | `e2e-smoke` |
 | `--timeout` | | `10000` ms per request |
+| `--cache-db` | `NTFY_CACHE_DB` | none |
+| `--attachment-dir` | `NTFY_ATTACHMENT_DIR` | `attachments` beside `cache.db` |
 
 ## Notes
 
-The suite publishes to `e2e-smoke` with the `oc-out` tag. The relay ignores that tag and subscribes only to project folder names, so the traffic never reaches a session. Messages and attachments expire with the server cache, 72 hours.
+The suite publishes to `e2e-smoke` with the `oc-out` tag. The relay ignores that tag and subscribes only to project folder names, so the traffic never reaches a session.
+
+ntfy has no HTTP route that removes a published message. With `--cache-db` the suite deletes the topic's rows from a local `cache.db` and removes their attachment files, which requires Node 22.13 or newer; without it, cleanup prints `skipped` and the messages expire with the server cache. The CI container job bind-mounts its cache directory, so the topic is empty after that run.
+
+An attachment URL is a bearer capability. The download needs no token, so anyone holding the URL can fetch the file until it expires.
 
 The token is read once and never printed. Exit code 0 means every check passed, 1 means at least one failed, 2 means the setup or an argument was wrong.

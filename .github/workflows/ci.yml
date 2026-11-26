@@ -94,9 +94,10 @@ jobs:
       - name: Start container
         run: |
           set -euo pipefail
-          docker run -d --name ntfy --read-only --tmpfs /tmp --cap-drop=ALL \
-            --security-opt no-new-privileges -p 127.0.0.1:8810:8080 \
-            -v ntfy-cache:/var/cache/ntfy \
+          mkdir -p e2e-cache
+          docker run -d --name ntfy --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp \
+            --cap-drop=ALL --security-opt no-new-privileges -p 127.0.0.1:8810:8080 \
+            -v "$PWD/e2e-cache:/var/cache/ntfy" \
             -e NTFY_BASE_URL=http://127.0.0.1:8810 -e NTFY_BEHIND_PROXY=true \
             localhost/ntfy:server
           ready=false
@@ -118,7 +119,7 @@ jobs:
           echo "::add-mask::$token"
           printf '%s\n' "$token" > "$RUNNER_TEMP/ntfy-token.txt"
       - name: Smoke
-        run: node e2e-smoke-tests/smoke.mjs --token-file "$RUNNER_TEMP/ntfy-token.txt"
+        run: node e2e-smoke-tests/smoke.mjs --token-file "$RUNNER_TEMP/ntfy-token.txt" --cache-db "$PWD/e2e-cache/cache.db"
       - name: Container log
         if: failure()
         run: docker logs ntfy || true
