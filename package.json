@@ -9,6 +9,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "pins": "node tools/check-action-pins.mjs",
     "tlds": "node tools/link-safety/build-tlds.mjs --check",
     "links": "node tools/check-doc-links.mjs",
     "secrets": "node tools/secret-scan.mjs",

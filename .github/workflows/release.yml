@@ -17,7 +17,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
@@ -26,12 +26,20 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - name: ref check
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "release must run from refs/heads/main, got ${{ github.ref }}" >&2
+          exit 1
+      # Actions are pinned to commit SHAs; the trailing comment names the tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: tools
         run: |
           sudo apt-get update
@@ -61,16 +69,35 @@ jobs:
           test "$(grep -c '^version = ' rust/Cargo.toml)" -eq 1
           sed -i "s|^version = \".*\"\$|version = \"$version\"|" rust/Cargo.toml
           node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json')); p.version=process.argv[1]; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n')" "$version"
-          cargo update --workspace --manifest-path rust/Cargo.toml
+          # The release version of the workspace members is the only lock entry
+          # that changes; dependencies stay as reviewed.
+          VERSION="$version" node - <<'NODE'
+          const fs = require('fs');
+          const version = process.env.VERSION;
+          const text = fs.readFileSync('rust/Cargo.lock', 'utf8');
+          let members = 0;
+          const blocks = text.split(/(?=\[\[package\]\]\n)/).map((block) => {
+            const name = (block.match(/^name = "(.*)"$/m) || [])[1];
+            if (!name || !name.startsWith('ntfy-relay-')) return block;
+            members += 1;
+            return block.replace(/^version = ".*"$/m, `version = "${version}"`);
+          });
+          if (members === 0) {
+            console.error('no ntfy-relay workspace member in rust/Cargo.lock');
+            process.exit(1);
+          }
+          fs.writeFileSync('rust/Cargo.lock', blocks.join(''));
+          console.log(`lock: ${members} workspace member versions set to ${version}`);
+          NODE
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "ntfy=$ntfy" >> "$GITHUB_OUTPUT"
       - name: test
-        run: cargo test --workspace --manifest-path rust/Cargo.toml
+        run: cargo test --locked --workspace --manifest-path rust/Cargo.toml
       - name: build
         run: |
           set -euo pipefail
           for target in x86_64-pc-windows-gnu x86_64-unknown-linux-gnu x86_64-unknown-linux-musl; do
-            cargo build --release --manifest-path rust/Cargo.toml --target "$target" \
+            cargo build --locked --release --manifest-path rust/Cargo.toml --target "$target" \
               -p ntfy-relay-app -p ntfy-relay-deploy -p ntfy-relay-auth -p ntfy-relay-admin
           done
       - name: assets
