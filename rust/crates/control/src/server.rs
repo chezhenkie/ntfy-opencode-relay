@@ -6,8 +6,8 @@
 
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -17,6 +17,12 @@ pub const HEADER_LIMIT: usize = 8 * 1024;
 pub const BODY_LIMIT: usize = 16 * 1024;
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
+/// Concurrent request workers. A stalled client occupies one worker, never
+/// the accept loop; a fifth connection is refused at once.
+pub const MAX_WORKERS: usize = 4;
+/// The listener is polled every 50 ms, so a stop normally joins well inside
+/// this; the deadline only guards a wedged accept.
+pub const STOP_DEADLINE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
@@ -63,6 +69,7 @@ pub struct Server {
     port: u16,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    done: Option<mpsc::Receiver<()>>,
 }
 
 impl Server {
@@ -73,13 +80,16 @@ impl Server {
         listener.set_nonblocking(true)?;
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = stop.clone();
+        let workers = Arc::new(AtomicUsize::new(0));
+        let (done_tx, done) = mpsc::channel();
         let thread = thread::Builder::new()
             .name("control-listener".to_string())
-            .spawn(move || serve(&listener, &token, handler.as_ref(), &worker_stop))?;
+            .spawn(move || serve(&listener, &token, handler, &worker_stop, &workers, done_tx))?;
         Ok(Self {
             port,
             stop,
             thread: Some(thread),
+            done: Some(done),
         })
     }
 
@@ -87,11 +97,21 @@ impl Server {
         self.port
     }
 
-    /// Stops accepting and waits for an in-flight request to finish.
+    /// Stops accepting, waits up to `STOP_DEADLINE` for the listener, and
+    /// joins it when it exited. A listener that misses the deadline is left
+    /// detached: its stop flag is already set and it owns nothing shared.
     pub fn stop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        let mut finished = true;
+        if let Some(done) = self.done.take() {
+            finished = done.recv_timeout(STOP_DEADLINE).is_ok();
+        }
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+            if finished {
+                let _ = thread.join();
+            } else {
+                drop(thread);
+            }
         }
     }
 }
@@ -102,10 +122,36 @@ impl Drop for Server {
     }
 }
 
-fn serve(listener: &TcpListener, token: &str, handler: &dyn Handler, stop: &AtomicBool) {
+fn serve(
+    listener: &TcpListener,
+    token: &str,
+    handler: Arc<dyn Handler>,
+    stop: &AtomicBool,
+    workers: &Arc<AtomicUsize>,
+    done: mpsc::Sender<()>,
+) {
     while !stop.load(Ordering::Relaxed) {
         match listener.accept() {
-            Ok((stream, _)) => serve_one(stream, token, handler),
+            Ok((stream, _)) => {
+                let active = workers.fetch_add(1, Ordering::Relaxed);
+                if active >= MAX_WORKERS {
+                    workers.fetch_sub(1, Ordering::Relaxed);
+                    refuse_busy(stream, token);
+                    continue;
+                }
+                let token = token.to_string();
+                let handler = handler.clone();
+                let worker_count = workers.clone();
+                let spawned = thread::Builder::new()
+                    .name("control-worker".to_string())
+                    .spawn(move || {
+                        serve_one(stream, &token, handler.as_ref());
+                        worker_count.fetch_sub(1, Ordering::Relaxed);
+                    });
+                if spawned.is_err() {
+                    workers.fetch_sub(1, Ordering::Relaxed);
+                }
+            }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 thread::sleep(POLL_INTERVAL);
             }
@@ -113,6 +159,17 @@ fn serve(listener: &TcpListener, token: &str, handler: &dyn Handler, stop: &Atom
             Err(_) => thread::sleep(POLL_INTERVAL),
         }
     }
+    let _ = done.send(());
+}
+
+fn refuse_busy(mut stream: TcpStream, token: &str) {
+    // Drain the request before closing, so the client reads this 503 instead
+    // of a reset that discards it.
+    let _ = stream.set_nonblocking(false);
+    let deadline = Instant::now() + Duration::from_millis(250);
+    let _ = read_request_by(&mut stream, token, deadline);
+    let response = Response::fail(503, ErrorCode::Internal, "control endpoint is busy");
+    write_response(&mut stream, &response);
 }
 
 fn serve_one(mut stream: TcpStream, token: &str, handler: &dyn Handler) {
@@ -133,7 +190,14 @@ struct Head {
 }
 
 fn read_request(stream: &mut TcpStream, token: &str) -> Result<Request, Response> {
-    let deadline = Instant::now() + REQUEST_TIMEOUT;
+    read_request_by(stream, token, Instant::now() + REQUEST_TIMEOUT)
+}
+
+fn read_request_by(
+    stream: &mut TcpStream,
+    token: &str,
+    deadline: Instant,
+) -> Result<Request, Response> {
     let (raw, leftover) = read_head(stream, deadline)?;
     let head = parse_head(&raw)?;
     if !bearer_matches(head.authorization.as_deref(), token) {
@@ -313,6 +377,7 @@ fn reason(status: u16) -> &'static str {
         409 => "Conflict",
         500 => "Internal Server Error",
         501 => "Not Implemented",
+        503 => "Service Unavailable",
         _ => "Unknown",
     }
 }
@@ -429,6 +494,109 @@ mod tests {
         assert!(wrong.starts_with("HTTP/1.1 401"), "{wrong}");
         assert!(wrong.contains("\"code\":\"unauthorized\""), "{wrong}");
         assert_eq!(handled(&recorder), 0);
+    }
+
+    #[test]
+    fn a_sleeping_client_does_not_delay_a_request_or_stop() {
+        let (mut server, recorder, _root) = started("sleeping");
+        let stale = TcpStream::connect(("127.0.0.1", server.port())).expect("connect");
+        thread::sleep(Duration::from_millis(100));
+        let started = Instant::now();
+        let response = raw(
+            server.port(),
+            &authorized(
+                "GET /v1/topics HTTP/1.1\r\nHost: 127.0.0.1\r\nAUTH\r\nConnection: close\r\n\r\n",
+            ),
+        );
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(handled(&recorder), 1);
+        let stopped = Instant::now();
+        server.stop();
+        assert!(stopped.elapsed() < Duration::from_secs(3));
+        drop(stale);
+    }
+
+    struct Holding {
+        state: Mutex<(usize, bool)>,
+        cv: std::sync::Condvar,
+    }
+
+    impl Handler for Holding {
+        fn handle(&self, _request: Request) -> Response {
+            let mut state = self.state.lock().unwrap();
+            state.0 += 1;
+            self.cv.notify_all();
+            while !state.1 {
+                state = self.cv.wait(state).unwrap();
+            }
+            Response::ok(json!({"seen": true}))
+        }
+    }
+
+    fn wait_held(holding: &Holding, count: usize) {
+        let mut state = holding.state.lock().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while state.0 < count {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(!remaining.is_zero(), "handlers never reached the hold");
+            let (next, _) = holding.cv.wait_timeout(state, remaining).unwrap();
+            state = next;
+        }
+    }
+
+    #[test]
+    fn a_fifth_connection_is_refused_while_four_workers_are_busy() {
+        let holding = Arc::new(Holding {
+            state: Mutex::new((0, false)),
+            cv: std::sync::Condvar::new(),
+        });
+        let mut server = Server::start(TOKEN.to_string(), holding.clone()).expect("start");
+        let mut clients = Vec::new();
+        for _ in 0..MAX_WORKERS {
+            let port = server.port();
+            clients.push(thread::spawn(move || {
+                raw(
+                    port,
+                    &authorized(
+                        "GET /v1/topics HTTP/1.1\r\nHost: 127.0.0.1\r\nAUTH\r\nConnection: close\r\n\r\n",
+                    ),
+                )
+            }));
+        }
+        wait_held(&holding, MAX_WORKERS);
+        let response = raw(
+            server.port(),
+            &authorized(
+                "GET /v1/topics HTTP/1.1\r\nHost: 127.0.0.1\r\nAUTH\r\nConnection: close\r\n\r\n",
+            ),
+        );
+        assert!(response.starts_with("HTTP/1.1 503"), "{response}");
+        {
+            let mut state = holding.state.lock().unwrap();
+            state.1 = true;
+            holding.cv.notify_all();
+        }
+        for client in clients {
+            let _ = client.join();
+        }
+        server.stop();
+    }
+
+    #[test]
+    fn the_busy_response_is_written() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let client = thread::spawn(move || {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let mut response = String::new();
+            let _ = stream.read_to_string(&mut response);
+            response
+        });
+        let (stream, _) = listener.accept().unwrap();
+        refuse_busy(stream, TOKEN);
+        let text = client.join().unwrap();
+        assert!(text.starts_with("HTTP/1.1 503"), "{text}");
     }
 
     #[test]

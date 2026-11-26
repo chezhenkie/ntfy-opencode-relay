@@ -1,5 +1,6 @@
 //! The runtime file that tells `ntfy-admin` where the endpoint listens.
 
+use crate::process::pid_alive;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
@@ -19,10 +20,12 @@ impl ControlFile {
         root.join(CONTROL_FILE)
     }
 
-    /// Read the file; a missing or malformed file means no usable endpoint.
+    /// Read the file; a missing or malformed file, or one whose pid is dead,
+    /// means no usable endpoint.
     pub fn read(root: &Path) -> Option<Self> {
         let bytes = fs::read(Self::path(root)).ok()?;
-        serde_json::from_slice(&bytes).ok()
+        let file: Self = serde_json::from_slice(&bytes).ok()?;
+        pid_alive(file.pid).then_some(file)
     }
 
     /// Write through a temporary sibling so a failure leaves the old file.
@@ -79,7 +82,7 @@ mod tests {
 
     fn file() -> ControlFile {
         ControlFile {
-            pid: 42,
+            pid: std::process::id(),
             port: 51234,
             token: new_token(),
         }
@@ -109,6 +112,17 @@ mod tests {
     fn malformed_file_reads_as_none() {
         let root = TempDir::new("runtime-malformed");
         fs::write(ControlFile::path(root.path()), b"not json").expect("write");
+        assert_eq!(ControlFile::read(root.path()), None);
+    }
+
+    #[test]
+    fn a_dead_pid_reads_as_none() {
+        let root = TempDir::new("runtime-dead");
+        let value = ControlFile {
+            pid: 999_999_999,
+            ..file()
+        };
+        value.write(root.path()).expect("write");
         assert_eq!(ControlFile::read(root.path()), None);
     }
 

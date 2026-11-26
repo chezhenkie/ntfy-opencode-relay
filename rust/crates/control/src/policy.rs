@@ -153,8 +153,7 @@ fn components_prefix(prefix: &Path, path: &Path) -> bool {
 fn same_component(left: &OsStr, right: &OsStr) -> bool {
     #[cfg(windows)]
     {
-        left.to_string_lossy()
-            .eq_ignore_ascii_case(&right.to_string_lossy())
+        left.to_string_lossy().to_lowercase() == right.to_string_lossy().to_lowercase()
     }
     #[cfg(not(windows))]
     {
@@ -296,5 +295,10 @@ mod tests {
         fs::create_dir_all(&root).expect("root");
         let upper = PathBuf::from(root.to_string_lossy().to_uppercase());
         assert!(same(&root, &upper));
+        assert!(same_component(OsStr::new("Uber"), OsStr::new("uber")));
+        assert!(same_component(
+            OsStr::new("\u{c4}rger"),
+            OsStr::new("\u{e4}rger")
+        ));
     }
 }
