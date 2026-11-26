@@ -25,6 +25,13 @@ pub fn execute(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> i32 {
+    if json && matches!(command, Command::Mode(_)) {
+        let _ = writeln!(
+            err,
+            "mode runs the deploy path in the current console; drop --json"
+        );
+        return EXIT_USAGE;
+    }
     let Some(pid) = endpoint.pid() else {
         return no_relay(err);
     };
@@ -457,15 +464,21 @@ mod tests {
     }
 
     #[test]
-    fn json_mode_stops_at_the_plan() {
+    fn json_mode_is_a_usage_error() {
         let plan = ok(serde_json::json!({
             "mode": "lan",
             "deploy": "/install/ntfy-deploy.exe",
             "command": ["ntfy-deploy", "mode", "lan"]
         }));
         let mut fake = Fake::new(vec![plan]);
-        let (code, _, _) = run(&Command::Mode(Mode::Lan), true, &mut fake);
-        assert_eq!(code, EXIT_OK);
+        let (code, out, err) = run(&Command::Mode(Mode::Lan), true, &mut fake);
+        assert_eq!(code, EXIT_USAGE);
+        assert_eq!(out, "");
+        assert_eq!(
+            err,
+            "mode runs the deploy path in the current console; drop --json\n"
+        );
         assert!(fake.deploy.is_none());
+        assert!(fake.calls.is_empty());
     }
 }

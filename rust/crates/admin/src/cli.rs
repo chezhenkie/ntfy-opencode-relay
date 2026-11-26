@@ -7,7 +7,14 @@ ntfy-admin add <folder> [--json]\n       \
 ntfy-admin remove <folder> [--json]\n       \
 ntfy-admin status [--json]\n       \
 ntfy-admin stop [--json]\n       \
-ntfy-admin mode <tailscale|nord|lan> [--json]";
+ntfy-admin mode <tailscale|nord|lan>";
+
+/// `--help` and `-h` anywhere; the bare word `help` as the only command.
+pub fn wants_help(args: &[String]) -> bool {
+    args.iter()
+        .any(|arg| matches!(arg.as_str(), "--help" | "-h"))
+        || args.first().map(String::as_str) == Some("help")
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -128,6 +135,17 @@ mod tests {
             invocation(&["--json", "add", "/srv/app"]).command,
             Command::Add("/srv/app".into())
         );
+    }
+
+    #[test]
+    fn help_is_recognised_anywhere() {
+        assert!(wants_help(&args(&["--help"])));
+        assert!(wants_help(&args(&["-h"])));
+        assert!(wants_help(&args(&["topics", "--help"])));
+        assert!(wants_help(&args(&["add", "-h", "/srv/app"])));
+        assert!(wants_help(&args(&["help"])));
+        assert!(!wants_help(&args(&["topics"])));
+        assert!(!wants_help(&args(&["add", "help"])));
     }
 
     #[test]

@@ -72,7 +72,7 @@ ntfy-admin stop
 ntfy-admin mode <name>
 ```
 
-It resolves the install root like the relay: `NTFY_RELAY_HOME`, else the directory that holds the binary. It reads the endpoint file and exits `3` with `no running relay` when the file is missing, the pid is dead, or the port refuses. A `401` means a stale token: the request is sent again once, which re-reads the file. Output is one line per item, no color, and `--json` prints the response envelope unchanged; `mode --json` stops at the plan and runs nothing.
+It resolves the install root like the relay: `NTFY_RELAY_HOME`, else the directory that holds the binary. It reads the endpoint file and exits `3` with `no running relay` when the file is missing, the pid is dead, or the port refuses. A `401` means a stale token: the request is sent again once, which re-reads the file. Output is one line per item, no color, and `--json` prints the response envelope unchanged; `mode --json` exits `2`, because the mode switch runs the deploy path in the current console and has no plan-only rendering.
 
 Exit codes: `0` ok, `1` refused or failed, `2` usage, `3` no running relay, `4` platform command failed. `stop` waits up to 15 s for the pid to exit and reports `still running` otherwise. Plain output uses `root:`, `topic:`, `pid:`, `started:`, `mode:`, `deploy:`, and `command:` lines. A rejected request prints `FAIL <code>: <message>` on stderr.
 

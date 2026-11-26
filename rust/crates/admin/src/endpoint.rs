@@ -1,6 +1,6 @@
 //! The live control endpoint, and the seam the command runner is tested on.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command as Process;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -72,13 +72,56 @@ impl Endpoint for LiveEndpoint {
     }
 
     fn run_deploy(&mut self, deploy: &str, mode: Mode) -> Result<i32, String> {
-        let status = Process::new(deploy)
+        let expected = self
+            .root
+            .join(format!("ntfy-deploy{}", std::env::consts::EXE_SUFFIX));
+        if !same_path(Path::new(deploy), &expected) {
+            return Err(format!(
+                "refusing deploy path {deploy}; expected {}",
+                expected.display()
+            ));
+        }
+        let status = Process::new(&expected)
             .arg("mode")
             .arg(mode.as_str())
             .status()
-            .map_err(|error| format!("cannot run {deploy}: {error}"))?;
+            .map_err(|error| format!("cannot run {}: {error}", expected.display()))?;
         status
             .code()
-            .ok_or_else(|| format!("{deploy} ended without an exit code"))
+            .ok_or_else(|| format!("{} ended without an exit code", expected.display()))
+    }
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy().to_lowercase() == right.to_string_lossy().to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_deploy_path_outside_the_root_is_refused_before_any_spawn() {
+        let mut endpoint = LiveEndpoint::new(std::env::temp_dir());
+        let error = endpoint.run_deploy("/bin/sh", Mode::Nord).unwrap_err();
+        assert!(error.contains("refusing deploy path"), "{error}");
+    }
+
+    #[test]
+    fn the_expected_deploy_name_matches_the_root() {
+        let root = std::env::temp_dir();
+        let name = format!("ntfy-deploy{}", std::env::consts::EXE_SUFFIX);
+        assert!(same_path(&root.join(&name), &root.join(&name)));
+        assert!(!same_path(
+            &root.join("ntfy-deploy-old.exe"),
+            &root.join(&name)
+        ));
     }
 }

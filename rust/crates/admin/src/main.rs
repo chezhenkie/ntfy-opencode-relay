@@ -20,7 +20,7 @@ fn dispatch() -> i32 {
         eprintln!("{}", cli::USAGE);
         return EXIT_USAGE;
     }
-    if matches!(args[0].as_str(), "help" | "--help" | "-h") {
+    if cli::wants_help(&args) {
         println!("{}", cli::USAGE);
         return EXIT_OK;
     }
