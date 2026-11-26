@@ -56,7 +56,12 @@ fn main() {
         return;
     }
 
-    let rc_tool = env::var("NTFY_RC").unwrap_or_else(|_| "rc".to_string());
+    let rc_tool = match env::var("NTFY_RC") {
+        Ok(value) => PathBuf::from(value),
+        // The GitHub Windows runner has the SDK but not its bin directory on
+        // PATH, so an MSVC build finds rc.exe by walking the installed kits.
+        Err(_) => find_rc().unwrap_or_else(|| PathBuf::from("rc")),
+    };
     match Command::new(&rc_tool)
         .arg("/nologo")
         .arg("/fo")
@@ -65,14 +70,45 @@ fn main() {
         .status()
     {
         Ok(status) => {
-            assert!(status.success(), "{rc_tool} failed with {status}");
+            assert!(status.success(), "{} failed with {status}", rc_tool.display());
             println!("cargo:rustc-link-arg-bins={}", res.display());
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            panic!("{rc_tool} not found; install the Windows SDK or set NTFY_RC");
+            panic!(
+                "{} not found; install the Windows SDK or set NTFY_RC",
+                rc_tool.display()
+            );
         }
-        Err(err) => panic!("run {rc_tool}: {err}"),
+        Err(err) => panic!("run {}: {err}", rc_tool.display()),
     }
+}
+
+/// Newest Windows SDK `rc.exe` for the target architecture, when installed.
+fn find_rc() -> Option<PathBuf> {
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").ok()?;
+    let folder = match arch.as_str() {
+        "aarch64" => "arm64",
+        "x86" => "x86",
+        "arm" => "arm",
+        _ => "x64",
+    };
+    let kits = env::var_os("ProgramFiles(x86)").or_else(|| env::var_os("ProgramFiles"))?;
+    let bin = PathBuf::from(kits)
+        .join("Windows Kits")
+        .join("10")
+        .join("bin");
+    let mut versions: Vec<PathBuf> = fs::read_dir(&bin)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    versions.sort();
+    versions
+        .into_iter()
+        .rev()
+        .map(|version| version.join(folder).join("rc.exe"))
+        .find(|candidate| candidate.is_file())
 }
 
 fn read_version(path: &Path) -> String {
