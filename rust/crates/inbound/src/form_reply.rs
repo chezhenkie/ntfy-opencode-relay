@@ -12,6 +12,7 @@ use std::fmt;
 
 use ntfy_relay_core::adapter::{AdapterError, FormApi};
 use ntfy_relay_core::forms::{FormRecord, FormStore, Resolve};
+use ntfy_relay_core::text::trim_js;
 
 /// What the asker is told when `/answer` carries no text.
 pub const EMPTY_ANSWER: &str = "The user dismissed the question without an answer.";
@@ -83,10 +84,10 @@ pub async fn apply_form_reply(
         }
         Resolve::Found(form) => form,
     };
-    let message = if text.trim().is_empty() {
+    let message = if trim_js(text).is_empty() {
         EMPTY_ANSWER
     } else {
-        text.trim()
+        trim_js(text)
     };
     finish(forms, api, record, message).await
 }
@@ -243,6 +244,17 @@ mod tests {
         apply_form_reply(&store, &api, "proj", "   ").await.unwrap();
         assert_eq!(api.cancels.lock().unwrap()[0].2, EMPTY_ANSWER);
         assert_eq!(store.count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_next_line_character_is_an_answer_not_whitespace() {
+        let store = store("next-line");
+        register(&store, "frm_1", "Questions", 1);
+        let api = FakeForms::new();
+        apply_form_reply(&store, &api, "proj", "\u{0085}")
+            .await
+            .unwrap();
+        assert_eq!(api.cancels.lock().unwrap()[0].2, "\u{0085}");
     }
 
     #[tokio::test]

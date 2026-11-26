@@ -166,6 +166,17 @@ fn config_rejects_bad_versions_handlers_capabilities_and_collisions() {
         .contains("confirm: must be a boolean"));
     assert!(error(json!({ "version": 1, "prefixes": ["/"], "caseSensitive": false, "actions": { "x": { "handler": "relay.help", "extra": 1 } } }))
         .contains("unknown field"));
+    assert!(error(json!({ "version": 1, "prefixes": ["/", "/"], "caseSensitive": false, "actions": { "x": { "handler": "relay.help" } } }))
+        .contains("duplicate prefix"));
+    assert!(error(json!({ "version": 1, "prefixes": ["/Hi", "/hi"], "caseSensitive": false, "actions": { "x": { "handler": "relay.help" } } }))
+        .contains("duplicate prefix"));
+    assert!(validate_control_table(&json!({
+        "version": 1,
+        "prefixes": ["/Hi", "/hi"],
+        "caseSensitive": true,
+        "actions": { "x": { "handler": "relay.help" } }
+    }))
+    .is_ok());
 
     assert!(validate_control_table(&base).is_ok());
 }

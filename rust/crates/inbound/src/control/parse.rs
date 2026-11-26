@@ -191,19 +191,6 @@ pub fn render_ack(template: &str, values: &HashMap<String, String>) -> String {
     rendered
 }
 
-pub fn short_session_id(id: &str) -> String {
-    id.chars().take(8).collect()
-}
-
-pub fn session_title(id: &str, title: Option<&str>) -> String {
-    let title = title.map(trim_js).unwrap_or("");
-    if title.is_empty() {
-        short_session_id(id)
-    } else {
-        title.to_string()
-    }
-}
-
 fn split_verb(value: &str) -> (String, String) {
     let mut split = value.char_indices();
     let mut end = value.len();

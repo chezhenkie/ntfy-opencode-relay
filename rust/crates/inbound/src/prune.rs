@@ -1,7 +1,8 @@
 //! Inbox retention.
 //!
 //! Prune `<project>\.ntfy-inbox` at startup and every six hours. Only regular
-//! files named `<epoch>-<name>` older than seven days are removed. Symlinks,
+//! files named `<epoch>-<name>` older than seven days are removed; the epoch in
+//! the name is the age, with the modification time as a fallback. Symlinks,
 //! directories, renamed files, and unmatched names stay untouched.
 //!
 //! Mirrors `ntfy-inbox-prune.mjs`.
@@ -43,6 +44,27 @@ pub fn matches_inbox_name(name: &str) -> bool {
     bytes.len() >= 14 && bytes[10..13].iter().all(u8::is_ascii_digit) && bytes[13] == b'-'
 }
 
+/// The epoch in an inbox name, in milliseconds; ten digits are seconds. The
+/// name is the age, so a copy keeps its original age and a touched file does
+/// not grow younger.
+fn inbox_stamp_ms(name: &str) -> Option<i64> {
+    let (digits, _) = name.split_once('-')?;
+    let value = digits.parse::<i64>().ok()?;
+    Some(if digits.len() == 10 {
+        value.saturating_mul(1000)
+    } else {
+        value
+    })
+}
+
+fn modified_ms(metadata: &fs::Metadata) -> Option<i64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_millis() as i64)
+}
+
 pub fn prune_inbox(dir: &Path, now_ms: i64, retention_ms: i64) -> io::Result<PruneResult> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -80,17 +102,14 @@ pub fn prune_inbox(dir: &Path, now_ms: i64, retention_ms: i64) -> io::Result<Pru
         if !metadata.is_file() {
             continue;
         }
-        let modified_ms = match metadata.modified() {
-            Ok(modified) => modified
-                .duration_since(UNIX_EPOCH)
-                .map(|elapsed| elapsed.as_millis() as i64)
-                .unwrap_or(0),
-            Err(_) => {
+        let stamp_ms = match inbox_stamp_ms(name).or_else(|| modified_ms(&metadata)) {
+            Some(stamp_ms) => stamp_ms,
+            None => {
                 result.failed += 1;
                 continue;
             }
         };
-        if modified_ms >= cutoff {
+        if stamp_ms >= cutoff {
             continue;
         }
         match fs::remove_file(&path) {
@@ -186,19 +205,16 @@ pub fn make_room(dir: &Path, need: u64, budget: u64) -> io::Result<u64> {
         if !metadata.is_file() {
             continue;
         }
-        let modified = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|elapsed| elapsed.as_millis() as i64)
+        let age_ms = inbox_stamp_ms(name)
+            .or_else(|| modified_ms(&metadata))
             .unwrap_or(0);
         used += metadata.len();
-        files.push((modified, metadata.len(), path));
+        files.push((age_ms, metadata.len(), path));
     }
     if used.saturating_add(need) <= budget {
         return Ok(used);
     }
-    files.sort_by_key(|(modified, _, _)| *modified);
+    files.sort_by_key(|(age_ms, _, _)| *age_ms);
     for (_, len, path) in files {
         if used.saturating_add(need) <= budget {
             break;
@@ -253,7 +269,7 @@ mod tests {
     fn removes_only_aged_matching_regular_files() {
         let dir = temp_dir("aged");
         let now = 1_700_000_000_000;
-        let old = dir.join("1700000000-old.pdf");
+        let old = dir.join("1699308800-old.pdf");
         let fresh = dir.join("1700000000123-fresh.pdf");
         let odd = dir.join("notes.txt");
         let sub = dir.join("1700000001-dir");
@@ -275,6 +291,22 @@ mod tests {
         assert!(fresh.is_file());
         assert!(odd.is_file());
         assert!(sub.is_dir());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_name_decides_the_age_not_the_mtime() {
+        let dir = temp_dir("name-age");
+        let now = 1_700_000_000_000;
+        let copied = dir.join("1699308800-copied.pdf");
+        let touched = dir.join("1700000000123-touched.pdf");
+        fs::write(&copied, b"old").unwrap();
+        write_aged(&touched, b"new", 30 * DAY, now);
+
+        let result = prune_inbox(&dir, now, INBOX_RETENTION_MS).unwrap();
+        assert_eq!(result.removed, 1);
+        assert!(!copied.exists(), "a fresh mtime does not keep an old name");
+        assert!(touched.is_file(), "an old mtime does not age a fresh name");
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -326,7 +358,7 @@ mod tests {
         fs::create_dir_all(&bad).unwrap();
         fs::write(bad.join(".ntfy-inbox"), b"not a directory").unwrap();
         write_aged(
-            &good.join(".ntfy-inbox").join("1700000000-old.pdf"),
+            &good.join(".ntfy-inbox").join("1699308800-old.pdf"),
             b"abcd",
             8 * DAY,
             now,

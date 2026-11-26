@@ -295,6 +295,51 @@ fn cooldown_rejects_a_repeated_run_with_one_error() {
     block_on(control.execute(third, &entry())).expect("after cooldown");
 }
 
+struct FailingAdapter {
+    capabilities: Vec<Capability>,
+}
+
+#[async_trait]
+impl SessionApi for FailingAdapter {
+    fn capabilities(&self) -> &[Capability] {
+        &self.capabilities
+    }
+
+    async fn create_session(&self, _request: NewSession<'_>) -> Result<Session, AdapterError> {
+        Err(AdapterError::new("adapter offline"))
+    }
+
+    async fn list_sessions(
+        &self,
+        _entry: &ProjectEntry,
+        _limit: usize,
+    ) -> Result<Vec<Session>, AdapterError> {
+        Ok(Vec::new())
+    }
+
+    async fn prompt(&self, _request: PromptRequest<'_>) -> Result<(), AdapterError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_failed_run_does_not_start_the_cooldown() {
+    let adapter = FailingAdapter {
+        capabilities: all_capabilities(),
+    };
+    let clock = FakeClock::new(0);
+    let mut control = Control::new(builtin_control_table(), &adapter, &clock);
+    // `new` carries a 5000 ms cooldown in the built-in table.
+    for attempt in ["/new first", "/new second"] {
+        let run = expect_run(control.resolve(attempt, "ntfy-proj"));
+        let error = block_on(control.execute(run, &entry())).unwrap_err();
+        assert!(
+            error.to_string().contains("adapter offline"),
+            "attempt {attempt} reached the adapter: {error}"
+        );
+    }
+}
+
 #[test]
 fn session_create_acks_id_and_project_and_targets_when_asked() {
     let adapter = FakeAdapter::new(all_capabilities());

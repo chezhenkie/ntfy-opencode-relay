@@ -101,6 +101,12 @@ pub fn load_control(path: &Path) -> Result<LoadedControl, ControlLoadError> {
             )));
         }
     };
+    // The stat above can race a growing file; the bytes actually read decide.
+    if bytes.len() as u64 > MAX_CONTROL_FILE_BYTES {
+        return Err(ControlLoadError::new(format!(
+            "control: {display} exceeds {MAX_CONTROL_FILE_BYTES} bytes"
+        )));
+    }
     let text = String::from_utf8_lossy(&bytes);
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
 

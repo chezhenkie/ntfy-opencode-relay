@@ -228,6 +228,11 @@ pub fn validate_control_table(raw: &Value) -> Result<ControlTable, ControlConfig
         .filter(|&value| value == CONTROL_VERSION as i64)
         .ok_or_else(|| ControlConfigError::new(format!("version must be {CONTROL_VERSION}")))?;
 
+    let case_sensitive = document
+        .get("caseSensitive")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| ControlConfigError::new("caseSensitive must be a boolean"))?;
+
     let raw_prefixes = document
         .get("prefixes")
         .and_then(Value::as_array)
@@ -255,7 +260,7 @@ pub fn validate_control_table(raw: &Value) -> Result<ControlTable, ControlConfig
                 "prefixes: every prefix must be at most 32 characters",
             ));
         }
-        let key = value.to_lowercase();
+        let key = fold(value, case_sensitive);
         if prefix_keys.contains(&key) {
             return Err(ControlConfigError::new(format!(
                 "prefixes: duplicate prefix {value}"
@@ -264,11 +269,6 @@ pub fn validate_control_table(raw: &Value) -> Result<ControlTable, ControlConfig
         prefix_keys.push(key);
         prefixes.push(value.to_string());
     }
-
-    let case_sensitive = document
-        .get("caseSensitive")
-        .and_then(Value::as_bool)
-        .ok_or_else(|| ControlConfigError::new("caseSensitive must be a boolean"))?;
 
     let raw_actions = document
         .get("actions")

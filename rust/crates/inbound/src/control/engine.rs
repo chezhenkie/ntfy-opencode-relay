@@ -11,13 +11,12 @@ use ntfy_relay_core::adapter::{
 use ntfy_relay_core::clock::Clock;
 use ntfy_relay_core::topic::project_folder;
 
-use super::parse::{
-    parse_control, render_ack, session_title, short_session_id, Parsed, NATIVE_COMMANDS,
-};
+use super::parse::{parse_control, render_ack, Parsed, NATIVE_COMMANDS};
 use super::table::{
     Action, ControlError, ControlTable, Handler, CONFIRM_EXPIRED_GRACE_MS, CONFIRM_WINDOW_MS,
 };
 use crate::routing::PENDING_MS;
+use crate::session::{session_title, short_session_id};
 
 /// One numbered `/to` menu. Numbers are only valid against the list that was
 /// just pushed, and only inside the pending window.
@@ -316,10 +315,10 @@ impl<'a> Control<'a> {
                 }
             }
         }
-        self.cooldowns.insert(key, now);
-
         let action = run.action.clone();
         let output = self.dispatch(&action, &run.arg, entry).await?;
+        self.cooldowns.insert(key, now);
+
         let mut values = HashMap::new();
         values.insert("project".to_string(), project_name(entry));
         values.insert("arg".to_string(), run.arg.clone());
