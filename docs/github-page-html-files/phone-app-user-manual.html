@@ -354,7 +354,9 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <p>Notes:</p>
 <ul>
 <li>Normal use needs no command. A message goes to the session you last used on the host. Typing in a chat is what counts; merely opening it changes nothing.</li>
-<li>Free text never creates a session. Only <code>/new</code> does; the optional argument is the title, and the next message becomes that session&#39;s first prompt. The session exists on the server at once and gets no tab on the desktop by itself: open it there with <code>/sessions</code> (<code>Ctrl+X</code> then <code>L</code>) or <code>Ctrl+O</code>.</li>
+<li>Free text never creates a session. Only <code>/new</code> does; the optional argument is the title.</li>
+<li>There is no session switch on the phone. After <code>/new</code>, the relay targets the new session, and the next message you send in this topic is its first prompt. Do not open another topic and do not select anything in the app; the target is already set. <code>/status</code> shows it.</li>
+<li>The session exists on the server at once and gets no tab on the desktop by itself: open it there with <code>/sessions</code> (<code>Ctrl+X</code> then <code>L</code>) or <code>Ctrl+O</code>.</li>
 <li>The topic list is chronological, oldest at the top. New messages arrive at the bottom, so an ack or a reply can sit below the command that caused it; read down for the newest.</li>
 <li><code>/to</code> and <code>/new</code> set one target for one message, or ten minutes. No command takes a session id.</li>
 <li>A confirmation window is 60 seconds. After that the held action is dropped; send the command again.</li>
@@ -365,7 +367,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <p>Example, two messages from the phone:</p>
 <pre><code>/new link fix
 run the link check and fix every broken link</code></pre>
-<p>The first creates a session titled <code>link fix</code> and targets it. The second is its first prompt; the replies come back on the phone.</p>
+<p>The first creates a session titled <code>link fix</code> and targets it. The second is its first prompt; the replies come back on the phone. The switch is that second message: there is no list to open and no session to pick in the ntfy app, and the ack for <code>/new</code> names the session so you can recognise it on the desktop.</p>
 <h2><span class="num">4</span>4. Tags</h2>
 <div class="rule"></div>
 <p>Tags are optional message labels. Add them in the publish dialog, comma-separated. Most are only markers; one changes relay behavior.</p>

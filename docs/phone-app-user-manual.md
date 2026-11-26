@@ -50,7 +50,9 @@ Type commands in the message bar the same way as a normal message. A message wit
 Notes:
 
 - Normal use needs no command. A message goes to the session you last used on the host. Typing in a chat is what counts; merely opening it changes nothing.
-- Free text never creates a session. Only `/new` does; the optional argument is the title, and the next message becomes that session's first prompt. The session exists on the server at once and gets no tab on the desktop by itself: open it there with `/sessions` (`Ctrl+X` then `L`) or `Ctrl+O`.
+- Free text never creates a session. Only `/new` does; the optional argument is the title.
+- There is no session switch on the phone. After `/new`, the relay targets the new session, and the next message you send in this topic is its first prompt. Do not open another topic and do not select anything in the app; the target is already set. `/status` shows it.
+- The session exists on the server at once and gets no tab on the desktop by itself: open it there with `/sessions` (`Ctrl+X` then `L`) or `Ctrl+O`.
 - The topic list is chronological, oldest at the top. New messages arrive at the bottom, so an ack or a reply can sit below the command that caused it; read down for the newest.
 - `/to` and `/new` set one target for one message, or ten minutes. No command takes a session id.
 - A confirmation window is 60 seconds. After that the held action is dropped; send the command again.
@@ -65,7 +67,7 @@ Example, two messages from the phone:
 run the link check and fix every broken link
 ```
 
-The first creates a session titled `link fix` and targets it. The second is its first prompt; the replies come back on the phone.
+The first creates a session titled `link fix` and targets it. The second is its first prompt; the replies come back on the phone. The switch is that second message: there is no list to open and no session to pick in the ntfy app, and the ack for `/new` names the session so you can recognise it on the desktop.
 
 ## 4. Tags
 
