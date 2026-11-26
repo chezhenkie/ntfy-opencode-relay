@@ -681,7 +681,7 @@ zip 7z tar gz</code></pre>
 </ul>
 <h2><span class="num">10</span>10. Testing</h2>
 <div class="rule"></div>
-<p>Unit and integration tests run with <code>cargo test</code>. The workspace holds 624 tests at 0.6.13: 94 in <code>deploy</code>, 89 in <code>outbound</code>, 86 in <code>inbound</code>, 99 in <code>app</code>, 75 in <code>core</code>, 54 in <code>ntfy</code>, 50 in <code>opencode</code>, 30 in <code>control</code>, 28 in <code>auth</code>, and 19 in <code>admin</code>. No test uses the network; test directories stay inside the workspace.</p>
+<p>Unit and integration tests run with <code>cargo test</code>. The workspace holds 741 tests at 0.6.13: 107 in <code>deploy</code>, 104 in <code>outbound</code>, 97 in <code>inbound</code>, 129 in <code>app</code>, 101 in <code>core</code>, 61 in <code>ntfy</code>, 56 in <code>opencode</code>, 34 in <code>control</code>, 30 in <code>auth</code>, and 22 in <code>admin</code>. One test makes a connect attempt to an unroutable address to prove the 5 s connect deadline; test directories are unique paths under the system temp and are removed on drop.</p>
 <ul>
 <li>Topic derivation: Windows and POSIX paths, trailing separators, invalid characters, length limit, empty basename, duplicate folder names.</li>
 <li>Filter: <code>oc-out</code>, stale, oversized, empty, attachment-only, duplicate ID.</li>

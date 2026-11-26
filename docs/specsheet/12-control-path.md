@@ -53,7 +53,7 @@ A write failure is `internal` with the old config intact. The relay logs one lin
 
 `GET /v1/status` returns `{"pid":n,"started":"<iso>","roots":[...],"topics":[...]}`. It answers only while the daemon runs; the file-based `status` subcommand stays for a stopped relay.
 
-`POST /v1/stop` answers `{"ok":true}` and then shuts the daemon down through the same path as SIGTERM: finish the current message, drop the queue with one log line, join the outbound and SSE tasks with a 5 s grace and a 6 s bound per task, remove the lock and the endpoint file. The CLI waits up to 15 s for the pid to exit and reports `still running` at that point. This is the graceful stop on Windows, where the windowless process receives no console event.
+`POST /v1/stop` answers `{"ok":true,"data":null}` and then shuts the daemon down through the same path as SIGTERM: finish the current message, drop the queue with one log line, join the outbound and SSE tasks with a 5 s grace and a 6 s bound per task, remove the lock and the endpoint file. The CLI waits up to 15 s for the pid to exit and reports `still running` at that point. This is the graceful stop on Windows, where the windowless process receives no console event.
 
 ## Mode request
 

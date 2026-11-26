@@ -134,4 +134,4 @@ Alpine and any other host without systemd take the same install with the unit st
 | `%LOCALAPPDATA%\ntfy-relay\ntfy-relay.log` | relay heartbeat, subscription, delivery, errors |
 | `podman logs --tail 50 ntfy` | server log |
 
-Tail the relay log with `Get-Content "$env:NTFY_RELAY_HOME\ntfy-relay.log" -Tail 20 -Wait`. The relay log rotates at 5 MB; the ensure log rotates at 1 MiB with one `.1` copy.
+Tail the relay log with `Get-Content "$env:NTFY_RELAY_HOME\ntfy-relay.log" -Tail 20 -Wait`. The relay log rotates at 5 MB; the ensure, stdout and stderr logs rotate at 1 MiB with one `.1` copy. The stdout and stderr logs are 0600 on Unix.

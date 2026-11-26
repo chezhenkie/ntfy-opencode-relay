@@ -385,7 +385,7 @@ podman logs --tail 50 ntfy</code></pre>
 <tr><td><code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay.log</code></td><td>relay heartbeat, subscription, delivery, errors</td></tr>
 <tr><td><code>podman logs --tail 50 ntfy</code></td><td>server log</td></tr>
 </tbody></table>
-<p>Tail the relay log with <code>Get-Content &quot;$env:NTFY_RELAY_HOME\ntfy-relay.log&quot; -Tail 20 -Wait</code>. The relay log rotates at 5 MB; the ensure log rotates at 1 MiB with one <code>.1</code> copy.</p>
+<p>Tail the relay log with <code>Get-Content &quot;$env:NTFY_RELAY_HOME\ntfy-relay.log&quot; -Tail 20 -Wait</code>. The relay log rotates at 5 MB; the ensure, stdout and stderr logs rotate at 1 MiB with one <code>.1</code> copy. The stdout and stderr logs are 0600 on Unix.</p>
   </main>
 </div>
 <script>const ThemeEngine=(function(){
