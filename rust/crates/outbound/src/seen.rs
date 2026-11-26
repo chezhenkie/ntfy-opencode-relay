@@ -27,6 +27,9 @@ pub const RETENTION_MS: i64 = 15 * 60 * 1000;
 pub const MAX_IDS: usize = 8192;
 const COMPACT_BYTES: u64 = 1024 * 1024;
 const COMPACT_LINES: u64 = 16_384;
+/// A failed append or compaction closes the handle; the next commit after this
+/// delay reopens it instead of retrying on every event.
+const RETRY_MS: i64 = 60 * 1000;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Record {
@@ -39,6 +42,9 @@ pub struct SeenEvents {
     ids: HashSet<String>,
     order: VecDeque<(String, i64)>,
     journal: Option<Journal>,
+    journal_path: Option<PathBuf>,
+    /// Epoch milliseconds before which a closed journal is not reopened.
+    journal_retry_at: i64,
 }
 
 struct Journal {
@@ -56,6 +62,8 @@ impl SeenEvents {
             ids: HashSet::new(),
             order: VecDeque::new(),
             journal: None,
+            journal_path: None,
+            journal_retry_at: 0,
         };
         let Some(path) = path else {
             return seen;
@@ -83,11 +91,15 @@ impl SeenEvents {
                 }
                 seen.journal = Some(journal);
             }
-            Err(error) => log.warn(&format!(
-                "seen journal {}: {error}; duplicates across a restart are possible",
-                path.display()
-            )),
+            Err(error) => {
+                seen.journal_retry_at = now + RETRY_MS;
+                log.warn(&format!(
+                    "seen journal {}: {error}; duplicates across a restart are possible",
+                    path.display()
+                ));
+            }
         }
+        seen.journal_path = Some(path);
         seen
     }
 
@@ -110,27 +122,61 @@ impl SeenEvents {
     }
 
     /// Appends a handled id and compacts when the journal outgrows its bounds.
-    /// Compaction rewrites the whole file, so it runs on a blocking thread.
+    /// The append and the rewrite run on blocking threads. A closed journal is
+    /// reopened on the first commit past the retry deadline.
     pub async fn commit(&mut self, id: &str, at: i64, log: &dyn Log) {
-        let mut compact = false;
-        if let Some(journal) = self.journal.as_mut() {
-            if let Err(error) = journal.append(id, at) {
-                log.warn(&format!(
-                    "seen journal {}: {error}; duplicates across a restart are possible",
-                    journal.path.display()
-                ));
-                self.journal = None;
+        let Some(path) = self.journal_path.clone() else {
+            return;
+        };
+        if self.journal.is_none() {
+            if at < self.journal_retry_at {
                 return;
             }
-            compact = journal.bytes >= COMPACT_BYTES || journal.lines >= COMPACT_LINES;
-        }
-        if !compact {
-            return;
+            match Journal::open(&path) {
+                Ok(journal) => self.journal = Some(journal),
+                Err(error) => {
+                    self.journal_retry_at = at + RETRY_MS;
+                    log.warn(&format!(
+                        "seen journal {}: {error}; retrying in {} s",
+                        path.display(),
+                        RETRY_MS / 1000
+                    ));
+                    return;
+                }
+            }
         }
         let Some(mut journal) = self.journal.take() else {
             return;
         };
-        let path = journal.path.display().to_string();
+        let id_owned = id.to_string();
+        let appended = tokio::task::spawn_blocking(move || {
+            let result = journal.append(&id_owned, at);
+            (result, journal)
+        })
+        .await;
+        let mut journal = match appended {
+            Ok((Ok(()), journal)) => journal,
+            Ok((Err(error), journal)) => {
+                log.warn(&format!(
+                    "seen journal {}: {error}; duplicates across a restart are possible",
+                    journal.path.display()
+                ));
+                self.journal_retry_at = at + RETRY_MS;
+                return;
+            }
+            Err(error) => {
+                let display = path.display();
+                log.warn(&format!(
+                    "seen journal {display}: append task failed: {error}; journal is closed"
+                ));
+                self.journal_retry_at = at + RETRY_MS;
+                return;
+            }
+        };
+        if journal.bytes < COMPACT_BYTES && journal.lines < COMPACT_LINES {
+            self.journal = Some(journal);
+            return;
+        }
         let records = self.order.clone();
         let result =
             tokio::task::spawn_blocking(move || (journal.compact(&records), journal)).await;
@@ -138,14 +184,19 @@ impl SeenEvents {
             Ok((Ok(()), journal)) => self.journal = Some(journal),
             Ok((Err(error), journal)) => {
                 log.warn(&format!(
-                    "seen journal {}: {error}; journal is left to grow",
-                    journal.path.display()
+                    "seen journal {}: {error}; journal is closed for {} s",
+                    journal.path.display(),
+                    RETRY_MS / 1000
                 ));
-                self.journal = Some(journal);
+                self.journal_retry_at = at + RETRY_MS;
             }
-            Err(error) => log.warn(&format!(
-                "seen journal {path}: compaction task failed: {error}; journal is closed"
-            )),
+            Err(error) => {
+                let display = path.display();
+                log.warn(&format!(
+                    "seen journal {display}: compaction task failed: {error}; journal is closed"
+                ));
+                self.journal_retry_at = at + RETRY_MS;
+            }
         }
     }
 
@@ -437,6 +488,58 @@ mod tests {
         drop(seen);
         let mut reopened = SeenEvents::open(Some(path), now + 1_000, &crate::log::NoopLog);
         assert!(reopened.accept("e1", now + 1_000));
+    }
+
+    #[derive(Default)]
+    struct Recorder {
+        warnings: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl Log for Recorder {
+        fn debug(&self, _message: &str) {}
+        fn info(&self, _message: &str) {}
+        fn warn(&self, message: &str) {
+            self.warnings.lock().unwrap().push(message.to_string());
+        }
+        fn error(&self, _message: &str) {}
+    }
+
+    impl Recorder {
+        fn warnings(&self) -> Vec<String> {
+            self.warnings.lock().unwrap().clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_compaction_backs_off_for_a_minute() {
+        let root = temp_root("compact-retry");
+        let path = root.join(SEEN_FILE);
+        let now = 10_000_000;
+        let log = Recorder::default();
+        let mut seen = SeenEvents::open(Some(path.clone()), now, &log);
+        assert!(log.warnings().is_empty(), "{:?}", log.warnings());
+
+        // Put the journal over the bound and block its temp sibling, so the
+        // rewrite fails while the reopen still succeeds.
+        seen.journal.as_mut().unwrap().bytes = COMPACT_BYTES;
+        let blocker = temp_path(&path);
+        fs::create_dir(&blocker).unwrap();
+
+        seen.commit("e1", now, &log).await;
+        assert_eq!(log.warnings().len(), 1, "{:?}", log.warnings());
+        assert!(seen.journal.is_none());
+
+        // Inside the window the journal stays closed and nothing is retried.
+        seen.commit("e2", now + 1, &log).await;
+        assert_eq!(log.warnings().len(), 1, "{:?}", log.warnings());
+        assert!(seen.journal.is_none());
+
+        fs::remove_dir(&blocker).unwrap();
+        seen.commit("e3", now + RETRY_MS, &log).await;
+        assert_eq!(log.warnings().len(), 1, "{:?}", log.warnings());
+        assert!(seen.journal.is_some());
+        let body = fs::read_to_string(&path).unwrap();
+        assert!(body.contains("\"e3\""), "{body}");
     }
 
     #[tokio::test]

@@ -11,6 +11,12 @@ use ntfy_relay_core::topic::is_windows_path;
 /// Comparison form: forward slashes, no trailing slash, lowercased for
 /// Windows-style paths.
 pub fn normalize_for_compare(path: &Path) -> String {
+    normalized_path(path).to_string_lossy().into_owned()
+}
+
+/// The path in comparison form. Leading separators are kept, so a root of `/`
+/// stays one component.
+fn normalized_path(path: &Path) -> PathBuf {
     let raw = path.to_string_lossy();
     let mut value = raw.replace('\\', "/");
     while value.len() > 1 && value.ends_with('/') {
@@ -19,18 +25,17 @@ pub fn normalize_for_compare(path: &Path) -> String {
     if is_windows_path(&raw) {
         value.make_ascii_lowercase();
     }
-    value
+    PathBuf::from(value)
 }
 
 pub fn canonical(path: &Path) -> Option<PathBuf> {
     std::fs::canonicalize(path).ok()
 }
 
-/// True when `candidate` is the root or sits under it.
+/// True when `candidate` is the root or sits under it. Comparison is by path
+/// component, so `/` is inside everything and `/srv/x` is not inside `/srv`.
 pub fn is_inside(root: &Path, candidate: &Path) -> bool {
-    let root = normalize_for_compare(root);
-    let candidate = normalize_for_compare(candidate);
-    candidate == root || candidate.starts_with(&format!("{root}/"))
+    normalized_path(candidate).starts_with(normalized_path(root))
 }
 
 pub fn within_roots(path: &Path, roots: &[PathBuf]) -> bool {
@@ -82,6 +87,13 @@ mod tests {
             Path::new("/home/me/proj"),
             Path::new("/home/me")
         ));
+    }
+
+    #[test]
+    fn the_filesystem_root_contains_every_absolute_path() {
+        assert!(is_inside(Path::new("/"), Path::new("/srv/x")));
+        assert!(is_inside(Path::new("/"), Path::new("/")));
+        assert!(!is_inside(Path::new("/srv"), Path::new("/srv-other/x")));
     }
 
     #[test]
