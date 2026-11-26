@@ -258,17 +258,10 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ntfy_relay_core::test_support::Scratch;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-logger-tests")
-            .join(name);
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(name: &str) -> Scratch {
+        Scratch::new(&format!("app-logger-{name}"))
     }
 
     #[test]

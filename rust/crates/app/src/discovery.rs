@@ -215,6 +215,7 @@ fn is_path_inside(canonical: &str, root: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ntfy_relay_core::test_support::Scratch;
     use ntfy_relay_opencode::api::ProjectTime;
 
     fn project(id: &str, canonical: &str, active: i64) -> ProjectInfo {
@@ -225,13 +226,8 @@ mod tests {
         }
     }
 
-    fn root(name: &str) -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-discovery-tests")
-            .join(name)
+    fn root(name: &str) -> Scratch {
+        Scratch::new(&format!("app-discovery-{name}"))
     }
 
     #[test]
@@ -243,7 +239,7 @@ mod tests {
                 project("p1", &child.to_string_lossy(), 10),
                 project("p2", &child.to_string_lossy(), 30),
             ],
-            std::slice::from_ref(&root),
+            std::slice::from_ref(&root.path().to_path_buf()),
         );
         assert_eq!(map.len(), 1);
         let entry = map.get("proj").unwrap();
@@ -261,7 +257,7 @@ mod tests {
                 project("p1", &outside.to_string_lossy(), 1),
                 project("p2", &bad.to_string_lossy(), 1),
             ],
-            std::slice::from_ref(&root),
+            std::slice::from_ref(&root.path().to_path_buf()),
         );
         assert_eq!(map.len(), 0);
         assert!(map
@@ -280,7 +276,7 @@ mod tests {
                 project("p1", &older.to_string_lossy(), 10),
                 project("p2", &newer.to_string_lossy(), 20),
             ],
-            &[root],
+            &[root.path().to_path_buf()],
         );
         assert_eq!(map.len(), 1);
         assert_eq!(map.get("same").unwrap().canonical, newer);
@@ -304,7 +300,7 @@ mod tests {
                 )
             })
             .collect();
-        let map = build_project_map(&projects, &[root]);
+        let map = build_project_map(&projects, &[root.path().to_path_buf()]);
         assert_eq!(map.len(), MAX_TOPICS);
         assert!(map.get("proj-000").is_none());
         assert!(map.get("proj-150").is_some());
@@ -326,7 +322,10 @@ mod tests {
     fn a_missing_project_id_is_reported() {
         let root = root("id");
         let child = root.join("proj");
-        let map = build_project_map(&[project("", &child.to_string_lossy(), 1)], &[root]);
+        let map = build_project_map(
+            &[project("", &child.to_string_lossy(), 1)],
+            &[root.path().to_path_buf()],
+        );
         assert_eq!(map.len(), 0);
         assert!(map
             .warnings()

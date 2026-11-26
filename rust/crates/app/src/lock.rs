@@ -317,17 +317,10 @@ fn same_image(_pid: u32, _expected_exe: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ntfy_relay_core::test_support::Scratch;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-lock-tests")
-            .join(name);
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(name: &str) -> Scratch {
+        Scratch::new(&format!("app-lock-{name}"))
     }
 
     #[test]

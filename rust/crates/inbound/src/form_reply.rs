@@ -128,6 +128,7 @@ async fn finish(
 mod tests {
     use super::*;
     use ntfy_relay_core::forms::FormRecord;
+    use ntfy_relay_core::test_support::Scratch;
     use std::sync::Mutex;
 
     struct FakeForms {
@@ -171,16 +172,10 @@ mod tests {
         }
     }
 
-    fn store(name: &str) -> FormStore {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("inbound-form-reply-tests")
-            .join(name);
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        FormStore::open(root.join("forms.json"), 0).0
+    fn store(name: &str) -> (Scratch, FormStore) {
+        let root = Scratch::new(&format!("inbound-form-{name}"));
+        let store = FormStore::open(root.join("forms.json"), 0).0;
+        (root, store)
     }
 
     fn register(store: &FormStore, form: &str, title: &str, pushed: i64) {
@@ -203,7 +198,7 @@ mod tests {
 
     #[tokio::test]
     async fn free_text_cancels_the_newest_form() {
-        let store = store("free-text");
+        let (_dir, store) = store("free-text");
         register(&store, "frm_1", "Questions", 1);
         let api = FakeForms::new();
         let outcome = apply_form_reply(&store, &api, "proj", " keep both, any order ")
@@ -224,7 +219,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_newest_form_wins() {
-        let store = store("newest");
+        let (_dir, store) = store("newest");
         register(&store, "frm_1", "Old", 10);
         register(&store, "frm_2", "New", 20);
         let api = FakeForms::new();
@@ -238,7 +233,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_answer_still_dismisses_the_form() {
-        let store = store("empty");
+        let (_dir, store) = store("empty");
         register(&store, "frm_1", "Questions", 1);
         let api = FakeForms::new();
         apply_form_reply(&store, &api, "proj", "   ").await.unwrap();
@@ -248,7 +243,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_next_line_character_is_an_answer_not_whitespace() {
-        let store = store("next-line");
+        let (_dir, store) = store("next-line");
         register(&store, "frm_1", "Questions", 1);
         let api = FakeForms::new();
         apply_form_reply(&store, &api, "proj", "\u{0085}")
@@ -259,7 +254,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_newest_form_on_the_reply_topic_wins() {
-        let store = store("topic");
+        let (_dir, store) = store("topic");
         register_topic(&store, "frm_1", "Proj", "proj", 10);
         register_topic(&store, "frm_2", "Other", "other", 20);
         let api = FakeForms::new();
@@ -274,7 +269,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_form_on_another_topic_is_not_answered() {
-        let store = store("other-topic");
+        let (_dir, store) = store("other-topic");
         register_topic(&store, "frm_1", "Other", "other", 10);
         let api = FakeForms::new();
         let error = apply_form_reply(&store, &api, "proj", "yes")
@@ -287,7 +282,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_form_answers_truthfully() {
-        let store = store("none");
+        let (_dir, store) = store("none");
         let api = FakeForms::new();
         let error = apply_form_reply(&store, &api, "proj", "yes")
             .await
@@ -299,7 +294,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_tombstone_answers_already_answered() {
-        let store = store("tombstone");
+        let (_dir, store) = store("tombstone");
         register(&store, "frm_1", "Questions", 1);
         store.remove("frm_1");
         let api = FakeForms::new();
@@ -316,7 +311,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_settled_form_removes_the_record() {
-        let store = store("settled");
+        let (_dir, store) = store("settled");
         register(&store, "frm_1", "Questions", 1);
         let api = FakeForms::failing(409, "FormAlreadySettledError");
         let error = apply_form_reply(&store, &api, "proj", "yes")
@@ -333,7 +328,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_server_fault_keeps_the_record() {
-        let store = store("fault");
+        let (_dir, store) = store("fault");
         register(&store, "frm_1", "Questions", 1);
         let api = FakeForms::failing(500, "boom");
         let error = apply_form_reply(&store, &api, "proj", "yes")

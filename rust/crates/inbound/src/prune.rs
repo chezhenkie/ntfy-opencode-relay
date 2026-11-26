@@ -229,21 +229,14 @@ pub fn make_room(dir: &Path, need: u64, budget: u64) -> io::Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ntfy_relay_core::test_support::Scratch;
     use std::fs::File;
     use std::time::{Duration, SystemTime};
 
     const DAY: i64 = 24 * 60 * 60 * 1000;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("inbound-prune-tests")
-            .join(name);
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(name: &str) -> Scratch {
+        Scratch::new(&format!("inbound-prune-{name}"))
     }
 
     fn write_aged(file: &Path, body: &[u8], age_ms: i64, now_ms: i64) {

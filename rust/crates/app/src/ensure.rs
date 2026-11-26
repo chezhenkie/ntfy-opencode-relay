@@ -181,18 +181,10 @@ fn wait_for_start(lock: &Path, child: &mut Child, timeout: Duration) -> Result<u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use ntfy_relay_core::test_support::Scratch;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-ensure-tests")
-            .join(name);
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(name: &str) -> Scratch {
+        Scratch::new(&format!("app-ensure-{name}"))
     }
 
     #[test]

@@ -546,12 +546,7 @@ mod tests {
 
     #[test]
     fn registration_reload_picks_up_a_rewritten_url_and_password() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-api-client-tests");
-        fs::create_dir_all(&dir).unwrap();
+        let dir = ntfy_relay_core::test_support::Scratch::new("app-api-reload");
         let path = dir.join("service.json");
         let pid = std::process::id();
         let write = |url: &str, password: &str| {
@@ -576,12 +571,7 @@ mod tests {
 
     #[test]
     fn a_missing_or_dead_registration_starts_degraded_and_recovers() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-api-client-tests");
-        fs::create_dir_all(&dir).unwrap();
+        let dir = ntfy_relay_core::test_support::Scratch::new("app-api-degraded");
         let path = dir.join("degraded.json");
         let _ = fs::remove_file(&path);
         let factory = factory(path.clone());

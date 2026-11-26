@@ -308,25 +308,12 @@ impl Drop for Endpoint {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ntfy_relay_core::test_support::Scratch;
     use serde_json::{json, Value};
     use std::fs;
 
-    fn temp(tag: &str) -> PathBuf {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-control-tests")
-            .join(tag);
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        let root = fs::canonicalize(&root).unwrap();
-        // The policy rejects `..`, so tests resolve the temporary path first.
-        #[cfg(windows)]
-        if let Some(rest) = root.to_string_lossy().strip_prefix(r"\\?\") {
-            return PathBuf::from(rest);
-        }
-        root
+    fn temp(tag: &str) -> Scratch {
+        Scratch::new(&format!("app-control-{tag}"))
     }
 
     fn plain() -> AppHandler {

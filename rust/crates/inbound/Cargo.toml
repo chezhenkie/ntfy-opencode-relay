@@ -11,4 +11,5 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 
 [dev-dependencies]
 async-trait = "0.1"
+ntfy-relay-core = { path = "../core", features = ["test-support"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

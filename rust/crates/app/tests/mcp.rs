@@ -4,7 +4,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -12,16 +12,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-fn temp_dir(name: &str) -> PathBuf {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("temp")
-        .join("mcp-tests")
-        .join(name);
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).unwrap();
-    root
+fn temp_dir(name: &str) -> ntfy_relay_core::test_support::Scratch {
+    ntfy_relay_core::test_support::Scratch::new(&format!("app-mcp-{name}"))
 }
 
 struct FakeNtfy {

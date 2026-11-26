@@ -3,26 +3,17 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::path::Path;
 
+use ntfy_relay_core::test_support::Scratch;
 use ntfy_relay_inbound::control::{
     builtin_control_table, default_control_path, load_control, parse_control, parse_native_command,
     render_ack, validate_control_table, Parsed, MAX_CONTROL_FILE_BYTES,
 };
 use serde_json::json;
 
-fn temp_dir(name: &str) -> PathBuf {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("temp")
-        .join("inbound-control-tests")
-        .join(format!("{name}-{}-{unique}", std::process::id()));
-    fs::create_dir_all(&path).expect("temp dir");
-    path
+fn temp_dir(name: &str) -> Scratch {
+    Scratch::new(&format!("inbound-control-{name}"))
 }
 
 fn parse(text: &str) -> Parsed {

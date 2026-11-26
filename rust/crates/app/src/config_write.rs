@@ -69,17 +69,10 @@ fn replace(path: &Path, temp: &Path, bytes: &[u8]) -> io::Result<()> {
 mod tests {
     use super::*;
     use ntfy_relay_core::config::load_config;
+    use ntfy_relay_core::test_support::Scratch;
 
-    fn root(name: &str) -> PathBuf {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-config-write-tests")
-            .join(name);
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
-        path
+    fn root(name: &str) -> Scratch {
+        Scratch::new(&format!("app-config-{name}"))
     }
 
     fn seed(dir: &Path) -> PathBuf {

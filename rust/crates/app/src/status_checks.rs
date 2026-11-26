@@ -607,6 +607,7 @@ pub fn legacy_entries(dirs: &[PathBuf]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ntfy_relay_core::test_support::Scratch;
 
     const SHOW: &str = "
 Listen on ipv4:             Connect to ipv6:
@@ -665,17 +666,8 @@ Address         Port        Address         Port
         }
     }
 
-    fn empty_dir(name: &str) -> PathBuf {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-status-check-tests")
-            .join(name);
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn empty_dir(name: &str) -> Scratch {
+        Scratch::new(&format!("app-status-{name}"))
     }
 
     fn passing_runner() -> FakeRunner {
@@ -705,7 +697,7 @@ Address         Port        Address         Port
         let dir = empty_dir("all-pass");
         let rows = gather(
             Platform::Windows,
-            &tools(vec![dir.clone()]),
+            &tools(vec![dir.path().to_path_buf()]),
             &passing_runner(),
             Health::Answer {
                 status: 200,
@@ -741,7 +733,7 @@ Address         Port        Address         Port
             .set("netsh interface portproxy show v4tov6", SHOW);
         let rows = gather(
             Platform::Windows,
-            &tools(vec![dir.clone()]),
+            &tools(vec![dir.path().to_path_buf()]),
             &runner,
             Health::Error("connection refused".to_string()),
         );
@@ -762,7 +754,7 @@ Address         Port        Address         Port
             .set("netsh interface portproxy show v4tov6", "");
         let rows = gather(
             Platform::Windows,
-            &tools(vec![dir.clone()]),
+            &tools(vec![dir.path().to_path_buf()]),
             &runner,
             Health::Error("connection refused".to_string()),
         );
@@ -786,7 +778,7 @@ Address         Port        Address         Port
             .set("tailscale serve status", "proxy http://127.0.0.1:8810");
         let rows = gather(
             Platform::Linux,
-            &tools(vec![dir.clone()]),
+            &tools(vec![dir.path().to_path_buf()]),
             &runner,
             Health::Answer {
                 status: 200,
@@ -806,7 +798,7 @@ Address         Port        Address         Port
         let runner = passing_runner();
         let rows = gather(
             Platform::Windows,
-            &tools(vec![dir.clone()]),
+            &tools(vec![dir.path().to_path_buf()]),
             &runner,
             Health::Answer {
                 status: 200,
@@ -825,7 +817,7 @@ Address         Port        Address         Port
         let dir = empty_dir("legacy-names");
         fs::write(dir.join("opencode.jsonc"), "{}").unwrap();
         fs::write(dir.join("notification-ntfy.json"), "{}").unwrap();
-        let hits = legacy_entries(std::slice::from_ref(&dir));
+        let hits = legacy_entries(std::slice::from_ref(&dir.path().to_path_buf()));
         assert_eq!(hits.len(), 1);
         assert!(hits[0].ends_with("notification-ntfy.json"));
         let _ = fs::remove_dir_all(dir);
@@ -834,7 +826,7 @@ Address         Port        Address         Port
     #[test]
     fn an_elevated_relay_fails_the_elevated_row() {
         let dir = empty_dir("elevated");
-        let mut elevated = tools(vec![dir.clone()]);
+        let mut elevated = tools(vec![dir.path().to_path_buf()]);
         elevated.elevated = true;
         let rows = gather(
             Platform::Windows,
@@ -853,7 +845,7 @@ Address         Port        Address         Port
     #[test]
     fn a_root_outside_the_profile_fails_the_acl_row() {
         let dir = empty_dir("acl-outside");
-        let mut tools = tools(vec![dir.clone()]);
+        let mut tools = tools(vec![dir.path().to_path_buf()]);
         tools.root = PathBuf::from("C:\\ProgramData\\ntfy-relay");
         tools.profile = Some(PathBuf::from("C:\\Users\\me\\AppData\\Local"));
         let rows = gather(

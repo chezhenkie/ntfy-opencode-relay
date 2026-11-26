@@ -3,18 +3,15 @@
 //! The daemon itself is covered elsewhere; these tests spawn the binary and
 //! check only what a caller can observe: 0 success, 1 error, 2 usage.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
 
 fn binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_ntfy-relay"))
 }
 
-fn temp(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ntfy-cli-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn temp(name: &str) -> ntfy_relay_core::test_support::Scratch {
+    ntfy_relay_core::test_support::Scratch::new(&format!("app-cli-{name}"))
 }
 
 fn run(root: &Path, args: &[&str]) -> Output {

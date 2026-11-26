@@ -29,4 +29,5 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Securit
 
 [dev-dependencies]
 async-trait = "0.1"
+ntfy-relay-core = { path = "../core", features = ["test-support"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "test-util"] }

@@ -702,6 +702,7 @@ mod tests {
     use ntfy_relay_core::clock::Clock;
     use ntfy_relay_core::config::{load_config_from_text, LogLevel};
     use ntfy_relay_core::state::State;
+    use ntfy_relay_core::test_support::Scratch;
     use ntfy_relay_inbound::control::table::builtin_control_table;
     use ntfy_relay_inbound::filter::{Attachment, InboundMessage};
     use ntfy_relay_inbound::queue::MessageQueue;
@@ -709,7 +710,7 @@ mod tests {
     use ntfy_relay_ntfy::publish::NtfyServer;
     use ntfy_relay_opencode::api::{ProjectInfo, ProjectTime};
     use serde_json::json;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::sync::{Arc, Mutex};
 
@@ -894,18 +895,12 @@ mod tests {
         asks: Arc<AskStore>,
         forms: Arc<FormStore>,
         root: PathBuf,
+        /// Keeps the scratch directory alive for the whole test.
+        _dir: Scratch,
     }
 
-    fn temp_root(name: &str) -> PathBuf {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-relay-tests")
-            .join(name);
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        root
+    fn temp_root(name: &str) -> Scratch {
+        Scratch::new(&format!("app-relay-{name}"))
     }
 
     fn harness(name: &str) -> Harness {
@@ -982,7 +977,8 @@ mod tests {
             store,
             asks,
             forms,
-            root,
+            root: root.path().to_path_buf(),
+            _dir: root,
         }
     }
 

@@ -186,34 +186,27 @@ mod tests {
     use super::*;
     use ntfy_relay_core::config::LogLevel;
     use ntfy_relay_core::state::read_state;
-    use std::path::Path;
+    use ntfy_relay_core::test_support::Scratch;
     use std::sync::Arc;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("temp")
-            .join("app-store-tests")
-            .join(name);
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(name: &str) -> Scratch {
+        Scratch::new(&format!("app-store-{name}"))
     }
 
-    fn store(name: &str) -> Arc<StateStore> {
+    fn store(name: &str) -> (Scratch, Arc<StateStore>) {
         let dir = temp_dir(name);
         let logger = Logger::new(None, LogLevel::Info, false, 1024);
-        Arc::new(StateStore::new(
+        let store = Arc::new(StateStore::new(
             dir.join("state.json"),
             State::new(),
             logger,
-        ))
+        ));
+        (dir, store)
     }
 
     #[tokio::test]
     async fn targets_persist_through_the_sink() {
-        let store = store("targets");
+        let (_dir, store) = store("targets");
         store.set_last("oc-x", "ses_123456789", 100);
         store.set_pending("oc-x", Some("ses_987654321"), 110);
         store.flush().await;
@@ -236,7 +229,7 @@ mod tests {
 
     #[tokio::test]
     async fn cursor_reads_back_after_a_record() {
-        let store = store("cursor");
+        let (_dir, store) = store("cursor");
         store.record_processed("oc-x", "m1", 100).await.unwrap();
         store.record_processed("oc-x", "m2", 90).await.unwrap();
         let (ids, last_time) = store.topic_cursor("oc-x");
