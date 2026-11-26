@@ -724,11 +724,40 @@ async fn discover_once(
     let projects = match api.projects().await {
         Ok(projects) => projects,
         Err(error) => {
-            logger.error(&format!("project discovery failed: {error}"));
+            logger.error(&format!(
+                "project discovery failed: {error}; discovery pending"
+            ));
             return;
         }
     };
     let next = build_project_map(&projects, &config.project_roots);
+    apply_project_map(
+        next,
+        logger,
+        map,
+        owners,
+        topics_tx,
+        topics_count,
+        previous_keys,
+        warning_signature,
+        detail_signature,
+    );
+}
+
+/// Publishes one project map to every consumer: ownership, warnings, the topic
+/// log, the subscription watch and the status count.
+#[allow(clippy::too_many_arguments)]
+fn apply_project_map(
+    next: ProjectMap,
+    logger: &Logger,
+    map: &mut ProjectMap,
+    owners: &Arc<RwLock<TopicOwners>>,
+    topics_tx: &watch::Sender<Vec<String>>,
+    topics_count: &AtomicUsize,
+    previous_keys: &mut Vec<String>,
+    warning_signature: &mut String,
+    detail_signature: &mut String,
+) {
     if let Ok(mut owners) = owners.write() {
         owners.clone_from(next.owners());
     }
@@ -910,6 +939,21 @@ async fn apply_root_change(
         return;
     }
     config.project_roots = edit.roots;
+    // The new root list applies before the query: a removed root stops routing
+    // at once, and an added root waits for the owner map, which fails closed.
+    let mut filtered = projects.clone();
+    filtered.retain_roots(&config.project_roots);
+    apply_project_map(
+        filtered,
+        logger,
+        projects,
+        owners,
+        topics_tx,
+        topics_count,
+        previous_keys,
+        warning_signature,
+        detail_signature,
+    );
     discover_once(
         api,
         config,
@@ -1013,6 +1057,7 @@ async fn wait_for_signal() -> &'static str {
 mod tests {
     use super::*;
     use ntfy_relay_core::config::LogLevel;
+    use ntfy_relay_opencode::api::ApiError;
 
     fn temp(tag: &str) -> PathBuf {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1121,5 +1166,179 @@ mod tests {
         fs::write(&path, "token-123456\n").unwrap();
         tokio::time::advance(Duration::from_secs(2)).await;
         assert_eq!(task.await.unwrap(), Ok(Some("token-123456".to_string())));
+    }
+
+    struct FailingApi;
+
+    #[async_trait::async_trait]
+    impl Api for FailingApi {
+        async fn projects(&self) -> Result<Vec<ntfy_relay_opencode::api::ProjectInfo>, ApiError> {
+            Err(ApiError::with_status(500, "unavailable"))
+        }
+
+        async fn sessions(
+            &self,
+            _project_id: &str,
+            _limit: usize,
+        ) -> Result<Vec<ntfy_relay_opencode::api::SessionInfo>, ApiError> {
+            unimplemented!()
+        }
+
+        async fn session(
+            &self,
+            _id: &str,
+        ) -> Result<ntfy_relay_opencode::api::SessionInfo, ApiError> {
+            unimplemented!()
+        }
+
+        async fn active_ids(&self) -> Result<Vec<String>, ApiError> {
+            unimplemented!()
+        }
+
+        async fn messages(
+            &self,
+            _session_id: &str,
+            _limit: usize,
+            _cursor: Option<&str>,
+        ) -> Result<ntfy_relay_opencode::api::MessagePage, ApiError> {
+            unimplemented!()
+        }
+
+        async fn create_session(
+            &self,
+            _request: ntfy_relay_opencode::api::CreateSession<'_>,
+        ) -> Result<ntfy_relay_opencode::api::SessionInfo, ApiError> {
+            unimplemented!()
+        }
+
+        async fn prompt(
+            &self,
+            _session_id: &str,
+            _text: &str,
+            _delivery: ntfy_relay_opencode::api::Delivery,
+            _files: &[ntfy_relay_opencode::api::PromptFile],
+        ) -> Result<(), ApiError> {
+            unimplemented!()
+        }
+
+        async fn permissions(
+            &self,
+            _session_id: &str,
+        ) -> Result<Vec<ntfy_relay_opencode::api::PermissionInfo>, ApiError> {
+            unimplemented!()
+        }
+
+        async fn reply_permission(
+            &self,
+            _session_id: &str,
+            _permission_id: &str,
+            _decision: ntfy_relay_opencode::api::ReplyDecision,
+        ) -> Result<(), ApiError> {
+            unimplemented!()
+        }
+
+        async fn cancel_form(
+            &self,
+            _session_id: &str,
+            _form_id: &str,
+            _message: &str,
+        ) -> Result<(), ApiError> {
+            unimplemented!()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_removed_root_stops_routing_when_discovery_fails() {
+        let dir = std::env::temp_dir().join(format!("ntfy-app-remove-root-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let kept_root = dir.join("roots/a");
+        let gone_root = dir.join("roots/b");
+        let kept = kept_root.join("proj");
+        let gone = gone_root.join("other");
+        fs::create_dir_all(&kept).unwrap();
+        fs::create_dir_all(&gone).unwrap();
+
+        let projects = build_project_map(
+            &[
+                ntfy_relay_opencode::api::ProjectInfo {
+                    id: "p1".to_string(),
+                    canonical: Some(kept.to_string_lossy().into_owned()),
+                    time: Default::default(),
+                },
+                ntfy_relay_opencode::api::ProjectInfo {
+                    id: "p2".to_string(),
+                    canonical: Some(gone.to_string_lossy().into_owned()),
+                    time: Default::default(),
+                },
+            ],
+            &[kept_root.clone(), gone_root.clone()],
+        );
+        assert!(projects.get("proj").is_some());
+        assert!(projects.get("other").is_some());
+        let mut map = projects.clone();
+        let owners = Arc::new(RwLock::new(projects.owners().clone()));
+        let live_roots = Arc::new(RwLock::new(ProjectRoots::new(vec![
+            kept_root.clone(),
+            gone_root.clone(),
+        ])));
+        let (topics_tx, topics_rx) = watch::channel(projects.topics());
+        let count = AtomicUsize::new(projects.len());
+        let mut previous_keys = projects.topics();
+        previous_keys.sort_unstable();
+        let mut warning_signature = String::new();
+        let mut detail_signature = String::new();
+
+        let config_path = dir.join("ntfy-relay.json");
+        let text = serde_json::json!({
+            "ntfy": { "server": "http://127.0.0.1:8810" },
+            "projectRoots": [kept_root.to_string_lossy(), gone_root.to_string_lossy()]
+        })
+        .to_string();
+        fs::write(&config_path, text).unwrap();
+        let home = dir.join("home");
+        fs::create_dir_all(&home).unwrap();
+        let mut config = ntfy_relay_core::config::load_config_from_text(
+            &fs::read_to_string(&config_path).unwrap(),
+            Some(&config_path),
+            &home,
+        )
+        .unwrap();
+
+        let log = logger(&dir);
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+        apply_root_change(
+            RootChange::Remove,
+            gone_root.to_string_lossy().into_owned(),
+            reply_tx,
+            &FailingApi,
+            &mut config,
+            &config_path,
+            &home,
+            &log,
+            &mut map,
+            &owners,
+            &live_roots,
+            &topics_tx,
+            &count,
+            &mut previous_keys,
+            &mut warning_signature,
+            &mut detail_signature,
+        )
+        .await;
+
+        let response = reply_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(response.status, 200);
+        assert!(map.get("proj").is_some());
+        assert!(
+            map.get("other").is_none(),
+            "the removed topic stops routing before discovery answers"
+        );
+        assert!(!owners.read().unwrap().owns("other", &gone));
+        assert_eq!(*topics_rx.borrow(), vec!["proj".to_string()]);
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+        log.flush();
+        let text = fs::read_to_string(dir.join("relay.log")).unwrap_or_default();
+        assert!(text.contains("discovery pending"), "{text}");
+        assert!(!text.is_empty());
     }
 }

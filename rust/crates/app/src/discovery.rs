@@ -38,6 +38,22 @@ impl ProjectMap {
             .find(|entry| entry.topic == topic && self.owners.owns(topic, &entry.canonical))
     }
 
+    /// Drops every entry outside the new root list and rebuilds ownership from
+    /// the kept entries. A removed root stops routing before the next
+    /// discovery query answers, even when that query fails.
+    pub fn retain_roots(&mut self, roots: &[PathBuf]) {
+        self.entries.retain(|entry| {
+            roots
+                .iter()
+                .any(|root| is_path_inside(&entry.canonical.to_string_lossy(), root))
+        });
+        let mut owners = TopicOwners::new();
+        for entry in &self.entries {
+            owners.insert(&entry.topic, entry.canonical.clone());
+        }
+        self.owners = owners;
+    }
+
     /// Snapshot shared with the outbound resolver and the SSE topic set.
     pub fn owners(&self) -> &TopicOwners {
         &self.owners
