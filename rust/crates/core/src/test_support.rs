@@ -132,7 +132,8 @@ mod tests {
     #[test]
     fn a_label_with_separators_cannot_escape_the_temp_parent() {
         let scratch = Scratch::new("a/b\\c..");
-        assert_eq!(scratch.parent(), Some(std::env::temp_dir().as_path()));
+        let temp = plain(std::fs::canonicalize(std::env::temp_dir()).expect("temp dir"));
+        assert_eq!(scratch.parent(), Some(temp.as_path()));
         assert!(scratch
             .file_name()
             .unwrap()

@@ -987,11 +987,16 @@ mod tests {
 
     #[test]
     fn absolute_paths_load_without_a_home_directory() {
+        let prefix = if cfg!(windows) { "C:" } else { "" };
+        let token = format!("{prefix}/abs/token.txt");
+        let roots = format!("{prefix}/srv/projects");
+        let log = format!("{prefix}/var/log/relay.log");
+        let state = format!("{prefix}/var/lib/relay-state.json");
         let raw = json!({
-            "ntfy": { "server": "https://ntfy.test", "tokenFile": "/abs/token.txt" },
-            "projectRoots": ["/srv/projects"],
-            "logging": { "file": "/var/log/relay.log" },
-            "stateFile": "/var/lib/relay-state.json"
+            "ntfy": { "server": "https://ntfy.test", "tokenFile": &token },
+            "projectRoots": [&roots],
+            "logging": { "file": &log },
+            "stateFile": &state
         });
         let config = load_config_with_home(
             &raw.to_string(),
@@ -999,13 +1004,10 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(config.ntfy.token_file, PathBuf::from("/abs/token.txt"));
-        assert_eq!(config.project_roots, vec![PathBuf::from("/srv/projects")]);
-        assert_eq!(config.logging.file, PathBuf::from("/var/log/relay.log"));
-        assert_eq!(
-            config.state_file,
-            PathBuf::from("/var/lib/relay-state.json")
-        );
+        assert_eq!(config.ntfy.token_file, PathBuf::from(token.as_str()));
+        assert_eq!(config.project_roots, vec![PathBuf::from(roots.as_str())]);
+        assert_eq!(config.logging.file, PathBuf::from(log.as_str()));
+        assert_eq!(config.state_file, PathBuf::from(state.as_str()));
 
         let mut tilde = minimal();
         tilde["stateFile"] = json!("~/state.json");
