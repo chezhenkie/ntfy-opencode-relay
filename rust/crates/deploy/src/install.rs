@@ -1304,18 +1304,18 @@ mod tests {
     fn acl_containment_follows_the_platform_case_rule() {
         assert!(is_under(
             Platform::Windows,
-            Path::new("c:/users/me/appdata/local/ntfy-relay"),
-            Path::new("C:/Users/Me/AppData/Local")
+            Path::new("c:/work/appdata/local/ntfy-relay"),
+            Path::new("C:/Work/AppData/Local")
         ));
         assert!(!is_under(
             Platform::Windows,
-            Path::new("C:/Users/me-other/ntfy-relay"),
-            Path::new("C:/Users/me")
+            Path::new("C:/Work/app-other/ntfy-relay"),
+            Path::new("C:/Work/app")
         ));
         assert!(!is_under(
             Platform::Linux,
-            Path::new("/home/me-other/ntfy-relay"),
-            Path::new("/home/me")
+            Path::new("/srv/app-other/ntfy-relay"),
+            Path::new("/srv/app")
         ));
     }
 
