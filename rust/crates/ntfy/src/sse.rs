@@ -27,6 +27,9 @@ enum Line {
 
 pub struct SseParser {
     buffer: Vec<u8>,
+    /// Read position in `buffer`; the consumed prefix is dropped once per
+    /// chunk, so a chunk with many short lines is linear, not quadratic.
+    cursor: usize,
     data: Vec<String>,
     data_len: usize,
     discarding_line: bool,
@@ -44,6 +47,7 @@ impl SseParser {
     pub fn new() -> Self {
         Self {
             buffer: Vec::new(),
+            cursor: 0,
             data: Vec::new(),
             data_len: 0,
             discarding_line: false,
@@ -54,6 +58,7 @@ impl SseParser {
 
     /// Consumes one network chunk and returns every frame completed by it.
     pub fn push(&mut self, chunk: &[u8]) -> Vec<Value> {
+        self.compact();
         self.buffer.extend_from_slice(chunk);
         let mut events = Vec::new();
         loop {
@@ -70,6 +75,7 @@ impl SseParser {
     /// the Node parser does at end of stream.
     pub fn finish(&mut self) -> Vec<Value> {
         let mut events = Vec::new();
+        self.compact();
         if self.discarding_line {
             self.buffer.clear();
             self.discarding_line = false;
@@ -95,26 +101,36 @@ impl SseParser {
         self.overflow.take()
     }
 
+    /// Drops the consumed prefix. Called once per chunk, never per line.
+    fn compact(&mut self) {
+        if self.cursor > 0 {
+            self.buffer.drain(..self.cursor);
+            self.cursor = 0;
+        }
+    }
+
     fn take_line(&mut self) -> Line {
+        let rest = &self.buffer[self.cursor..];
         if self.discarding_line {
-            match find_terminator(&self.buffer) {
+            match find_terminator(rest) {
                 Some((_, consumed)) => {
-                    self.buffer.drain(..consumed);
+                    self.cursor += consumed;
                     self.discarding_line = false;
                     Line::Skipped
                 }
                 None => {
-                    if self.buffer.len() > MAX_LINE_BYTES {
+                    if rest.len() > MAX_LINE_BYTES {
                         self.buffer.clear();
+                        self.cursor = 0;
                     }
                     Line::Pending
                 }
             }
         } else {
-            match find_terminator(&self.buffer) {
+            match find_terminator(rest) {
                 Some((index, consumed)) => {
-                    let line = self.buffer[..index].to_vec();
-                    self.buffer.drain(..consumed);
+                    let line = rest[..index].to_vec();
+                    self.cursor += consumed;
                     if line.len() > MAX_LINE_BYTES {
                         self.overflow.get_or_insert(SseOverflow::Line);
                         self.discarding_frame = true;
@@ -124,8 +140,9 @@ impl SseParser {
                     }
                 }
                 None => {
-                    if self.buffer.len() > MAX_LINE_BYTES {
+                    if rest.len() > MAX_LINE_BYTES {
                         self.buffer.clear();
+                        self.cursor = 0;
                         self.discarding_line = true;
                         self.overflow.get_or_insert(SseOverflow::Line);
                         self.discarding_frame = true;
@@ -269,6 +286,35 @@ mod tests {
     fn empty_data_field_is_not_a_frame() {
         let mut parser = SseParser::new();
         assert!(parser.push(b"data:\n\n").is_empty());
+    }
+
+    #[test]
+    fn many_small_frames_in_one_chunk_stay_linear() {
+        let frames = 50_000;
+        let mut payload = Vec::with_capacity(frames * 16);
+        for _ in 0..frames {
+            payload.extend_from_slice(b"data: {\"n\":1}\n\n");
+        }
+        let mut parser = SseParser::new();
+        let started = std::time::Instant::now();
+        let events = parser.push(&payload);
+        assert_eq!(events.len(), frames);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "one chunk with {frames} frames took {:?}",
+            started.elapsed()
+        );
+        assert_eq!(parser.cursor, parser.buffer.len());
+    }
+
+    #[test]
+    fn a_split_line_still_completes_after_compaction() {
+        let mut parser = SseParser::new();
+        assert_eq!(
+            parser.push(b"data: {\"a\":1}\n\ndata: {\"b\":"),
+            vec![json!({"a": 1})]
+        );
+        assert_eq!(parser.push(b"2}\n\n"), vec![json!({"b": 2})]);
     }
 
     #[test]

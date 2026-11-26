@@ -5,9 +5,8 @@
 //!   `Tags` headers and a raw body.
 //! - File: plugin parity. PUT `/<topic>?title=...` with the bytes as the body.
 //!
-//! Titles are sanitized and capped for the plugin styles; the relay style
-//! only collapses newlines because the caller has already applied its own
-//! text policy.
+//! Every style caps the title and the message with the same byte budgets and
+//! runs tags through the same normalizer.
 
 use std::fmt;
 use std::sync::Arc;
@@ -187,8 +186,9 @@ pub fn header_request(
     if let Some(token) = token {
         request = request.header("Authorization", format!("Bearer {token}"));
     }
+    let title = header_text(message.title);
     request = request
-        .header("Title", header_text(message.title))
+        .header("Title", truncate_utf8(&title, MAX_TITLE_BYTES))
         .header("Priority", message.priority.as_name());
     let tags = normalize_tags(message.tags).join(",");
     if !tags.is_empty() {
@@ -196,7 +196,7 @@ pub fn header_request(
     }
     request
         .header("content-type", "text/plain;charset=UTF-8")
-        .body(message.message.to_string())
+        .body(truncate_utf8(message.message, MAX_MESSAGE_BYTES).to_string())
 }
 
 pub fn file_request(
@@ -211,8 +211,9 @@ pub fn file_request(
         query.append_pair("message", truncate_utf8(message, MAX_MESSAGE_BYTES));
     }
     query.append_pair("priority", &file.priority.as_level().to_string());
-    if !file.tags.is_empty() {
-        query.append_pair("tags", &file.tags.join(","));
+    let tags = normalize_tags(file.tags).join(",");
+    if !tags.is_empty() {
+        query.append_pair("tags", &tags);
     }
     if let Some(filename) = file.filename {
         query.append_pair("filename", filename);
@@ -383,6 +384,19 @@ fn hex_digit(value: u8) -> char {
 mod tests {
     use super::*;
 
+    fn upload<'a>(tags: &'a [&'a str]) -> FileUpload<'a> {
+        FileUpload {
+            topic: "ntfy-proj",
+            title: "ntfy-proj",
+            message: None,
+            priority: Priority::Default,
+            tags,
+            filename: None,
+            content_type: "text/plain",
+            data: bytes::Bytes::new(),
+        }
+    }
+
     #[test]
     fn server_normalizes_one_trailing_slash() {
         assert_eq!(
@@ -481,5 +495,37 @@ mod tests {
             std::str::from_utf8(&request.body).unwrap(),
             r#"{"topic":"ntfy-proj","title":"ntfy-proj","message":"queued to readme.md","priority":3,"tags":["oc-out"]}"#
         );
+    }
+
+    #[test]
+    fn the_header_style_caps_title_and_message() {
+        let server = NtfyServer::parse("https://ntfy.test").unwrap();
+        let title = "t".repeat(4 * 1024);
+        let message = "m".repeat(8 * 1024);
+        let request = header_request(
+            &server,
+            None,
+            &HeaderText {
+                topic: "ntfy-proj",
+                title: &title,
+                message: &message,
+                priority: Priority::Default,
+                tags: &[],
+            },
+        );
+        assert_eq!(
+            request.header_value("Title").unwrap().len(),
+            MAX_TITLE_BYTES
+        );
+        assert_eq!(request.body.len(), MAX_MESSAGE_BYTES);
+    }
+
+    #[test]
+    fn the_file_style_normalizes_tags() {
+        let server = NtfyServer::parse("https://ntfy.test").unwrap();
+        let junk = file_request(&server, None, &upload(&["!", ""]));
+        assert!(!junk.url.contains("tags="), "{}", junk.url);
+        let kept = file_request(&server, None, &upload(&["oc-out", "bad tag", "ok_1"]));
+        assert!(kept.url.contains("tags=oc-out%2Cok_1"), "{}", kept.url);
     }
 }

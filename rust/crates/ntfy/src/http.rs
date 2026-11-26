@@ -5,16 +5,23 @@
 //! to the caller: the relay ignored `HTTP_PROXY` through Node fetch, and the
 //! attachment fetch re-checks HTTPS on every hop itself.
 //!
-//! Response bodies are bounded by `max_response_bytes` so a declared or
-//! streamed attachment cannot grow memory without limit.
+//! Response bodies are bounded by `max_response_bytes`, so a declared or
+//! streamed attachment is read into a capped buffer instead of growing memory
+//! without limit. A connect has a 5 s deadline; a total deadline belongs to
+//! the caller, which knows the budget of its request.
 
 use std::fmt;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
 
 pub use ntfy_relay_core::net::transport_allowed;
+
+/// TCP connect plus TLS handshake. Publish, attachment, and SSE set their own
+/// total deadline on top.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
@@ -118,6 +125,7 @@ impl ReqwestTransport {
     pub fn new() -> Result<Self, HttpError> {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(CONNECT_TIMEOUT)
             .no_proxy()
             .build()
             .map_err(|error| HttpError::Transport(error.to_string()))?;
@@ -189,5 +197,25 @@ impl Transport for ReqwestTransport {
             headers,
             body: body.freeze(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_blackhole_connect_ends_at_the_connect_deadline() {
+        let transport = ReqwestTransport::new().unwrap();
+        let request = HttpRequest::new(Method::Get, "http://10.255.255.1:9/");
+        let started = std::time::Instant::now();
+        let outcome = tokio::time::timeout(Duration::from_secs(9), transport.send(request)).await;
+        let result = outcome.expect("the connect deadline must fire");
+        assert!(result.is_err(), "a blackhole must not answer");
+        assert!(
+            started.elapsed() < Duration::from_secs(9),
+            "connect took {:?}",
+            started.elapsed()
+        );
     }
 }

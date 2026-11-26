@@ -2,8 +2,8 @@
 //!
 //! Mirrors `downloadAttachment` and `sanitizeFilename` in
 //! `ntfy-inbox-relay.mjs`: HTTPS on the first URL and every redirect hop, at
-//! most three followed redirects, a declared and streamed size cap, and the
-//! same inbox file naming rules.
+//! most three followed redirects, a declared and bounded buffered size cap, and
+//! the same inbox file naming rules.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
