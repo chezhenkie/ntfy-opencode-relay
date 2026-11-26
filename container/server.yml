@@ -16,3 +16,9 @@ cache-file: /var/cache/ntfy/cache.db
 cache-duration: 72h
 attachment-cache-dir: /var/cache/ntfy/attachments
 attachment-expiry-duration: 72h
+# ntfy 2.38.2 has no cache-size key; the message cache is bounded by time only.
+# Attachments and visitor requests carry explicit bounds instead.
+attachment-total-size-limit: "1G"
+attachment-file-size-limit: "40M"
+visitor-request-limit-burst: 120
+visitor-request-limit-replenish: "5s"

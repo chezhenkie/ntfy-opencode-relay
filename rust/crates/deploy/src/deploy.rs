@@ -246,7 +246,7 @@ impl<'a> Plan<'a> {
     }
 
     /// The full run argument list: image, name, cache volume, publish rule,
-    /// hardening, restart policy, and the two deployment environment values.
+    /// hardening, log cap, restart policy, and the two deployment environment values.
     pub fn run_command(&self) -> PlatformCommand {
         let container = &self.config.container;
         PlatformCommand {
@@ -264,6 +264,11 @@ impl<'a> Plan<'a> {
                 "--cap-drop=ALL".to_string(),
                 "--security-opt".to_string(),
                 "no-new-privileges".to_string(),
+                // The host default is journald, where max-size has no meaning.
+                // k8s-file is Podman's file driver and honours the cap.
+                "--log-driver=k8s-file".to_string(),
+                "--log-opt".to_string(),
+                "max-size=10m".to_string(),
                 "-p".to_string(),
                 self.publish.clone(),
                 "-v".to_string(),
@@ -495,6 +500,7 @@ pub(crate) struct InspectInfo {
     pub cap_drop: Vec<String>,
     pub security_opt: Vec<String>,
     pub tmpfs: Vec<String>,
+    pub log_driver: String,
 }
 
 impl InspectInfo {
@@ -518,6 +524,7 @@ impl InspectInfo {
                 .iter()
                 .any(|value| value.starts_with("no-new-privileges"))
             && self.tmpfs.iter().any(|value| value == "/tmp")
+            && (self.log_driver == "k8s-file" || self.log_driver == "json-file")
     }
 }
 
@@ -649,6 +656,12 @@ pub(crate) fn parse_inspect(text: &str) -> Option<InspectInfo> {
         .and_then(Value::as_object)
         .map(|values| values.keys().cloned().collect())
         .unwrap_or_default();
+    let log_driver = host
+        .and_then(|h| h.get("LogConfig"))
+        .and_then(|config| config.get("Type"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     Some(InspectInfo {
         running: state
             .get("Running")
@@ -663,6 +676,7 @@ pub(crate) fn parse_inspect(text: &str) -> Option<InspectInfo> {
         cap_drop,
         security_opt,
         tmpfs,
+        log_driver,
     })
 }
 
@@ -749,6 +763,7 @@ Address         Port        Address         Port
             host_config["CapDrop"] = serde_json::json!(["ALL"]);
             host_config["SecurityOpt"] = serde_json::json!(["no-new-privileges"]);
             host_config["Tmpfs"] = serde_json::json!({ "/tmp": "" });
+            host_config["LogConfig"] = serde_json::json!({ "Type": "k8s-file", "Config": {} });
         }
         let mut entry = serde_json::json!({
             "ImageName": config.container.image,
@@ -890,6 +905,20 @@ Address         Port        Address         Port
     }
 
     #[test]
+    fn a_container_with_journald_logs_is_recreated() {
+        let config = config("proxy", "https://ntfy.example.ts.net");
+        let id = "6c7427154d80501f7d6e4a467ed1ca369af28e4a1c2c2603640e0a71f83fea33";
+        let journald = inspect_at(&config, true, true, id, "127.0.0.1", true)
+            .replace("\"k8s-file\"", "\"journald\"");
+        let runner = Arc::new(FakeRunner::with_inspect(&journald));
+        runner.set_image_id(id);
+        let probe = Arc::new(FakeProbe::always(200));
+        let deployer = deployer(runner, probe, Platform::Linux);
+        let report = deployer.apply(&config, false).unwrap();
+        assert_eq!(report.state, ApplyState::Recreated);
+    }
+
+    #[test]
     fn a_mismatched_container_is_recreated() {
         let config = config("proxy", "https://ntfy.example.ts.net");
         let runner = Arc::new(FakeRunner::with_inspect(&inspect(&config, true, false, "")));
@@ -909,6 +938,8 @@ Address         Port        Address         Port
         assert!(run.1.contains(&"NTFY_BEHIND_PROXY=true".to_string()));
         assert!(run.1.contains(&"8810:8080".to_string()));
         assert!(run.1.contains(&"ntfy-cache:/var/cache/ntfy".to_string()));
+        assert!(run.1.contains(&"--log-driver=k8s-file".to_string()));
+        assert!(run.1.contains(&"max-size=10m".to_string()));
     }
 
     #[test]

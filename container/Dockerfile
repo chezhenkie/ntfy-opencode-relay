@@ -17,13 +17,23 @@ ARG NTFY_SHA256=2040946f6e1103420e72a79a7048c841fb73cd51c17d45232e0c8f6ac7f0d531
 RUN set -eux; \
     wget -q -O /tmp/ntfy.tgz "https://github.com/binwiederhier/ntfy/releases/download/v${NTFY_VERSION}/ntfy_${NTFY_VERSION}_linux_${NTFY_ARCH}.tar.gz"; \
     echo "${NTFY_SHA256}  /tmp/ntfy.tgz" | sha256sum -c -; \
-    tar -xzf /tmp/ntfy.tgz -C /tmp --strip-components=1 "ntfy_${NTFY_VERSION}_linux_${NTFY_ARCH}/ntfy"
+    tar -xzf /tmp/ntfy.tgz -C /tmp --strip-components=1 "ntfy_${NTFY_VERSION}_linux_${NTFY_ARCH}/ntfy"; \
+    tar -tzf /tmp/ntfy.tgz > /tmp/ntfy-files.txt; \
+    mkdir -p /tmp/licenses; \
+    for f in LICENSE NOTICE; do \
+      if grep -qx "ntfy_${NTFY_VERSION}_linux_${NTFY_ARCH}/${f}" /tmp/ntfy-files.txt; then \
+        tar -xzf /tmp/ntfy.tgz -C /tmp/licenses --strip-components=1 "ntfy_${NTFY_VERSION}_linux_${NTFY_ARCH}/${f}"; \
+      fi; \
+    done; \
+    test -f /tmp/licenses/LICENSE
 
 FROM alpine:3.24.4@sha256:0f49f331d9212aff11b932863be4eb01cdf962969aa86dab7d1ee21ac6f5f52b
 
 # COPY --chmod avoids the second 76.6 MB layer that a separate chmod RUN created
 # in the 166 MB alpine:3.20 image.
 COPY --from=fetch --chmod=0755 /tmp/ntfy /usr/bin/ntfy
+# The tarball is redistributed inside this image, so its license travels with it.
+COPY --from=fetch /tmp/licenses /usr/share/licenses/ntfy
 COPY server.yml /etc/ntfy/server.yml
 
 RUN mkdir -p /var/cache/ntfy/attachments \

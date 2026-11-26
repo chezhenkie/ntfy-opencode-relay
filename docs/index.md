@@ -45,5 +45,5 @@ Self-hosted ntfy 2.38.2 without Google, reachable only over a private network, o
 - Windows 11, PowerShell 5.1, Podman 5.8.3 with machine `podman-machine-default`, rootless, 4 CPU, 2 GiB.
 - A private network client, node `ntfy-host`, private address `100.64.0.10`, private DNS `ntfy.example.ts.net`.
 - ntfy 2.38.2, linux/amd64 in the image and windows/amd64 native, tag `localhost/ntfy:server` with `localhost/ntfy:latest` as an alias.
-- Host port 8810 maps to container port 8080; the container runs as uid 1000 with a read-only root, tmpfs `/tmp`, and no added capabilities.
+- Host port 8810 maps to container port 8080 on loopback; the container runs as uid 1000 with a read-only root, tmpfs `/tmp`, no added capabilities, and a 10 MiB log cap.
 - The checkout is `C:\work\ntfy-proj` and the placeholder network values replace your own.

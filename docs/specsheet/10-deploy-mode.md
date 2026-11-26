@@ -114,7 +114,7 @@ Operator steps, not performed by the tool:
 1. Read and validate the config. Refuse unknown fields and unknown modes.
 2. Compute the container environment and the portproxy set for the mode.
 3. Stop and remove the container.
-4. Run it with the image, cache volume, publish rule, and env pair.
+4. Run it with the image, cache volume, publish rule, hardening, a 10 MiB log cap, and the env pair.
 5. Ensure the Windows loopback bridge, then wait for `/v1/health` on loopback. Do not continue before a 200. The loopback rule is a precondition because the relay and the terminator use it in every mode.
 6. Apply the remaining portproxy changes last: add or remove the VPN entry.
 7. Print the resulting state.
@@ -137,7 +137,7 @@ Operator steps, not performed by the tool:
 - It prints the resulting phone server URL. On Windows the portproxy step needs an elevated shell; a platform failure is exit `4` and the tool says so.
 - The relay is not a party: no relay config is read, nothing is restarted, the token is unchanged.
 
-Idempotency: a second apply with the same config produces the same state and does not recreate a healthy container with matching arguments. Argument matching includes the image content: the container's image ID from `podman inspect` must equal the local image ID for the configured reference, so a rebuild that keeps the tag is rolled out by the next `apply`. When either ID is unavailable the reference comparison alone decides. `apply` and `status` never write the config; only `mode` does.
+Idempotency: a second apply with the same config produces the same state and does not recreate a healthy container with matching arguments. Argument matching includes the image content and the hardening set: the container's image ID from `podman inspect` must equal the local image ID for the configured reference, the container must run with `cap-drop=ALL`, `no-new-privileges` and the `/tmp` tmpfs, and its log driver must be `k8s-file` or `json-file`. A rebuild that keeps the tag is rolled out by the next `apply`. When either ID is unavailable the reference comparison alone decides. `apply` and `status` never write the config; only `mode` does.
 
 ## Installer
 
@@ -205,7 +205,7 @@ Linux:
 - Config parse, required fields, unknown mode, unknown field.
 - URL rules: https any host, http only on a loopback, VPN, or LAN IP literal, no path, no trailing slash, and an HTTP port equal to `port`.
 - Portproxy mapping: proxy removes the VPN entry, VPN adds it, LAN leaves the loopback entry only.
-- Container argument construction: image, name, volume, publish, env pair per mode.
+- Container argument construction: image, name, volume, publish, hardening, log cap, env pair per mode.
 - Dry-run emits commands and changes nothing.
 - Status output for each mode.
 - Idempotent apply.

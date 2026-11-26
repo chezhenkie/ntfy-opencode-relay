@@ -16,15 +16,23 @@ services:
     security_opt:
       - no-new-privileges
     restart: unless-stopped
+    # The proxy route expects loopback; a LAN deployment sets NTFY_BIND to a
+    # private address, which is outside the proxy rule.
     ports:
-      - "${NTFY_PORT:-8810}:8080"
+      - "${NTFY_BIND:-127.0.0.1}:${NTFY_PORT:-8810}:8080"
+    tmpfs:
+      - /tmp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
     volumes:
       - ntfy-cache:/var/cache/ntfy
     environment:
       NTFY_BASE_URL: ${NTFY_BASE_URL:?set NTFY_BASE_URL in .env}
       NTFY_BEHIND_PROXY: ${NTFY_BEHIND_PROXY:-true}
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/v1/health"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/v1/health | grep -q '\"healthy\":true'"]
       interval: 30s
       timeout: 5s
       retries: 3

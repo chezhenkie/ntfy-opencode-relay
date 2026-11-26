@@ -20,7 +20,7 @@ No public address, port forward, or third-party relay is needed. Nothing in this
 
 ## 4.2 Windows: Podman binds loopback only
 
-`podman ps` shows `0.0.0.0:8810->8080/tcp`, but the real Windows listener is IPv6 loopback only:
+`podman ps` shows `127.0.0.1:8810->8080/tcp` for a deploy-created container, and the compose file uses the same loopback default. The real Windows listener is IPv6 loopback only:
 
 ```powershell
 Get-NetTCPConnection -LocalPort 8810 -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess
@@ -31,7 +31,7 @@ LocalAddress LocalPort OwningProcess
 ::1                  8810          5076     (wslrelay.exe)
 ```
 
-This is expected Podman machine behavior on Windows, not a misconfiguration. The published port is forwarded to `[::1]` by `wslrelay`, regardless of the `-p 0.0.0.0:...` argument.
+This is expected Podman machine behavior on Windows, not a misconfiguration. The published port is forwarded to `[::1]` by `wslrelay`.
 
 The Windows design is therefore:
 
@@ -42,7 +42,7 @@ phone -> https://<private-dns-name> (443)
       -> [::1]:8810 (wslrelay) -> container :8080
 ```
 
-IPv6 appears only on loopback. It is internal plumbing and not an exposure; do not remove it. Do not change `wslrelay`, do not publish on `0.0.0.0`, and do not add a broad firewall rule.
+IPv6 appears only on loopback. It is internal plumbing and not an exposure; do not remove it. Do not change `wslrelay`, do not publish on `0.0.0.0`, and do not add a broad firewall rule. The compose file binds `${NTFY_BIND:-127.0.0.1}`; the `NTFY_BIND` override is for a LAN deployment and sits outside the proxy rule.
 
 The private network client allows inbound on its own interface. No extra firewall rule is required, and none should be added unless a scoped rule is proven necessary. Check the interface profile; it must stay Private:
 
