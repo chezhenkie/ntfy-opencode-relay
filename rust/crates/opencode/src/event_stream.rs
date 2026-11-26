@@ -143,11 +143,9 @@ mod tests {
     }
 
     #[test]
-    fn event_url_encodes_a_prefixed_base() {
-        let base = BaseUrl::parse("http://127.0.0.1:4096/api").unwrap();
-        assert_eq!(
-            event_url(&base, &["form.created"]),
-            "http://127.0.0.1:4096/api/api/event?types=form.created"
-        );
+    fn a_base_url_with_a_path_is_refused() {
+        // A path prefix used to double the /api segment; the base is now the
+        // origin only.
+        assert!(BaseUrl::parse("http://127.0.0.1:4096/api").is_err());
     }
 }

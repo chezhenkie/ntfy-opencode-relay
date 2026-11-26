@@ -475,6 +475,10 @@ fn resolve(
         None | Some(Value::Null) => None,
         value => Some(require_string(value, "opencode.baseUrl")?),
     };
+    if let Some(raw) = &base_url {
+        crate::net::BaseUrl::parse(raw)
+            .map_err(|error| ConfigError::new(format!("config: opencode.baseUrl: {error}")))?;
+    }
     let timeout_ms = require_integer(
         field(opencode, "timeoutMs"),
         "opencode.timeoutMs",
@@ -1039,6 +1043,33 @@ mod tests {
         assert_eq!(
             config.opencode.base_url.as_deref(),
             Some("http://127.0.0.1:4096")
+        );
+    }
+
+    #[test]
+    fn opencode_base_url_follows_the_transport_rule() {
+        let mut raw = minimal();
+        raw["opencode"] = json!({ "baseUrl": "http://192.168.1.20:4096" });
+        let error = load_config_from_text(&raw.to_string(), None, &home()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("config: opencode.baseUrl: base URL must use HTTPS"),
+            "{error}"
+        );
+
+        raw["opencode"] = json!({ "baseUrl": "https://oc.example" });
+        let config = load_config_from_text(&raw.to_string(), None, &home()).unwrap();
+        assert_eq!(
+            config.opencode.base_url.as_deref(),
+            Some("https://oc.example")
+        );
+
+        raw["opencode"] = json!({ "baseUrl": "http://127.0.0.1:4096/api" });
+        let error = load_config_from_text(&raw.to_string(), None, &home()).unwrap_err();
+        assert!(
+            error.to_string().contains("must not carry a path"),
+            "{error}"
         );
     }
 

@@ -640,6 +640,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "futures-util",
+ "ntfy-relay-core",
  "reqwest",
  "serde",
  "serde_json",

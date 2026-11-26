@@ -14,25 +14,7 @@ use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
 
-/// One transport rule for publish and attachment fetch: HTTPS everywhere, and
-/// plain HTTP only for a loopback host. The config loader applies the same
-/// rule to `ntfy.server`.
-pub fn transport_allowed(url: &url::Url) -> bool {
-    match url.scheme() {
-        "https" => true,
-        "http" => host_is_loopback(url),
-        _ => false,
-    }
-}
-
-fn host_is_loopback(url: &url::Url) -> bool {
-    match url.host() {
-        Some(url::Host::Ipv4(address)) => address.is_loopback(),
-        Some(url::Host::Ipv6(address)) => address.is_loopback(),
-        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
-        None => false,
-    }
-}
+pub use ntfy_relay_core::net::transport_allowed;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {

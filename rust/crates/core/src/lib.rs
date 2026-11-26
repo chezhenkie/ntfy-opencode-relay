@@ -7,6 +7,7 @@ pub mod config;
 pub mod forms;
 pub mod fsutil;
 pub mod link_safe;
+pub mod net;
 pub mod state;
 pub mod text;
 pub mod tlds;

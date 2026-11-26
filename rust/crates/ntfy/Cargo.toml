@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+ntfy-relay-core = { path = "../core" }
 async-trait = "0.1"
 base64 = "0.22"
 bytes = "1"

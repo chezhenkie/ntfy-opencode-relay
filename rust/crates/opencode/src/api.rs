@@ -90,82 +90,9 @@ impl fmt::Display for ApiError {
 
 impl std::error::Error for ApiError {}
 
-/// `opencode.baseUrl`, normalized without a trailing slash.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BaseUrl {
-    base: String,
-}
-
-impl BaseUrl {
-    pub fn parse(raw: &str) -> Result<Self, BaseUrlError> {
-        if raw.is_empty() {
-            return Err(BaseUrlError::Empty);
-        }
-        if raw.chars().any(|c| c.is_whitespace() || c == '\u{feff}') {
-            return Err(BaseUrlError::Whitespace);
-        }
-        let url = url::Url::parse(raw).map_err(|_| BaseUrlError::InvalidUrl)?;
-        if !matches!(url.scheme(), "http" | "https") {
-            return Err(BaseUrlError::UnsupportedScheme);
-        }
-        if url.host_str().is_none() {
-            return Err(BaseUrlError::MissingHost);
-        }
-        if url.query().is_some() || url.fragment().is_some() {
-            return Err(BaseUrlError::QueryOrFragment);
-        }
-        if !url.username().is_empty() || url.password().is_some() || has_credentials(raw) {
-            return Err(BaseUrlError::Credentials);
-        }
-        Ok(Self {
-            base: raw.trim_end_matches('/').to_string(),
-        })
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.base
-    }
-
-    /// Joins an absolute API path. `path` must start with `/` and is assumed
-    /// already encoded.
-    pub fn url(&self, path: &str) -> String {
-        format!("{}{}", self.base, path)
-    }
-}
-
-impl fmt::Display for BaseUrl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.base)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BaseUrlError {
-    Empty,
-    Whitespace,
-    InvalidUrl,
-    UnsupportedScheme,
-    MissingHost,
-    QueryOrFragment,
-    Credentials,
-}
-
-impl fmt::Display for BaseUrlError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let detail = match self {
-            Self::Empty => "base URL must not be empty",
-            Self::Whitespace => "base URL must not contain whitespace",
-            Self::InvalidUrl => "base URL is not a valid URL",
-            Self::UnsupportedScheme => "base URL must start with http:// or https://",
-            Self::MissingHost => "base URL must include a host",
-            Self::QueryOrFragment => "base URL must not contain a query or fragment",
-            Self::Credentials => "base URL must not contain credentials",
-        };
-        f.write_str(detail)
-    }
-}
-
-impl std::error::Error for BaseUrlError {}
+/// `opencode.baseUrl` and the transport rule live in core so the relay config,
+/// the service registration and the ntfy client share one check.
+pub use ntfy_relay_core::net::{BaseUrl, BaseUrlError};
 
 /// Basic auth for the local server: user `opencode`, password from
 /// `~/.config/opencode/service.json` (the mechanism the `opencode api` CLI uses).
@@ -560,6 +487,7 @@ impl HttpApi {
     pub fn new(base: BaseUrl) -> Result<Self, ApiError> {
         let client = reqwest::Client::builder()
             .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|error| ApiError::new(format!("http client: {error}")))?;
         Ok(Self {
@@ -915,15 +843,6 @@ fn messages_path(session_id: &str, limit: usize, cursor: Option<&str>) -> String
     path
 }
 
-fn has_credentials(raw: &str) -> bool {
-    let Some(scheme_end) = raw.find("://") else {
-        return false;
-    };
-    let authority = &raw[scheme_end + 3..];
-    let end = authority.find('/').unwrap_or(authority.len());
-    authority[..end].contains('@')
-}
-
 /// JavaScript `encodeURIComponent`, used for path and query segments.
 fn encode_uri_component(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
@@ -969,10 +888,12 @@ mod tests {
             "http://127.0.0.1:4096"
         );
         assert_eq!(
-            BaseUrl::parse("http://127.0.0.1:4096/api")
-                .unwrap()
-                .as_str(),
-            "http://127.0.0.1:4096/api"
+            BaseUrl::parse("http://127.0.0.1:4096/api"),
+            Err(BaseUrlError::Path)
+        );
+        assert_eq!(
+            BaseUrl::parse("http://192.168.1.20:4096"),
+            Err(BaseUrlError::PlainHttp)
         );
         assert_eq!(BaseUrl::parse(""), Err(BaseUrlError::Empty));
         assert_eq!(
@@ -1018,6 +939,34 @@ mod tests {
         assert!(
             ServiceRegistration::from_json(br#"{"url":"nope","pid":1,"password":"x"}"#).is_err()
         );
+        let refused = ServiceRegistration::from_json(
+            br#"{"url":"http://192.168.1.20:4096","pid":1,"password":"x"}"#,
+        );
+        assert!(refused.is_err(), "plain HTTP on a LAN address is refused");
+        assert!(refused
+            .unwrap_err()
+            .message()
+            .contains("must use HTTPS unless the host is loopback"));
+    }
+
+    #[test]
+    fn a_service_file_with_plain_lan_http_names_its_path() {
+        let dir = std::env::temp_dir().join(format!("ntfy-service-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("service.json");
+        fs::write(
+            &path,
+            br#"{"url":"http://192.168.1.20:4096","pid":1,"password":"x"}"#,
+        )
+        .unwrap();
+        let error = ServiceRegistration::load(&path).unwrap_err();
+        assert!(
+            error.message().contains(&path.display().to_string()),
+            "{}",
+            error.message()
+        );
+        assert!(error.message().contains("HTTPS"));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
