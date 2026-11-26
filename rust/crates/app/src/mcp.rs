@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use ntfy_relay_core::config::load_config;
 use ntfy_relay_ntfy::http::{ReqwestTransport, Transport};
 use ntfy_relay_ntfy::publish::{NtfyServer, Publisher};
-use ntfy_relay_outbound::files::{send_file, SendFileInput};
+use ntfy_relay_outbound::files::{send_file, SendFileInput, SendFileOutcome};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -219,9 +219,10 @@ impl Server {
         let roots = match load_config(&self.config_path) {
             Ok(config) => config.project_roots,
             Err(error) => {
-                return Ok(tool_frame(format!(
-                    "Not sent: relay config could not be read ({error})."
-                )));
+                return Ok(tool_frame(
+                    format!("Not sent: relay config could not be read ({error})."),
+                    true,
+                ));
             }
         };
         let outcome = send_file(
@@ -231,16 +232,18 @@ impl Server {
             &SendFileInput { path, message },
         )
         .await;
-        // A refusal is an answer, not a protocol failure: the tool never throws.
-        Ok(tool_frame(outcome.content()))
+        // A refusal is an answer, not a protocol failure, but `isError` tells
+        // the client that the send did not happen.
+        let is_error = matches!(outcome, SendFileOutcome::Refused(_));
+        Ok(tool_frame(outcome.content(), is_error))
     }
 }
 
 /// Result frame for one tool call; the tool reports refusals as text.
-fn tool_frame(text: String) -> Value {
+fn tool_frame(text: String, is_error: bool) -> Value {
     json!({
         "content": [{ "type": "text", "text": text }],
-        "isError": false,
+        "isError": is_error,
     })
 }
 

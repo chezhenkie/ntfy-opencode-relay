@@ -497,7 +497,7 @@ mod tests {
     impl Handler for StopHandler {
         fn handle(&self, request: Request) -> Response {
             assert_eq!(request.path, "/v1/stop");
-            Response::new(200, "{\"ok\":true}".to_string())
+            Response::ok(())
         }
     }
 

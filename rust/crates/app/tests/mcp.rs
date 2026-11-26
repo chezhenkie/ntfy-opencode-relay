@@ -228,6 +228,7 @@ fn the_stdio_server_exposes_one_project_confined_send_file_tool() {
         refused["result"]["content"][0]["text"],
         "Not sent: path is outside the project."
     );
+    assert_eq!(refused["result"]["isError"], true);
 
     // A control root change must reach a running MCP process without a restart.
     std::fs::write(
@@ -248,6 +249,7 @@ fn the_stdio_server_exposes_one_project_confined_send_file_tool() {
         out_of_scope["result"]["content"][0]["text"],
         "Not sent: project is outside the configured roots."
     );
+    assert_eq!(out_of_scope["result"]["isError"], true);
 
     let unknown = client.request(6, "nope", json!({}));
     assert_eq!(unknown["error"]["code"], -32601, "{unknown}");

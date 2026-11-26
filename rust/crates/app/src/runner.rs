@@ -673,6 +673,11 @@ fn read_token(path: &Path) -> Option<String> {
     (token.len() >= MIN_TOKEN_LEN).then_some(token)
 }
 
+/// Both stop paths answer with the same success envelope as every other route.
+fn stop_response() -> Response {
+    Response::ok(())
+}
+
 /// A fresh root has no token until `ntfy-auth apply` writes one. The daemon
 /// keeps its lock and its control endpoint and waits instead of exiting, so a
 /// boot or an install is not reported as a failure, and the token attaches
@@ -696,7 +701,7 @@ async fn wait_for_token(
             call = calls.recv() => {
                 match call {
                     Some(ControlCall::Stop(reply)) => {
-                        let _ = reply.send(Response::new(200, "{\"ok\":true}".to_string()));
+                        let _ = reply.send(stop_response());
                         return Ok(None);
                     }
                     Some(call) => refuse_not_ready(call),
@@ -936,7 +941,7 @@ async fn handle_control_call(
             false
         }
         ControlCall::Stop(reply) => {
-            let _ = reply.send(Response::new(200, "{\"ok\":true}".to_string()));
+            let _ = reply.send(stop_response());
             true
         }
     }
@@ -1183,7 +1188,19 @@ mod tests {
 
         let response = answer.recv_timeout(Duration::from_secs(1)).unwrap();
         assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["ok"], true);
+        assert!(body.get("data").is_some(), "{}", response.body);
         assert_eq!(task.await.unwrap(), Ok(None));
+    }
+
+    #[test]
+    fn the_stop_reply_uses_the_success_envelope() {
+        let response = stop_response();
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(body["ok"], true);
+        assert!(body.get("data").is_some(), "{}", response.body);
     }
 
     #[tokio::test(start_paused = true)]

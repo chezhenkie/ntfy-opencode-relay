@@ -526,7 +526,7 @@ impl HttpApi {
         path: &str,
         body: Option<Vec<u8>>,
     ) -> Result<Vec<u8>, ApiError> {
-        let label = format!("{method} {path}");
+        let label = request_label(&method, path);
         let mut builder = self
             .client
             .request(method, self.base.url(path))
@@ -877,6 +877,13 @@ fn clip(value: &str, max_chars: usize) -> &str {
     }
 }
 
+/// Error labels name the route only. A form answer travels in the query
+/// string, and it must not reach an error message or a log line.
+fn request_label(method: &reqwest::Method, path: &str) -> String {
+    let route = path.split('?').next().unwrap_or_default();
+    format!("{method} {route}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -975,6 +982,25 @@ mod tests {
         assert_eq!(
             base.url(&format!("/api/session/{}", encode_uri_component("ses_a/b"))),
             "http://127.0.0.1:4096/api/session/ses_a%2Fb"
+        );
+    }
+
+    #[test]
+    fn an_error_label_drops_the_query_string() {
+        assert_eq!(
+            request_label(
+                &reqwest::Method::DELETE,
+                "/api/session/ses_1/form/frm_1?message=keep%20both"
+            ),
+            "DELETE /api/session/ses_1/form/frm_1"
+        );
+        assert_eq!(
+            request_label(&reqwest::Method::GET, "/api/session?project=p&limit=8"),
+            "GET /api/session"
+        );
+        assert_eq!(
+            request_label(&reqwest::Method::GET, "/api/project"),
+            "GET /api/project"
         );
     }
 
