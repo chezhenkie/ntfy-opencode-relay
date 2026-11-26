@@ -39,7 +39,9 @@ pub fn read_bounded(path: &Path, cap: usize) -> io::Result<BoundedRead> {
     }
 }
 
-/// Opens a file for writing with owner-only mode on Unix.
+/// Opens a file for writing with owner-only mode on Unix. Windows has no
+/// owner-only mode: the file relies on the install root's inherited per-user
+/// ACL, and `ntfy-deploy install` warns when the root is elsewhere.
 pub fn owner_only(path: &Path) -> io::Result<fs::File> {
     let mut options = fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);

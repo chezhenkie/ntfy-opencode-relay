@@ -327,7 +327,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <li>Windows: the directory holding <code>ntfy-relay.exe</code>, by default <code>%LOCALAPPDATA%\ntfy-relay\</code> or the path in <code>NTFY_RELAY_HOME</code>.</li>
 <li>Linux: the install directory holding the binary, for example <code>/opt/ntfy-relay</code>.</li>
 <li>Override for staging and tests: <code>NTFY_RELAY_HOME</code>. The installer sets it to the install root; resolution is strict, and a missing root fails without a fallback.</li>
-<li>No file in this root is tracked in git. Tokens are <code>0600</code> on Unix.</li>
+<li>No file in this root is tracked in git. Tokens are <code>0600</code> on Unix. On Windows there is no owner-only mode: the token, configs, and runtime file rely on the root&#39;s inherited per-user ACLs, so the root must sit under <code>%LOCALAPPDATA%</code>; <code>install</code> warns when it does not, and the <code>status</code> <code>acl</code> row names the root.</li>
 </ul>
 <p>Contents:</p>
 <table><thead><tr><th>file</th><th>purpose</th></tr></thead><tbody>

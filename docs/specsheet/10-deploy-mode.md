@@ -21,7 +21,7 @@ Each product owns its files. The relay root holds the relay config, token files,
 - Windows: the directory holding `ntfy-relay.exe`, by default `%LOCALAPPDATA%\ntfy-relay\` or the path in `NTFY_RELAY_HOME`.
 - Linux: the install directory holding the binary, for example `/opt/ntfy-relay`.
 - Override for staging and tests: `NTFY_RELAY_HOME`. The installer sets it to the install root; resolution is strict, and a missing root fails without a fallback.
-- No file in this root is tracked in git. Tokens are `0600` on Unix.
+- No file in this root is tracked in git. Tokens are `0600` on Unix. On Windows there is no owner-only mode: the token, configs, and runtime file rely on the root's inherited per-user ACLs, so the root must sit under `%LOCALAPPDATA%`; `install` warns when it does not, and the `status` `acl` row names the root.
 
 Contents:
 

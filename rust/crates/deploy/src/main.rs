@@ -202,6 +202,7 @@ fn install_paths(platform: Platform) -> Result<InstallPaths, String> {
         source,
         app_data,
         unit_dir,
+        user_base: install::per_user_base(platform),
     })
 }
 

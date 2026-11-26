@@ -42,6 +42,9 @@ pub struct InstallPaths {
     pub app_data: Option<PathBuf>,
     /// Linux: the systemd user unit folder.
     pub unit_dir: Option<PathBuf>,
+    /// `%LOCALAPPDATA%` on Windows, the user's home on Unix: the folder whose
+    /// inherited ACLs the root and its files rely on.
+    pub user_base: Option<PathBuf>,
 }
 
 impl InstallPaths {
@@ -100,6 +103,51 @@ pub fn default_root(
     }
 }
 
+/// The per-user folder whose inherited ACLs the root and its files rely on:
+/// `%LOCALAPPDATA%` on Windows, `HOME` on Unix.
+pub fn per_user_base(platform: Platform) -> Option<PathBuf> {
+    let name = match platform {
+        Platform::Windows => "LOCALAPPDATA",
+        Platform::Linux => "HOME",
+    };
+    std::env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Windows has no owner-only mode, so the token, configs, and runtime file
+/// rely on the root's inherited per-user ACLs. A root outside the per-user
+/// folder is reported, not tightened; a shared root is the operator's choice.
+pub fn acl_warning(platform: Platform, root: &Path, base: Option<&Path>) -> Option<String> {
+    let base = base?;
+    if is_under(platform, root, base) {
+        return None;
+    }
+    Some(format!(
+        "warning: root is outside {}; the token and configs rely on inherited per-user ACLs",
+        base.display()
+    ))
+}
+
+/// Whole-component containment, with the platform's case rule.
+fn is_under(platform: Platform, root: &Path, base: &Path) -> bool {
+    let parts = |path: &Path| -> Vec<String> {
+        path.components()
+            .map(|part| {
+                let text = part.as_os_str().to_string_lossy().into_owned();
+                if platform == Platform::Windows {
+                    text.to_lowercase()
+                } else {
+                    text
+                }
+            })
+            .collect()
+    };
+    let root = parts(root);
+    let base = parts(base);
+    root.len() >= base.len() && root[..base.len()] == base[..]
+}
+
 pub fn install(
     runner: &dyn CommandRunner,
     platform: Platform,
@@ -108,6 +156,9 @@ pub fn install(
 ) -> Result<InstallReport, DeployError> {
     let mut report = InstallReport { lines: Vec::new() };
     report.push(format!("root: {}", paths.root.display()));
+    if let Some(warning) = acl_warning(platform, &paths.root, paths.user_base.as_deref()) {
+        report.push(warning);
+    }
     report.push(format!("source: {}", paths.source.display()));
 
     let files = check_release_files(paths, platform)?;
@@ -1219,6 +1270,7 @@ mod tests {
             source,
             app_data: Some(scratch.path().join("appdata")),
             unit_dir: None,
+            user_base: None,
         }
     }
 
@@ -1246,6 +1298,45 @@ mod tests {
             previous_name(Platform::Linux, "ntfy-relay"),
             "ntfy-relay.previous"
         );
+    }
+
+    #[test]
+    fn acl_containment_follows_the_platform_case_rule() {
+        assert!(is_under(
+            Platform::Windows,
+            Path::new("c:/users/me/appdata/local/ntfy-relay"),
+            Path::new("C:/Users/Me/AppData/Local")
+        ));
+        assert!(!is_under(
+            Platform::Windows,
+            Path::new("C:/Users/me-other/ntfy-relay"),
+            Path::new("C:/Users/me")
+        ));
+        assert!(!is_under(
+            Platform::Linux,
+            Path::new("/home/me-other/ntfy-relay"),
+            Path::new("/home/me")
+        ));
+    }
+
+    #[test]
+    fn a_root_outside_the_per_user_folder_is_reported() {
+        let scratch = Scratch::new("acl-root");
+        let (source, root) = release(&scratch, b"one");
+        let mut paths = paths(source, root, &scratch);
+        paths.user_base = Some(scratch.path().to_path_buf());
+        let inside = install(&windows_runner(), Platform::Windows, &paths, true).unwrap();
+        assert!(!inside
+            .lines
+            .iter()
+            .any(|line| line.starts_with("warning: root is outside")));
+
+        paths.user_base = Some(scratch.path().join("profile"));
+        let outside = install(&windows_runner(), Platform::Windows, &paths, true).unwrap();
+        assert!(outside
+            .lines
+            .iter()
+            .any(|line| line.starts_with("warning: root is outside")));
     }
 
     #[test]
@@ -2054,6 +2145,7 @@ mod tests {
             source,
             app_data: None,
             unit_dir: Some(unit_dir.clone()),
+            user_base: None,
         };
         let report = install(&runner, Platform::Linux, &paths, false).unwrap();
         assert!(unit_dir.join("ntfy-relay-watchdog.service").exists());
@@ -2086,6 +2178,7 @@ mod tests {
             source,
             app_data: None,
             unit_dir: Some(unit_dir.clone()),
+            user_base: None,
         };
         let report = install(&runner, Platform::Linux, &paths, false).unwrap();
         assert!(!unit_dir.exists());
@@ -2120,6 +2213,7 @@ mod tests {
             source,
             app_data: None,
             unit_dir: Some(unit_dir.clone()),
+            user_base: None,
         };
         let report = install(&runner, Platform::Linux, &paths, false).unwrap();
         assert!(!unit_dir.exists());
@@ -2159,6 +2253,7 @@ mod tests {
             source,
             app_data: None,
             unit_dir: Some(unit_dir.clone()),
+            user_base: None,
         };
         let report = remove(&runner, Platform::Linux, &paths, false).unwrap();
         assert!(!unit_dir.join("ntfy-relay-watchdog.timer").exists());
@@ -2193,6 +2288,7 @@ mod tests {
             source,
             app_data: None,
             unit_dir: Some(unit_dir.clone()),
+            user_base: None,
         };
         let report = remove(&runner, Platform::Linux, &paths, false).unwrap();
         assert!(!unit_dir.join("ntfy-relay-watchdog.timer").exists());

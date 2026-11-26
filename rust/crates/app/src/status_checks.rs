@@ -14,6 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ntfy_relay_ntfy::http::{HttpRequest, Method, ReqwestTransport, Transport};
+use ntfy_relay_outbound::scope::is_inside;
 
 const HEALTH_TIMEOUT_SECS: u64 = 8;
 const HEALTH_MAX_BYTES: u64 = 16 * 1024;
@@ -104,6 +105,11 @@ pub struct Tools {
     pub port: u16,
     pub health_url: String,
     pub elevated: bool,
+    /// The install root, named by the `acl` row.
+    pub root: PathBuf,
+    /// `%LOCALAPPDATA%` on Windows, the user's home on Unix: the folder whose
+    /// inherited ACLs the root relies on.
+    pub profile: Option<PathBuf>,
 }
 
 impl Tools {
@@ -120,8 +126,22 @@ impl Tools {
             port: server_port(server),
             health_url,
             elevated: is_elevated(),
+            root: ntfy_relay_core::config::install_root().unwrap_or_default(),
+            profile: user_profile(),
         }
     }
+}
+
+/// The folder whose inherited ACLs the root and its files rely on.
+fn user_profile() -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "LOCALAPPDATA"
+    } else {
+        "HOME"
+    };
+    env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 fn env_program(name: &str, fallback: PathBuf) -> PathBuf {
@@ -484,7 +504,33 @@ pub fn gather(
         rows.push(Row::pass("elevated", "no"));
     }
 
+    rows.push(acl_row(platform, &tools.root, tools.profile.as_deref()));
     rows
+}
+
+/// Windows has no owner-only mode, so the token, configs, and runtime file
+/// rely on the root's inherited per-user ACLs. On Unix the files are 0600 and
+/// the check is the same precondition. A shared root is reported, not
+/// tightened.
+fn acl_row(platform: Platform, root: &Path, profile: Option<&Path>) -> Row {
+    match profile {
+        Some(base) if is_inside(base, root) => {
+            let detail = match platform {
+                Platform::Windows => format!("{} inherited per-user ACL", root.display()),
+                Platform::Linux => format!("{} 0600 files under the user home", root.display()),
+            };
+            Row::pass("acl", detail)
+        }
+        Some(base) => Row::fail(
+            "acl",
+            format!(
+                "{} outside {}, no per-user inheritance",
+                root.display(),
+                base.display()
+            ),
+        ),
+        None => Row::fail("acl", format!("{} has no per-user base", root.display())),
+    }
 }
 
 /// Port from a base URL, with the scheme default when it carries none.
@@ -614,6 +660,8 @@ Address         Port        Address         Port
             port: 8810,
             health_url: "http://127.0.0.1:8810/v1/health".to_string(),
             elevated: false,
+            root: PathBuf::from("/srv/ntfy-relay"),
+            profile: Some(PathBuf::from("/srv")),
         }
     }
 
@@ -664,7 +712,7 @@ Address         Port        Address         Port
                 healthy: true,
             },
         );
-        assert_eq!(rows.len(), 9);
+        assert_eq!(rows.len(), 10);
         assert!(
             rows.iter().all(|row| row.verdict == Verdict::Pass),
             "{rows:#?}"
@@ -672,6 +720,10 @@ Address         Port        Address         Port
         assert_eq!(
             row(&rows, "container-health").line(),
             "PASS container-health healthy"
+        );
+        assert_eq!(
+            row(&rows, "acl").line(),
+            "PASS acl /srv/ntfy-relay inherited per-user ACL"
         );
         let _ = fs::remove_dir_all(dir);
     }
@@ -795,6 +847,34 @@ Address         Port        Address         Port
         );
         assert_eq!(row(&rows, "elevated").verdict, Verdict::Fail);
         assert_eq!(row(&rows, "elevated").detail, elevated_detail());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_root_outside_the_profile_fails_the_acl_row() {
+        let dir = empty_dir("acl-outside");
+        let mut tools = tools(vec![dir.clone()]);
+        tools.root = PathBuf::from("C:\\ProgramData\\ntfy-relay");
+        tools.profile = Some(PathBuf::from("C:\\Users\\me\\AppData\\Local"));
+        let rows = gather(
+            Platform::Windows,
+            &tools,
+            &passing_runner(),
+            Health::Answer {
+                status: 200,
+                healthy: true,
+            },
+        );
+        let acl = row(&rows, "acl");
+        assert_eq!(acl.verdict, Verdict::Fail);
+        assert!(
+            acl.detail.contains("C:\\ProgramData\\ntfy-relay"),
+            "{acl:?}"
+        );
+        assert!(
+            acl.detail.contains("C:\\Users\\me\\AppData\\Local"),
+            "{acl:?}"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
