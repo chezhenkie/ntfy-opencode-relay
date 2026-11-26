@@ -20,6 +20,9 @@ pub const TURN_DEBOUNCE_MS: i64 = 3_000;
 pub const TURN_BUFFER_TTL_MS: i64 = 600_000;
 pub const MAX_PENDING_FILES: usize = 64;
 pub const MAX_TURN_TEXT_BYTES: usize = 2_097_152;
+/// Marks the cut where a part ran past the turn budget, so the phone knows the
+/// text is incomplete rather than silently shorter.
+pub const TRUNCATED_MARKER: &str = "\n[truncated]";
 /// Upper bound on turn states, expired tombstones included. Matches the seen
 /// window order of magnitude; a run that touches hundreds of sessions stays
 /// bounded and the oldest buffered text is published, not dropped silently.
@@ -249,22 +252,28 @@ impl TurnTracker {
         if !state.keys.insert(key) {
             return out;
         }
-        let part_bytes = text.len();
-        if state.truncated || state.text_bytes + part_bytes > MAX_TURN_TEXT_BYTES {
-            if !state.truncated {
-                state.truncated = true;
-                self.log.warn(&format!(
-                    "turn text exceeded {MAX_TURN_TEXT_BYTES} bytes; later parts are dropped"
-                ));
-            }
+        if state.truncated {
             return out;
         }
-        state.text_bytes += part_bytes;
+        let part_bytes = text.len();
+        let (stored, kept, truncated) = if state.text_bytes + part_bytes > MAX_TURN_TEXT_BYTES {
+            let remaining = MAX_TURN_TEXT_BYTES.saturating_sub(state.text_bytes);
+            (truncate_part(text, remaining), remaining, true)
+        } else {
+            (text.to_string(), part_bytes, false)
+        };
+        state.text_bytes += kept;
+        if truncated {
+            state.truncated = true;
+            self.log.warn(&format!(
+                "turn text exceeded {MAX_TURN_TEXT_BYTES} bytes; the part is truncated and later parts are dropped"
+            ));
+        }
         state.parts.push(Part {
             message: assistant_message_id.to_string(),
             time,
             ordinal,
-            text: text.to_string(),
+            text: stored,
         });
         state.ttl_at = Some(now + self.settings.ttl_ms);
         out
@@ -554,6 +563,23 @@ pub fn recovered_body(
     compose_body(session_id, trimmed, TerminalMode::Idle, settings, now)
 }
 
+/// Keeps at most `remaining` bytes of `text` on a character boundary and adds
+/// the marker, so an oversized part arrives visibly cut instead of missing.
+fn truncate_part(text: &str, remaining: usize) -> String {
+    let mut end = 0;
+    for (index, ch) in text.char_indices() {
+        let next = index + ch.len_utf8();
+        if next > remaining {
+            break;
+        }
+        end = next;
+    }
+    let mut out = String::with_capacity(end + TRUNCATED_MARKER.len());
+    out.push_str(&text[..end]);
+    out.push_str(TRUNCATED_MARKER);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -795,7 +821,7 @@ mod tests {
     }
 
     #[test]
-    fn the_text_cap_drops_later_parts_once() {
+    fn the_text_cap_marks_the_overflow_and_drops_later_parts() {
         let mut tracker = TurnTracker::new(TurnSettings::default(), Arc::new(NoopLog));
         tracker.started("ses_a", 1_000);
         let huge = "x".repeat(MAX_TURN_TEXT_BYTES);
@@ -807,6 +833,23 @@ mod tests {
             panic!("expected attachment");
         };
         assert!(!body.contains("after cap"));
+        assert!(body.ends_with(TRUNCATED_MARKER));
+    }
+
+    #[test]
+    fn an_oversized_final_part_is_truncated_not_dropped() {
+        let mut tracker = TurnTracker::new(TurnSettings::default(), Arc::new(NoopLog));
+        tracker.started("ses_a", 1_000);
+        let huge = "x".repeat(3 * 1024 * 1024);
+        tracker.append("ses_a", "msg", 0, &huge, 1, 1_000);
+        tracker.terminal("ses_a", TerminalMode::Idle, 1_000);
+        let out = tracker.tick(4_000);
+        let Some(TurnBody::Attachment { body, .. }) = &out[0].body else {
+            panic!("expected attachment");
+        };
+        assert_eq!(body.len(), MAX_TURN_TEXT_BYTES + TRUNCATED_MARKER.len());
+        assert!(body.ends_with(TRUNCATED_MARKER));
+        assert!(body.starts_with('x'));
     }
 
     #[test]

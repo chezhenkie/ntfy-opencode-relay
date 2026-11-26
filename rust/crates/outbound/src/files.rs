@@ -191,17 +191,17 @@ pub fn inspect(
     } else {
         base.join(raw_path)
     };
-    let handle = std::fs::File::open(&absolute).map_err(|_| Refusal::new("file does not exist"))?;
     let path = canonical(&absolute).ok_or_else(|| Refusal::new("file does not exist"))?;
     let root = canonical(root).unwrap_or_else(|| root.to_path_buf());
+    if !is_inside(&root, &path) {
+        return Err(Refusal::new("path is outside the project"));
+    }
+    let handle = std::fs::File::open(&path).map_err(|_| Refusal::new("file does not exist"))?;
     let metadata = handle
         .metadata()
         .map_err(|_| Refusal::new("file does not exist"))?;
     if !metadata.is_file() {
         return Err(Refusal::new("path is not a regular file"));
-    }
-    if !is_inside(&root, &path) {
-        return Err(Refusal::new("path is outside the project"));
     }
     let name = path
         .file_name()
@@ -661,6 +661,32 @@ mod tests {
                 .reason,
             "path is in an excluded directory"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_outside_fifo_is_refused_without_an_open() {
+        let root = temp_root("fifo");
+        let project = root.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let fifo = root.join("pipe");
+        let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+        if !matches!(made, Ok(status) if status.success()) {
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let threaded = project.clone();
+        std::thread::spawn(move || {
+            let outcome = inspect("../pipe", &threaded, &threaded, None, true, 1024)
+                .map(|_| ())
+                .map_err(|refusal| refusal.reason);
+            let _ = tx.send(outcome);
+        });
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(Err(reason)) => assert_eq!(reason, "path is outside the project"),
+            Ok(Ok(())) => panic!("an outside fifo was accepted"),
+            Err(_) => panic!("inspect opened the fifo before the containment check"),
+        }
     }
 
     #[test]

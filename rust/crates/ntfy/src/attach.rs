@@ -187,8 +187,8 @@ async fn download(
 
     let fallback = format!("file-{now_ms}");
     let name = sanitize_filename(attachment.name.as_deref().unwrap_or(""), &fallback);
-    let target = unique_target(dest_dir, &name, now_ms);
     tokio::fs::create_dir_all(dest_dir).await?;
+    let target = reserve_target(dest_dir, &name, now_ms).await?;
     if let Err(error) = tokio::fs::write(&target, &body).await {
         let _ = tokio::fs::remove_file(&target).await;
         return Err(AttachError::Io(error));
@@ -209,25 +209,36 @@ async fn download(
     })
 }
 
-/// `<seconds>-<name>`, then the millisecond name, then a counter. The write
-/// must never truncate a file another process or a retry left in the inbox.
-fn unique_target(dest_dir: &Path, name: &str, now_ms: i64) -> PathBuf {
+/// `<seconds>-<name>`, then the millisecond name, then a counter. The name is
+/// reserved with `create_new`, so two concurrent fetches with the same
+/// sanitized name and the same millisecond cannot truncate each other.
+async fn reserve_target(dest_dir: &Path, name: &str, now_ms: i64) -> Result<PathBuf, AttachError> {
     let seconds = now_ms.div_euclid(1000);
-    let first = dest_dir.join(format!("{seconds}-{name}"));
-    if !first.exists() {
-        return first;
-    }
-    let second = dest_dir.join(format!("{now_ms}-{name}"));
-    if !second.exists() {
-        return second;
-    }
-    let mut counter = 1u64;
+    let mut attempt = 0u64;
     loop {
-        let candidate = dest_dir.join(format!("{now_ms}-{counter}-{name}"));
-        if !candidate.exists() {
-            return candidate;
+        let candidate = match attempt {
+            0 => dest_dir.join(format!("{seconds}-{name}")),
+            1 => dest_dir.join(format!("{now_ms}-{name}")),
+            n => dest_dir.join(format!("{now_ms}-{}-{name}", n - 1)),
+        };
+        match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+            .await
+        {
+            Ok(_) => return Ok(candidate),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                if attempt >= 1000 {
+                    return Err(AttachError::Io(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        "no free inbox name",
+                    )));
+                }
+                attempt += 1;
+            }
+            Err(error) => return Err(AttachError::Io(error)),
         }
-        counter += 1;
     }
 }
 
@@ -248,8 +259,10 @@ fn require_host(value: &str, allowed_hosts: &[String]) -> Result<url::Url, Attac
 
 /// The request URL for one hop. A hop already on the configured server host is
 /// fetched as given; a hop on the deployment host reuses the server base and
-/// the attachment path. The rewritten target still has to pass the transport
-/// rule, which is why a non-loopback HTTP base is never contacted.
+/// the attachment path. A base that carries a path prefix keeps it, so
+/// `https://relay.example/ntfy` requests `/ntfy/file/abc`. The rewritten
+/// target still has to pass the transport rule, which is why a non-loopback
+/// HTTP base is never contacted.
 fn local_target(original: &url::Url, server_base: &str) -> Result<url::Url, AttachError> {
     let base = url::Url::parse(server_base).map_err(|_| AttachError::InvalidUrl)?;
     let same_host = original
@@ -260,7 +273,8 @@ fn local_target(original: &url::Url, server_base: &str) -> Result<url::Url, Atta
         original.clone()
     } else {
         let mut target = base;
-        target.set_path(original.path());
+        let prefix = target.path().trim_end_matches('/').to_string();
+        target.set_path(&format!("{prefix}{}", original.path()));
         target.set_query(original.query());
         target
     };

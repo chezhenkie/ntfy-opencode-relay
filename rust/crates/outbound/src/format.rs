@@ -9,6 +9,7 @@ use ntfy_relay_opencode::event::FormField;
 use crate::publish::OutboundMessage;
 
 pub const QUESTION_MAX_BYTES: usize = 4096;
+pub const ERROR_MAX_BYTES: usize = 4096;
 pub const QUESTION_GENERIC: &str = "The assistant is asking for your input but sent an unreadable question payload.\nOpen the conversation in opencode to answer.";
 pub const TRUNCATED: &str = "\n(truncated)";
 
@@ -35,7 +36,7 @@ pub fn error_message(topic: &str, session_id: Option<&str>, error: &str) -> Outb
         kind: "session.error",
         topic: topic.to_string(),
         title: format!("{topic} - session error"),
-        message: format!("{prefix}\n{error}"),
+        message: bound_message(&format!("{prefix}\n{error}"), ERROR_MAX_BYTES),
         tags: vec!["warning", "oc-out"],
         priority: Priority::Default,
         file: None,
@@ -134,10 +135,16 @@ pub fn question_message(
 /// Caps a formatted question at the ntfy client budget, keeping whole code
 /// points and marking the cut so the phone never sees a silent mid-option cut.
 pub fn bound_question_message(value: &str) -> String {
-    if value.len() <= QUESTION_MAX_BYTES {
+    bound_message(value, QUESTION_MAX_BYTES)
+}
+
+/// Caps any push text at `limit` bytes on a character boundary and marks the
+/// cut. Provider errors use it so a tool dump cannot flood the topic.
+pub fn bound_message(value: &str, limit: usize) -> String {
+    if value.len() <= limit {
         return value.to_string();
     }
-    let budget = QUESTION_MAX_BYTES - TRUNCATED.len();
+    let budget = limit.saturating_sub(TRUNCATED.len());
     let mut used = 0;
     let mut end = value.len();
     for (index, ch) in value.char_indices() {
@@ -185,6 +192,17 @@ mod tests {
             error_message("proj", None, "x").message,
             "A session reported an error:\nx"
         );
+    }
+
+    #[test]
+    fn a_provider_error_is_cut_at_the_push_budget() {
+        let error = "e".repeat(4 * 1024 * 1024);
+        let message = error_message("proj", Some("ses_1"), &error);
+        assert_eq!(message.message.len(), ERROR_MAX_BYTES);
+        assert!(message
+            .message
+            .starts_with("Session ses_1 reported an error:\ne"));
+        assert!(message.message.ends_with(TRUNCATED));
     }
 
     #[test]

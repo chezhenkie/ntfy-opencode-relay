@@ -479,6 +479,76 @@ async fn a_deployment_host_attachment_is_fetched_through_the_server_base() {
 }
 
 #[tokio::test]
+async fn a_base_path_prefix_is_kept_on_a_deployment_hop() {
+    for base in ["https://relay.example/ntfy", "https://relay.example/ntfy/"] {
+        let temp = TempDir::new("host-prefix");
+        let transport = Fake::new(vec![response(200, &[], b"hi")]);
+        let saved = fetch_attachment(
+            &transport,
+            &attachment(
+                "http://100.64.0.10:8810/file/abc?t=1",
+                Some("mesh.png"),
+                Some(2),
+            ),
+            &["relay.example".to_string(), "100.64.0.10".to_string()],
+            base,
+            temp.path(),
+            1024,
+            1,
+        )
+        .await
+        .unwrap();
+        assert_eq!(saved.bytes, 2);
+        let requests = transport.requests();
+        assert_eq!(requests.len(), 1, "{base}");
+        assert_eq!(
+            requests[0].url, "https://relay.example/ntfy/file/abc?t=1",
+            "{base}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn concurrent_fetches_with_one_name_keep_both_files() {
+    let temp = TempDir::new("concurrent");
+    let inbox = temp.path().join(".ntfy-inbox");
+    let first = Fake::new(vec![response(200, &[], b"first")]);
+    let second = Fake::new(vec![response(200, &[], b"second")]);
+    let one = attachment("https://ntfy.test/file/one", Some("x.txt"), Some(5));
+    let two = attachment("https://ntfy.test/file/two", Some("x.txt"), Some(6));
+    let hosts = ["ntfy.test".to_string()];
+    let (a, b) = tokio::join!(
+        fetch_attachment(
+            &first,
+            &one,
+            &hosts,
+            "https://ntfy.test",
+            &inbox,
+            1024,
+            1_700_000_000_123,
+        ),
+        fetch_attachment(
+            &second,
+            &two,
+            &hosts,
+            "https://ntfy.test",
+            &inbox,
+            1024,
+            1_700_000_000_123,
+        ),
+    );
+    let a = a.unwrap();
+    let b = b.unwrap();
+    assert_ne!(a.path, b.path);
+    let mut bodies = vec![
+        std::fs::read(&a.path).unwrap(),
+        std::fs::read(&b.path).unwrap(),
+    ];
+    bodies.sort();
+    assert_eq!(bodies, vec![b"first".to_vec(), b"second".to_vec()]);
+}
+
+#[tokio::test]
 async fn a_redirect_to_another_host_is_refused() {
     let temp = TempDir::new("host-redirect");
     let transport = Fake::new(vec![response(
