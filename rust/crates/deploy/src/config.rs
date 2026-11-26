@@ -176,7 +176,44 @@ pub struct DeployConfig {
     pub vpn: Option<VpnConfig>,
 }
 
+/// Container port published on the host when no config exists yet.
+pub const DEFAULT_PORT: u16 = 8810;
+
 impl DeployConfig {
+    /// The first config on a root that has none. Only the mode and the base URL
+    /// have no safe default; the rest matches the example file and `apply`.
+    pub fn initial(mode: Mode, base_url: &str) -> Result<Self, ConfigError> {
+        let url = BaseUrl::parse(base_url)?;
+        let vpn = if mode == Mode::Vpn {
+            if url.host().parse::<Ipv4Addr>().is_err() {
+                return Err(ConfigError::new(
+                    "config: vpn mode needs an IPv4 baseUrl host, which becomes vpn.ip",
+                ));
+            }
+            validate_vpn_ip(url.host())?;
+            Some(VpnConfig {
+                ip: url.host().to_string(),
+            })
+        } else {
+            None
+        };
+        let config = Self {
+            version: 1,
+            mode,
+            base_url: base_url.to_string(),
+            behind_proxy: mode == Mode::Proxy,
+            port: DEFAULT_PORT,
+            container: ContainerConfig {
+                name: "ntfy".to_string(),
+                image: "localhost/ntfy:server".to_string(),
+                cache_volume: "ntfy-cache".to_string(),
+            },
+            vpn,
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
     /// Parses and validates one config document.
     pub fn parse_text(text: &str) -> Result<Self, ConfigError> {
         let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -422,6 +459,33 @@ mod tests {
         assert_eq!(config.base_url().unwrap().host(), "100.64.0.10");
         assert_eq!(config.vpn_ip(), Some(Ipv4Addr::new(100, 64, 0, 10)));
         assert!(!config.behind_proxy);
+    }
+
+    #[test]
+    fn an_initial_config_is_valid_for_each_mode() {
+        let proxy = DeployConfig::initial(Mode::Proxy, "https://ntfy.example.ts.net").unwrap();
+        assert_eq!(proxy.port, DEFAULT_PORT);
+        assert!(proxy.behind_proxy);
+        assert!(proxy.vpn.is_none());
+        let vpn = DeployConfig::initial(Mode::Vpn, "http://100.64.0.10:8810").unwrap();
+        assert_eq!(vpn.vpn.as_ref().unwrap().ip, "100.64.0.10");
+        assert!(!vpn.behind_proxy);
+        let lan = DeployConfig::initial(Mode::Lan, "http://192.168.1.20:8810").unwrap();
+        assert!(lan.vpn.is_none());
+        for config in [&proxy, &vpn, &lan] {
+            let text = config.to_json().unwrap();
+            assert_eq!(&DeployConfig::parse_text(&text).unwrap(), config);
+        }
+    }
+
+    #[test]
+    fn an_initial_config_refuses_a_bad_base_url() {
+        let error = DeployConfig::initial(Mode::Proxy, "http://192.168.1.20:8810").unwrap_err();
+        assert!(error.message().contains("https"), "{error}");
+        let error = DeployConfig::initial(Mode::Vpn, "https://ntfy.example.ts.net").unwrap_err();
+        assert!(error.message().contains("IPv4"), "{error}");
+        let error = DeployConfig::initial(Mode::Lan, "http://192.168.1.20:9999").unwrap_err();
+        assert!(error.message().contains("port"), "{error}");
     }
 
     #[test]

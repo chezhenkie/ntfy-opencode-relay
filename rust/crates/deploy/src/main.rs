@@ -1,4 +1,4 @@
-//! `ntfy-deploy apply|status`.
+//! `ntfy-deploy apply|status|mode|init`.
 //!
 //! Exit codes: 0 ok, 2 invalid config, 3 unhealthy, 4 platform command failed.
 
@@ -13,7 +13,7 @@ use ntfy_relay_deploy::platform::Platform;
 use ntfy_relay_deploy::status::{self, StatusReport};
 use ntfy_relay_deploy::SystemRunner;
 
-const USAGE: &str = "usage: ntfy-deploy apply [--config <path>] [--dry-run]\n       ntfy-deploy status [--config <path>]\n       ntfy-deploy mode [tailscale|nord|lan] [--config <path>] [--dry-run]\n       ntfy-deploy install [--dry-run]\n       ntfy-deploy remove [--dry-run]";
+const USAGE: &str = "usage: ntfy-deploy apply [--config <path>] [--dry-run]\n       ntfy-deploy status [--config <path>]\n       ntfy-deploy mode [tailscale|nord|lan] [--config <path>] [--dry-run]\n       ntfy-deploy init --mode <tailscale|nord|lan> --base-url <url> [--config <path>]\n       ntfy-deploy install [--dry-run]\n       ntfy-deploy remove [--dry-run]";
 const CONFIG_FILE: &str = "ntfy-deploy.json";
 
 fn main() {
@@ -32,6 +32,9 @@ fn dispatch() -> i32 {
     }
     if command == "install" || command == "remove" {
         return dispatch_install(command, &args[1..]);
+    }
+    if command == "init" {
+        return dispatch_init(&args[1..]);
     }
     if command != "apply" && command != "status" && command != "mode" {
         eprintln!("{USAGE}");
@@ -123,6 +126,91 @@ fn dispatch() -> i32 {
             }
         }
     }
+}
+
+/// `init`: write the first deploy config from the two values that have no
+/// default. The relay and the container are untouched.
+fn dispatch_init(args: &[String]) -> i32 {
+    let mut mode_name: Option<String> = None;
+    let mut base_url: Option<String> = None;
+    let mut config_path: Option<PathBuf> = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--mode" => {
+                index += 1;
+                match args.get(index) {
+                    Some(value) if !value.is_empty() => mode_name = Some(value.clone()),
+                    _ => {
+                        eprintln!("--mode needs tailscale, nord, or lan");
+                        return 2;
+                    }
+                }
+            }
+            "--base-url" => {
+                index += 1;
+                match args.get(index) {
+                    Some(value) if !value.is_empty() => base_url = Some(value.clone()),
+                    _ => {
+                        eprintln!("--base-url needs a URL");
+                        return 2;
+                    }
+                }
+            }
+            "--config" => {
+                index += 1;
+                match args.get(index) {
+                    Some(value) if !value.is_empty() => config_path = Some(PathBuf::from(value)),
+                    _ => {
+                        eprintln!("--config needs a path");
+                        return 2;
+                    }
+                }
+            }
+            other => {
+                eprintln!("unknown argument: {other}");
+                eprintln!("{USAGE}");
+                return 2;
+            }
+        }
+        index += 1;
+    }
+    let Some(mode_name) = mode_name else {
+        eprintln!("init needs --mode tailscale|nord|lan");
+        return 2;
+    };
+    let Some(base_url) = base_url else {
+        eprintln!("init needs --base-url <url>");
+        return 2;
+    };
+    let Some(mode) = mode::mode_for_name(&mode_name) else {
+        eprintln!("FAIL unknown mode: {mode_name}; use tailscale, nord, or lan");
+        return 2;
+    };
+    let path = match config_path {
+        Some(path) => path,
+        None => match default_config_path() {
+            Ok(path) => path,
+            Err(message) => {
+                eprintln!("FAIL {message}");
+                return 2;
+            }
+        },
+    };
+    let config = match DeployConfig::initial(mode, &base_url) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("FAIL {error}");
+            return 2;
+        }
+    };
+    if let Err(error) = mode::write_new_config(&path, &config) {
+        eprintln!("FAIL {error}");
+        return 2;
+    }
+    println!("config written: {}", path.display());
+    println!("next: ntfy-deploy apply");
+    0
 }
 
 /// `install` and `remove`: no deploy config is read or written.

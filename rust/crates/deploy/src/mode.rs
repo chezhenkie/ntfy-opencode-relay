@@ -315,6 +315,40 @@ pub fn write_config(path: &Path, config: &DeployConfig) -> Result<(), ConfigErro
     })
 }
 
+/// Writes a config only when no file exists there. Creation is exclusive, so
+/// two racing inits cannot both succeed.
+pub fn write_new_config(path: &Path, config: &DeployConfig) -> Result<(), ConfigError> {
+    use std::io::Write;
+
+    let mut text = config.to_json()?;
+    text.push('\n');
+    DeployConfig::parse_text(&text)?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                ConfigError::new(format!("config: {} already exists", path.display()))
+            } else {
+                ConfigError::new(format!("config: cannot write {}: {error}", path.display()))
+            }
+        })?;
+    file.write_all(text.as_bytes()).map_err(|error| {
+        ConfigError::new(format!("config: cannot write {}: {error}", path.display()))
+    })
+}
+
+/// The config mode named by `init --mode`.
+pub fn mode_for_name(name: &str) -> Option<Mode> {
+    match name {
+        "tailscale" => Some(Mode::Proxy),
+        "nord" => Some(Mode::Vpn),
+        "lan" => Some(Mode::Lan),
+        _ => None,
+    }
+}
+
 /// Detects the choices on this host. A missing tool or a stopped VPN only
 /// removes its entry; it is not an error.
 pub fn detect(
@@ -573,5 +607,19 @@ Configuration for interface \"Wi-Fi\"
         assert!(text.contains("\"behindProxy\": false"));
         assert!(text.contains("\"cacheVolume\": \"ntfy-cache\""));
         assert!(!text.contains("\"vpn\"") || text.contains("\"ip\""));
+    }
+
+    #[test]
+    fn a_new_config_is_written_once() {
+        let dir = std::env::temp_dir().join(format!("ntfy-deploy-init-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ntfy-deploy.json");
+        let config = DeployConfig::initial(Mode::Lan, "http://192.168.1.20:8810").unwrap();
+        write_new_config(&path, &config).unwrap();
+        assert!(path.exists());
+        let error = write_new_config(&path, &config).unwrap_err();
+        assert!(error.message().contains("already exists"), "{error}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

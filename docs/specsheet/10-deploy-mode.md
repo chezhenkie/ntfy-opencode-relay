@@ -3,7 +3,7 @@
 ## Header
 
 - Status: spec final; migration executed 2026-11-14, the crate is implemented.
-- Scope: one cross-platform helper, `ntfy-deploy`, that switches the ntfy server between proxy, VPN, and LAN modes by recreating the container with environment variables and maintaining the Windows portproxy. `install` and `remove` place the binaries, register the startup entries, and stop or start the relay; `apply` and `mode` never touch the daemon.
+- Scope: one cross-platform helper, `ntfy-deploy`, that creates the first deploy config with `init`, switches the ntfy server between proxy, VPN, and LAN modes by recreating the container with environment variables, and maintains the Windows portproxy. `install` and `remove` place the binaries, register the startup entries, and stop or start the relay; `apply`, `mode`, and `init` never touch the daemon.
 - Supersedes: the baked `base-url` rebuild path in `container\server.yml` and `tools\build-image.ps1`.
 - Related: `00-overview.md` (file ownership), `06-rust-crate-split.md` (crate boundaries), `docs\https.md` (current proxy route), `docs\switching-networks-user-manual.md` (operator workflow).
 
@@ -76,7 +76,7 @@ The relay always talks to ntfy through loopback, in every mode:
 
 ## Mode switch from the control path
 
-A mode switch is never started by the relay. The relay validates the request and returns a plan: the resolved mode, the deploy command line, and the phone URL it will produce. The elevated CLI runs `ntfy-deploy mode` itself, and deploy alone writes `ntfy-deploy.json`. A daemon that spawned an elevated child would raise a UAC prompt from a background process, where no one can answer it, and on Linux would need a sudo terminal; the plan keeps the relay unprivileged and puts the failure in the shell the user is watching. The relay never runs elevated, and a switch still leaves its config and token untouched.
+A mode switch is never started by the relay. The relay validates the request and returns a plan: the resolved mode, the deploy command line, and the phone URL it will produce. The elevated CLI runs `ntfy-deploy mode` itself, and deploy alone writes `ntfy-deploy.json` (`init` creates it, `mode` rewrites it). A daemon that spawned an elevated child would raise a UAC prompt from a background process, where no one can answer it, and on Linux would need a sudo terminal; the plan keeps the relay unprivileged and puts the failure in the shell the user is watching. The relay never runs elevated, and a switch still leaves its config and token untouched.
 
 ## Image contract
 
@@ -109,6 +109,13 @@ Operator steps, not performed by the tool:
 
 ## Commands
 
+`ntfy-deploy init --mode <tailscale|nord|lan> --base-url <url> [--config <path>]`
+
+- Writes `ntfy-deploy.json` once, with version 1, port 8810, container `ntfy`, image `localhost/ntfy:server`, cache volume `ntfy-cache`, `behindProxy` true only for `tailscale`, and `vpn.ip` from the base URL host in `nord` mode.
+- Refuses with exit 2 when the file exists; creation uses an exclusive open, so a racing second call loses.
+- The base URL is validated before the write: a proxy mode needs HTTPS, a plain HTTP URL needs a loopback or private IPv4 host and the configured port, and `nord` needs an IPv4 host.
+- Prints `config written: <path>` and `next: ntfy-deploy apply`. It never touches the relay or the container.
+
 `ntfy-deploy apply [--config <path>] [--dry-run]`
 
 1. Read and validate the config. Refuse unknown fields and unknown modes.
@@ -137,11 +144,11 @@ Operator steps, not performed by the tool:
 - It prints the resulting phone server URL. On Windows the portproxy step needs an elevated shell; a platform failure is exit `4` and the tool says so.
 - The relay is not a party: no relay config is read, nothing is restarted, the token is unchanged.
 
-Idempotency: a second apply with the same config produces the same state and does not recreate a healthy container with matching arguments. Argument matching includes the image content and the hardening set: the container's image ID from `podman inspect` must equal the local image ID for the configured reference, the container must run with `cap-drop=ALL`, `no-new-privileges` and the `/tmp` tmpfs, and its log driver must be `k8s-file` or `json-file`. A rebuild that keeps the tag is rolled out by the next `apply`. When either ID is unavailable the reference comparison alone decides. `apply` and `status` never write the config; only `mode` does.
+Idempotency: a second apply with the same config produces the same state and does not recreate a healthy container with matching arguments. Argument matching includes the image content and the hardening set: the container's image ID from `podman inspect` must equal the local image ID for the configured reference, the container must run with `cap-drop=ALL`, `no-new-privileges` and the `/tmp` tmpfs, and its log driver must be `k8s-file` or `json-file`. A rebuild that keeps the tag is rolled out by the next `apply`. When either ID is unavailable the reference comparison alone decides. `apply` and `status` never write the config; `init` creates it once and `mode` rewrites it.
 
 ## Installer
 
-`ntfy-deploy install [--dry-run]` and `ntfy-deploy remove [--dry-run]`. No fifth binary: the installer is the deploy binary, run from the release folder that holds the four executables. It never creates a container, never runs the auth bootstrap, and never writes the deploy config. A root with no token is not an install failure: the relay waits for the token file and answers `running pid=<n>` to the final `ensure`, and `ntfy-auth apply` attaches the token without a restart.
+`ntfy-deploy install [--dry-run]` and `ntfy-deploy remove [--dry-run]`. No fifth binary: the installer is the deploy binary, run from the release folder that holds the four executables. It never creates a container, never runs the auth bootstrap, and never writes the deploy config; `init` is the only creation path. A root with no token is not an install failure: the relay waits for the token file and answers `running pid=<n>` to the final `ensure`, and `ntfy-auth apply` attaches the token without a restart.
 
 Root: `NTFY_RELAY_HOME` when set, else `%LOCALAPPDATA%\ntfy-relay` on Windows and `~/.local/share/ntfy-relay` on Linux. Windows sets the user variable to the root with `setx` and skips it when `reg query HKCU\Environment` already holds the value. Linux leaves the variable unset; the relay finds its root beside the binary.
 
@@ -150,7 +157,7 @@ Install:
 1. Refuse when one of the four executables is missing beside the installer, before any change.
 2. Copy an executable only when its bytes differ; keep the outgoing image as `<stem>.previous.exe`, one generation. A failed copy restores the backup. The running relay keeps its image, so the file can be replaced while it runs. A running MCP process can hold the canonical previous name as its own image, and that file cannot be deleted: the outgoing image then moves to the next free `<stem>.previous.N.exe` from 2 to 9, and the report names the file it used.
 3. Stop the relay through the installed `ntfy-admin stop`; exit 0 stopped, 1 still running after the CLI's 15 s budget, and 3 no running relay are accepted. On exit 1 only, the installer force-kills the pid named in the endpoint file when that pid still runs a relay image under the install root; a stale endpoint or a foreign pid records `stop: not killed, endpoint stale` and is left alone. Then it starts the relay with `ntfy-relay ensure`, with output discarded so a detached daemon cannot hold the installer's pipe open. A dry run does neither.
-4. Write `ntfy-relay.json` and `ntfy-auth.json` only when absent, with the default server `http://127.0.0.1:8810`, outbound on, an empty root list, and the `phone`/`*`/rw auth shape. `ntfy-deploy.json` is never written; `mode` owns it.
+4. Write `ntfy-relay.json` and `ntfy-auth.json` only when absent, with the default server `http://127.0.0.1:8810`, outbound on, an empty root list, and the `phone`/`*`/rw auth shape. `ntfy-deploy.json` is never written; `init` creates it once and `mode` rewrites it.
 5. Write the Windows startup script `<root>\ntfy-relay-startup.vbs` and register the Windows tasks below, or install the Linux units below.
 6. Delete the installed script folder (`relay-windows-scripts` or `relay-linux-scripts`) and the legacy startup shortcut `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ntfy startup check.lnk` when present.
 
@@ -206,6 +213,7 @@ Linux:
 - URL rules: https any host, http only on a loopback, VPN, or LAN IP literal, no path, no trailing slash, and an HTTP port equal to `port`.
 - Portproxy mapping: proxy removes the VPN entry, VPN adds it, LAN leaves the loopback entry only.
 - Container argument construction: image, name, volume, publish, hardening, log cap, env pair per mode.
+- `init`: one write per path, refusal when the file exists, validation before the write.
 - Dry-run emits commands and changes nothing.
 - Status output for each mode.
 - Idempotent apply.
@@ -223,7 +231,7 @@ Linux:
 - No writes to OpenCode config or state.
 - No edit of the relay config at runtime.
 - No auth, cache, or attachment changes.
-- No writes to `ntfy-deploy.json` outside the `mode` command.
+- No writes to `ntfy-deploy.json` outside `init` and `mode`.
 - No container image build.
 - No TLS termination. HTTPS remains a proxy or terminator concern.
 - No VPN client control.
