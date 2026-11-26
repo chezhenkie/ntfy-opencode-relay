@@ -218,7 +218,7 @@ Change `ntfy.token` to `{file:~/.config/opencode/ntfy-token.txt}`.
 - Writes its own log with timestamp, level, message. Default level `info`, console echo off. Prompt text is never logged; decision lines carry the message ID and byte count instead. Rotate at 5 MB, keep one old file. `logging.echo` may be enabled for a manual console run.
 - Heartbeat every 5 minutes with `topics=`, `lastEventAge=`, and `queue=`. A large age is a warning, not a restart condition.
 - Config load failures and fatal errors exit non-zero with a clear log line.
-- A corrupt state file is renamed to `.corrupt-<unix>` and the relay starts with empty state instead of crash-looping.
+- A file that is unreadable, oversized, not UTF-8, invalid JSON, or another version is renamed to `.corrupt-<ms>` and the relay starts with empty state instead of crash-looping.
 - Network errors never exit. Reconnect with exponential backoff, 1 second to 60 seconds, jitter. Reset the backoff only after a connection stayed up for 60 seconds, and time out the response headers after 30 seconds.
 
 ### 6.2 Configuration
@@ -310,8 +310,8 @@ Reject silently with a debug log line. Keep a bounded processed set of the last 
 - The file is compact JSON, no pretty printing.
 - On restart, do not execute a message that is already in `lastIds` or older than `lastTime` minus 60 seconds.
 - Hints are advisory: `last` and `pending` are validated against the live snapshot on every message, and both expire. There is no pin. A 0.10.0 `pins` field is ignored and dropped on the first write.
-- Both paths keep 500 IDs per topic. Target rows and topic rows are capped at 512. A temporarily missing project must not replay its messages.
-- A corrupt file is quarantined as `<name>.corrupt-<unix>` and the relay starts empty. Backups older than 7 days are removed at startup.
+- Both paths keep 500 IDs per topic. Target rows and topic rows are capped at 512, and target rows are trimmed on write, so the map cannot grow past the cap between reads. A temporarily missing project must not replay its messages.
+- A file that is unreadable, oversized, not UTF-8, invalid JSON, or another version is quarantined as `<name>.corrupt-<ms>` (a second fault in the same millisecond adds `-<n>`) and the relay starts empty. Backups older than 7 days are removed at startup.
 
 ### 6.7 Session routing
 
@@ -320,7 +320,7 @@ For each message:
 1. Resolve project IDs for the topic.
 2. Read the hints: `last`/`lastAt` and `pending`/`pendingAt`.
 3. Fetch the snapshot: `/api/session?project=<id>&limit=20&order=desc&archived=false` for each project ID, merged, carrying `time.updated`, `time.viewed`, and `parentID`; plus `/api/session/active` for the running flag.
-4. Drop child sessions; a subagent is never a target.
+4. Drop child sessions; a subagent is never a target, including when a pending or continuity hint names one.
 5. If `pending` is at most 10 minutes old and its id is in the snapshot, use it.
 6. Else if `last` is at most 10 minutes old and its id is in the snapshot, use it.
 7. Else use the highest activity, where activity is `max(time.viewed, time.updated)`. Ties break on running, then `last`, then id.
@@ -355,9 +355,9 @@ Observed 2026-11-08: the prompt renderer shows the attachment path itself, so th
 ### 6.9 Inbound attachments
 
 - Use `attachment.url`, `attachment.name`, `attachment.size`.
-- Download over HTTPS without a token. Cap at 15 MB and verify the size when present.
-- Reject HTTP URLs. Follow redirects manually, at most 3, and require HTTPS on every hop. The deleted Node relay had no host allowlist; the Rust path requires the URL host to equal the `ntfy.server` host or the deployment `baseUrl` host on every hop.
-- Sanitize the name: basename only, strip control characters, keep `[A-Za-z0-9._-]`, limit to 120 characters, fallback `file`.
+- Download without a token, over HTTPS except on a loopback host. Cap at 15 MB and verify the size when present.
+- Reject a non-loopback HTTP URL. Follow redirects manually, at most 3, and apply the same transport rule and host allowlist on every hop. The deleted Node relay had no host allowlist; the Rust path requires the URL host to equal the `ntfy.server` host or the deployment `baseUrl` host on every hop.
+- Sanitize the name: basename only, strip control characters, keep `[A-Za-z0-9._-]`, limit to 120 characters, fallback `file-<epoch ms>`.
 - Save to `<project canonical>/<inboxDir>/<unix>-<name>`. Create the directory.
 - On collision, prefix with unix milliseconds.
 - If download fails, publish an error push and do not send the prompt.
@@ -371,7 +371,7 @@ Observed 2026-11-08: the prompt renderer shows the attachment path itself, so th
 - `/always`: reply `{"decision": "always"}`.
 - `/deny`: reply `{"decision": "reject"}`.
 - Reply to the published ask record. The registry binds session, request id, title, and push time before the push, and a code selects the record; the routing target and the session's pending list are never read. Spec `09` defines the registry and the ack.
-- With no argument the newest pushed record is used; with a code, the matching record wherever it lives. The ack names the record's session title.
+- With no argument, one live ask on the topic is answered; with several, the reply lists their codes and titles and approves nothing. With a code, the matching record is used wherever it lives. The ack names the record's session title.
 - A desktop answer removes the record through `permission.replied`; a later phone reply reports that the ask was already answered.
 - No pending request: publish an error push.
 
@@ -390,9 +390,9 @@ A command is a known name, matched case-insensitively after trim. Any other lead
 | `/to <title fragment>` | Target the single session whose title contains the fragment |
 | `/auto` | Drop the pending target |
 | `/steer <text>` | Prompt with steer delivery |
-| `/allow` | Approve the first pending permission once |
-| `/always` | Approve the first pending permission for the session |
-| `/deny` | Reject the first pending permission |
+| `/allow` | Approve the only pending permission once; with several, list the codes |
+| `/always` | Approve the only pending permission for the session; with several, list the codes |
+| `/deny` | Reject the only pending permission; with several, list the codes |
 | `/yes` | Confirm a held action |
 | `/no` | Cancel a held action |
 | `/answer <text>` | Cancel the newest live question form with the text as its reason |
@@ -436,7 +436,7 @@ The relay ignores every message with `oc-out`. That is the only direction marker
 
 ## 10. Testing
 
-Unit and integration tests run with `cargo test`. The workspace holds 741 tests at 0.6.13: 107 in `deploy`, 104 in `outbound`, 97 in `inbound`, 129 in `app`, 101 in `core`, 61 in `ntfy`, 56 in `opencode`, 34 in `control`, 30 in `auth`, and 22 in `admin`. One test makes a connect attempt to an unroutable address to prove the 5 s connect deadline; test directories are unique paths under the system temp and are removed on drop.
+Unit and integration tests run with `cargo test`. The workspace holds 742 tests at 0.6.13: 108 in `deploy`, 104 in `outbound`, 97 in `inbound`, 129 in `app`, 101 in `core`, 61 in `ntfy`, 56 in `opencode`, 34 in `control`, 30 in `auth`, and 22 in `admin`. One test makes a connect attempt to an unroutable address to prove the 5 s connect deadline; test directories are unique paths under the system temp and are removed on drop.
 
 - Topic derivation: Windows and POSIX paths, trailing separators, invalid characters, length limit, empty basename, duplicate folder names.
 - Filter: `oc-out`, stale, oversized, empty, attachment-only, duplicate ID.

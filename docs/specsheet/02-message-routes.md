@@ -59,7 +59,7 @@ Walk through it:
 2. The ntfy server stores the message in the topic and fans it out to every subscriber of that topic.
 3. The relay is one of those subscribers. It holds a single subscription for all its project topics, skips messages tagged `oc-out`, skips messages outside the replay window, and skips ids it has already handled.
 4. An attachment is written to `<project>\.ntfy-inbox\<unix>-<name>` and passed to the session as a `file:///` URI.
-5. The relay picks a target session from a live snapshot: a one-shot pending target from `/new` or `/to`, else the previous target inside a 10-minute continuity window, else the session with the newest activity. Activity is the later of `time.viewed` (desktop use) and `time.updated` (any message). A running session breaks a tie, then the previous target, then the id; child sessions are excluded. No pin is stored, so no decision outlives the evidence. Free text never creates a session; an explicit control action may.
+5. The relay picks a target session from a live snapshot: a one-shot pending target from `/new` or `/to`, else the previous target inside a 10-minute continuity window, else the session with the newest activity. Activity is the later of `time.viewed` (desktop use) and `time.updated` (any message). A running session breaks a tie, then the previous target, then the id; child sessions are excluded, including when a pending or continuity hint names one. No pin is stored, so no decision outlives the evidence. Free text never creates a session; an explicit control action may.
 6. It POSTs the prompt to the local API. The turn starts and the agent works on the phone's text.
 7. Every accepted message gets a short ack published back to the topic. Every failure gets one error push. Both are link-safe.
 

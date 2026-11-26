@@ -403,7 +403,20 @@ https publish http=200</code></pre>
 <p>Phone: change the server URL to <code>https://ntfy.example.ts.net</code>, no port. The app reconnects with <code>wss://</code>. Publish again with the app backgrounded.</p>
 <h2><span class="num">8</span>5.8 Rollback</h2>
 <div class="rule"></div>
-<p>Stop the terminator or remove its 443 listener. Then switch back with <code>ntfy-deploy mode lan</code>, or set the deploy config by hand, for example <code>{&quot;mode&quot;:&quot;lan&quot;,&quot;baseUrl&quot;:&quot;http://192.168.1.20:8810&quot;,&quot;behindProxy&quot;:false}</code>, and run <code>ntfy-deploy apply</code>. The container is recreated with the HTTP base URL and the VPN entry is removed. The old HTTP URL works again.</p>
+<p>Stop the terminator or remove its 443 listener. Then switch back with <code>ntfy-deploy mode lan</code>, or set the full deploy config by hand and run <code>ntfy-deploy apply</code>:</p>
+<pre><code class="language-json">{
+  &quot;version&quot;: 1,
+  &quot;mode&quot;: &quot;lan&quot;,
+  &quot;baseUrl&quot;: &quot;http://192.168.1.20:8810&quot;,
+  &quot;behindProxy&quot;: false,
+  &quot;port&quot;: 8810,
+  &quot;container&quot;: {
+    &quot;name&quot;: &quot;ntfy&quot;,
+    &quot;image&quot;: &quot;localhost/ntfy:server&quot;,
+    &quot;cacheVolume&quot;: &quot;ntfy-cache&quot;
+  }
+}</code></pre>
+<p>The container is recreated with the HTTP base URL and the VPN entry is removed. The old HTTP URL works again.</p>
 <h2><span class="num">9</span>5.9 Current status</h2>
 <div class="rule"></div>
 <ul>

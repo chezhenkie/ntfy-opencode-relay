@@ -117,6 +117,6 @@ curl http://xubuntu-host.example.ts.net:8810/v1/health
 | Ubuntu Podman, private address | vpn | http://192.168.1.20:8810 |
 | Ubuntu, TLS terminator | proxy | https://xubuntu.example.test |
 
-Plain HTTP requires a loopback or private IP literal in `baseUrl`; a DNS name must use HTTPS. The HTTP port must equal the deploy `port`.
+Plain HTTP requires a loopback host or a private IPv4 literal in `baseUrl`; an IPv6 LAN or VPN address needs HTTPS or a loopback tunnel. The HTTP port must equal the deploy `port`.
 
 Change it with `ntfy-deploy mode` in the relay root, or edit `ntfy-deploy.json` and run `ntfy-deploy apply`. No image rebuild and no relay restart.

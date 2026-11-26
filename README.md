@@ -93,7 +93,7 @@ Config, token, state, asks, forms, journal and log live in one relay folder. Onl
 
 ## Development
 
-The source is a Rust workspace under `rust\`, with 624 tests. Crates: `core`, `inbound`, `ntfy`, `opencode`, `outbound`, `control`, `app`, `deploy`, `auth` and `admin`. Crate boundaries are in [specsheet 06](docs/specsheet/06-rust-crate-split.md); the build, smoke test and cutover are in [operations 7.9](docs/operations.md#79-rust-daemon-build-smoke-cutover).
+The source is a Rust workspace under `rust\`, with 742 tests. Crates: `core`, `inbound`, `ntfy`, `opencode`, `outbound`, `control`, `app`, `deploy`, `auth` and `admin`. Crate boundaries are in [specsheet 06](docs/specsheet/06-rust-crate-split.md); the build, smoke test and cutover are in [operations 7.9](docs/operations.md#79-rust-daemon-build-smoke-cutover).
 
 Build and test in WSL from `rust\`:
 

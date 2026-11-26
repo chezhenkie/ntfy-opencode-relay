@@ -342,7 +342,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <ul>
 <li>R1 Bind at publish: an ask enters the registry immediately before its push is published, with session id, request id, title, and push time.</li>
 <li>R2 Reply by record: <code>/allow</code>, <code>/always</code>, <code>/deny</code> resolve a registry record, never a routed session.</li>
-<li>R3 Default target: with no argument, the most recently pushed record. With an argument, the record whose short code matches.</li>
+<li>R3 Default target: with no argument, the only live record on the topic; several live records answer with their codes and titles and approve nothing. With an argument, the record whose short code matches.</li>
 <li>R4 Short codes: 4 hex characters, extended to 5, 6, or 7 only on collision; displayed in the push; accepted with or without <code>#</code>.</li>
 <li>R5 Ack from the record: the ack names the record&#39;s session title and counts remaining records across the registry.</li>
 <li>R6 Desktop answer: <code>permission.replied</code> removes the record, so a later phone reply cannot target a dead ask.</li>
@@ -358,18 +358,18 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <h2><span class="num">6</span>5. Registry</h2>
 <div class="rule"></div>
 <p>Fields per record: <code>code</code>, <code>request</code> (the permission id, <code>per_...</code>), <code>session</code> (<code>ses_...</code>), <code>title</code> (session title at push time), <code>pushed</code> (epoch ms).</p>
-<p>Ordering: <code>pushed</code> ascending, ties broken by <code>request</code>. The default target is the last record.</p>
+<p>Ordering: <code>pushed</code> ascending, ties broken by <code>request</code>. The default target is the last record, and only when no other live record shares the topic.</p>
 <p>Code allocation: sha256 of <code>request</code>, first 4 lowercase hex characters; if the code already exists in the registry, extend to 5, then 6, then 7; a failure to find a unique code is an error that skips the push and logs. The same request keeps one code while registered.</p>
 <p>File: <code>%LOCALAPPDATA%\ntfy-relay\ntfy-relay-asks.json</code>, compact JSON:</p>
 <pre><code class="language-json">{&quot;version&quot;:1,&quot;asks&quot;:[{&quot;code&quot;:&quot;3f2a&quot;,&quot;request&quot;:&quot;per_1d4e...&quot;,&quot;session&quot;:&quot;ses_e2b1...&quot;,&quot;title&quot;:&quot;phone round&quot;,&quot;pushed&quot;:1794573661000}]}</code></pre>
-<p>Write path: serialize, write a temporary file in the same directory, <code>sync_all</code>, rename, fsync the parent on Unix, mode 0600. Read path: missing file is an empty registry; invalid JSON or a version other than 1 moves the file to <code>&lt;name&gt;.corrupt-&lt;unix&gt;</code> and starts empty.</p>
+<p>Write path: serialize, write a temporary file in the same directory, <code>sync_all</code>, rename, fsync the parent on Unix, mode 0600. Read path: missing file is an empty registry; a file that is unreadable, larger than 1 MiB, not UTF-8, invalid JSON, or a version other than 1 moves the file to <code>&lt;name&gt;.corrupt-&lt;ms&gt;</code> and starts empty.</p>
 <p>The registry stores no tokens, command text, or file paths. Titles are the same text already published to the phone.</p>
 <h2><span class="num">7</span>6. Reply resolution</h2>
 <div class="rule"></div>
 <p>Grammar: the existing native verbs plus one optional token, case-insensitive: <code>/allow</code>, <code>/allow 3f2a</code>, <code>/allow #3f2a</code>; same for <code>always</code> and <code>deny</code>.</p>
 <ol>
 <li>If a token is present, find the exact code; an unknown code is an error listing up to three current codes and titles.</li>
-<li>Without a token, take the newest record.</li>
+<li>Without a token, answer the only live record on the topic; with several, list up to three codes and titles and approve nothing.</li>
 <li>Post the decision to the record&#39;s session and request id.</li>
 <li>Remove the record on success.</li>
 <li>Ack: <code>approved once in &lt;title&gt; (&lt;code&gt;), N more pending</code>, <code>approved always ...</code>, or <code>rejected ...</code>; <code>N</code> counts all remaining records, and the suffix is dropped when <code>N</code> is 0.</li>
@@ -461,7 +461,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <div class="rule"></div>
 <p>The relay does not interpret a question form. The phone sends <code>/answer</code> followed by any text; the relay resolves the newest pushed form and cancels it with that text as the reason, so the desktop form closes at once and the assistant reads the text as the result of the question it asked. The assistant decides whether the text answers the question and asks again when it does not. The routing target, the pin, and session recency are never consulted.</p>
 <ul>
-<li>No code is printed or required. The lookup is by push recency, the same default as <code>/allow</code> without a code; the registry code stays an internal identity and a tombstone key.</li>
+<li>No code is printed or required. The form lookup is by push recency. A permission reply takes the only live ask on the topic and lists the codes when several are live; the registry code stays an internal identity and a tombstone key.</li>
 <li>The whole argument is one reason string; there is no field number, option mapping, <code>send</code>, or per-field accumulation.</li>
 <li>An empty <code>/answer</code> sends <code>The user dismissed the question without an answer.</code></li>
 <li>The call is <code>DELETE /api/session/{session}/form/{form}?message=&lt;reason&gt;</code>, documented as <code>session.form.cancel</code>; a 204 settles the form.</li>

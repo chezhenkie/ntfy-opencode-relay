@@ -347,7 +347,7 @@ select 1-3 or press Enter to cancel:</code></pre>
 mode: proxy
 base url: https://ntfy.example.ts.net
 container: ntfy (localhost/ntfy:server)
-publish: 8810:8080
+publish: 127.0.0.1:8810:8080
 container state: recreated
 health: 200
 portproxy: 127.0.0.1:8810 -&gt; ::1:8810
@@ -378,7 +378,7 @@ set this URL in the app if it changed; the token stays the same.</code></pre>
 <h2><span class="num">7</span>7. Check and roll back</h2>
 <div class="rule"></div>
 <pre><code class="language-powershell">&amp; &quot;$env:NTFY_RELAY_HOME\ntfy-deploy.exe&quot; status</code></pre>
-<p><code>status</code> prints mode, base URL, container, publish, health, and the active portproxy or listener. Exit 0 means the container runs, loopback health is 200, and the rules the mode requires exist; exit 3 means one of those is missing.</p>
+<p><code>status</code> prints mode, base URL, container, publish, health, and the active portproxy or listener. Exit 0 means the container runs, loopback health is 200, and the rules the mode requires exist: on Windows the portproxy entries, on Linux the publish binding. Exit 3 means one of those is missing.</p>
 <p>Rolling back is the same command with the other path, for example <code>mode tailscale</code> after a Nord session. Going back to proxy removes the mesh portproxy entry. The relay pid and the token do not change.</p>
 <h2><span class="num">8</span>8. When it fails</h2>
 <div class="rule"></div>

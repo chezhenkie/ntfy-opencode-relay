@@ -315,17 +315,17 @@ ping &lt;host-private-ip&gt;</code></pre>
 <p>No public address, port forward, or third-party relay is needed. Nothing in this chapter exposes the server outside the private network.</p>
 <h2><span class="num">2</span>4.2 Windows: Podman binds loopback only</h2>
 <div class="rule"></div>
-<p><code>podman ps</code> shows <code>0.0.0.0:8810-&gt;8080/tcp</code>, but the real Windows listener is IPv6 loopback only:</p>
+<p><code>podman ps</code> shows <code>127.0.0.1:8810-&gt;8080/tcp</code> for a deploy-created container, and the compose file uses the same loopback default. The real Windows listener is IPv6 loopback only:</p>
 <pre><code class="language-powershell">Get-NetTCPConnection -LocalPort 8810 -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess</code></pre>
 <pre><code>LocalAddress LocalPort OwningProcess
 ::1                  8810          5076     (wslrelay.exe)</code></pre>
-<p>This is expected Podman machine behavior on Windows, not a misconfiguration. The published port is forwarded to <code>[::1]</code> by <code>wslrelay</code>, regardless of the <code>-p 0.0.0.0:...</code> argument.</p>
+<p>This is expected Podman machine behavior on Windows, not a misconfiguration. The published port is forwarded to <code>[::1]</code> by <code>wslrelay</code>.</p>
 <p>The Windows design is therefore:</p>
 <pre><code>phone -&gt; https://&lt;private-dns-name&gt; (443)
       -&gt; TLS terminator
       -&gt; v4tov6 loopback bridge 127.0.0.1:8810
       -&gt; [::1]:8810 (wslrelay) -&gt; container :8080</code></pre>
-<p>IPv6 appears only on loopback. It is internal plumbing and not an exposure; do not remove it. Do not change <code>wslrelay</code>, do not publish on <code>0.0.0.0</code>, and do not add a broad firewall rule.</p>
+<p>IPv6 appears only on loopback. It is internal plumbing and not an exposure; do not remove it. Do not change <code>wslrelay</code>, do not publish on <code>0.0.0.0</code>, and do not add a broad firewall rule. The compose file binds <code>${NTFY_BIND:-127.0.0.1}</code>; the <code>NTFY_BIND</code> override is for a LAN deployment and sits outside the proxy rule.</p>
 <p>The private network client allows inbound on its own interface. No extra firewall rule is required, and none should be added unless a scoped rule is proven necessary. Check the interface profile; it must stay Private:</p>
 <pre><code class="language-powershell">Get-NetConnectionProfile | Select-Object Name,InterfaceAlias,NetworkCategory</code></pre>
 <p>The loopback bridge is the only portproxy in the TLS route: <code>127.0.0.1:8810 -&gt; [::1]:8810</code>. A VPN-facing <code>100.64.0.10:8810</code> entry belongs to HTTP mode only and is removed when TLS is enabled.</p>
@@ -375,7 +375,7 @@ curl http://xubuntu-host.example.ts.net:8810/v1/health</code></pre>
 <tr><td>Ubuntu Podman, private address</td><td>vpn</td><td>http://192.168.1.20:8810</td></tr>
 <tr><td>Ubuntu, TLS terminator</td><td>proxy</td><td>https://xubuntu.example.test</td></tr>
 </tbody></table>
-<p>Plain HTTP requires a loopback or private IP literal in <code>baseUrl</code>; a DNS name must use HTTPS. The HTTP port must equal the deploy <code>port</code>.</p>
+<p>Plain HTTP requires a loopback host or a private IPv4 literal in <code>baseUrl</code>; an IPv6 LAN or VPN address needs HTTPS or a loopback tunnel. The HTTP port must equal the deploy <code>port</code>.</p>
 <p>Change it with <code>ntfy-deploy mode</code> in the relay root, or edit <code>ntfy-deploy.json</code> and run <code>ntfy-deploy apply</code>. No image rebuild and no relay restart.</p>
   </main>
 </div>

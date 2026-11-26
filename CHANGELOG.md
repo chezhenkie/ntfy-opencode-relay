@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.6.13
+
+### Changes
+
+* `ntfy-auth` passes the bootstrap password to `ntfy user add` with `-e NTFY_PASSWORD` inside the container, so the password no longer appears on a host command line.
+* The manual, the phone manual and the specsheet are corrected against the code: 79 claims in 23 files, including the C5 to C10 status rows, the stop envelope, MCP `isError`, the 741 test count, the build tools and the child log rotation. The site is rebuilt.
+
+### Gate
+
+* 741 workspace tests, fmt and clippy clean; `v0.6.13` at `e0c23ad`, workflow run `45718234515`, eight assets.
+* Live install and smoke 8 of 8 after the cut.
+
+## 0.6.12
+
+### Changes
+
+* Version-only cut: `package.json`, `rust/Cargo.toml` and the workspace member versions in `rust/Cargo.lock` move to 0.6.12; no source change.
+
+### Gate
+
+* Released as `v0.6.12`; the release was replaced by `v0.6.13` on the next cut.
+
 ## 0.6.11
 
 ### Changes

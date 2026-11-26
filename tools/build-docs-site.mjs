@@ -33,15 +33,22 @@ if (!existsSync(converter)) {
 }
 
 const index = join(docs, "index.html");
-const indexBackup = join(docs, "index.handbuilt.tmp.html");
+const indexBackupName = "index.handbuilt.tmp.html";
+const indexBackup = join(docs, indexBackupName);
 const hadIndex = existsSync(index);
 if (hadIndex) copyFileSync(index, indexBackup);
+
+// A converter failure exits through this path, so the hand-built index is put
+// back and the backup is removed even when the build stops halfway.
+function restoreIndex() {
+  if (hadIndex && existsSync(indexBackup)) copyFileSync(indexBackup, index);
+  if (existsSync(indexBackup)) rmSync(indexBackup);
+}
 
 function convert(target) {
   const run = spawnSync(converter, ["--target", target], { encoding: "utf8" });
   if (run.status !== 0) {
-    console.error(`FAIL convert ${target}\n${run.stdout ?? ""}${run.stderr ?? ""}`);
-    process.exit(1);
+    throw new Error(`convert ${target}\n${run.stdout ?? ""}${run.stderr ?? ""}`);
   }
   return (run.stdout || "").trim().split("\n").pop();
 }
@@ -51,7 +58,7 @@ function movePages(from, to) {
   let moved = 0;
   for (const entry of readdirSync(from, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith(".html")) continue;
-    if (from === docs && entry.name === "index.html") continue;
+    if (from === docs && (entry.name === "index.html" || entry.name === indexBackupName)) continue;
     copyFileSync(join(from, entry.name), join(to, entry.name));
     rmSync(join(from, entry.name));
     moved += 1;
@@ -59,67 +66,71 @@ function movePages(from, to) {
   return moved;
 }
 
-const chapterNote = convert(docs);
-const specsheetNote = convert(join(docs, "specsheet"));
+let result = 0;
+try {
+  const chapterNote = convert(docs);
+  const specsheetNote = convert(join(docs, "specsheet"));
 
-if (hadIndex) {
-  copyFileSync(indexBackup, index);
-  rmSync(indexBackup);
-}
+  const chapters = movePages(docs, published);
+  const specsheets = movePages(join(docs, "specsheet"), join(published, "specsheet"));
 
-const chapters = movePages(docs, published);
-const specsheets = movePages(join(docs, "specsheet"), join(published, "specsheet"));
-
-let rewritten = 0;
-function relink(dir) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      relink(full);
-      continue;
+  let rewritten = 0;
+  function relink(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        relink(full);
+        continue;
+      }
+      if (!entry.name.endsWith(".html")) continue;
+      const before = readFileSync(full, "utf8");
+      const after = before.replace(/href="([^"]+?)\.md(#[^"]*)?"/g, (match, base, anchor) => {
+        if (/^(https?:|\/|\.\.\/)/.test(base)) return match;
+        rewritten += 1;
+        return `href="${base}.html${anchor || ""}"`;
+      });
+      if (after !== before) writeFileSync(full, after);
     }
-    if (!entry.name.endsWith(".html")) continue;
-    const before = readFileSync(full, "utf8");
-    const after = before.replace(/href="([^"]+?)\.md(#[^"]*)?"/g, (match, base, anchor) => {
-      if (/^(https?:|\/|\.\.\/)/.test(base)) return match;
-      rewritten += 1;
-      return `href="${base}.html${anchor || ""}"`;
-    });
-    if (after !== before) writeFileSync(full, after);
   }
-}
 
-relink(published);
+  relink(published);
 
-let links = 0;
-const missing = [];
-function check(dir) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      check(full);
-      continue;
-    }
-    if (!entry.name.endsWith(".html")) continue;
-    const text = readFileSync(full, "utf8");
-    for (const match of text.matchAll(/href="([^"]+)"/g)) {
-      const target = match[1];
-      if (/^(https?:|mailto:|#|\/)/.test(target)) continue;
-      const clean = target.split("#")[0].split("?")[0];
-      if (!clean) continue;
-      links += 1;
-      if (!existsSync(resolve(dirname(full), clean))) {
-        missing.push(`${relative(published, full)} -> ${target}`);
+  let links = 0;
+  const missing = [];
+  function check(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        check(full);
+        continue;
+      }
+      if (!entry.name.endsWith(".html")) continue;
+      const text = readFileSync(full, "utf8");
+      for (const match of text.matchAll(/href="([^"]+)"/g)) {
+        const target = match[1];
+        if (/^(https?:|mailto:|#|\/)/.test(target)) continue;
+        const clean = target.split("#")[0].split("?")[0];
+        if (!clean) continue;
+        links += 1;
+        if (!existsSync(resolve(dirname(full), clean))) {
+          missing.push(`${relative(published, full)} -> ${target}`);
+        }
       }
     }
   }
+
+  check(published);
+
+  console.log(`chapters=${chapters} specsheet=${specsheets} relinked=${rewritten}`);
+  if (chapterNote) console.log(`  ${chapterNote}`);
+  if (specsheetNote) console.log(`  ${specsheetNote}`);
+  console.log(`links=${links} missing=${missing.length}`);
+  for (const line of missing) console.log(`  MISSING ${line}`);
+  if (missing.length > 0) result = 1;
+} catch (error) {
+  console.error(`FAIL ${error.message}`);
+  result = 1;
+} finally {
+  restoreIndex();
 }
-
-check(published);
-
-console.log(`chapters=${chapters} specsheet=${specsheets} relinked=${rewritten}`);
-if (chapterNote) console.log(`  ${chapterNote}`);
-if (specsheetNote) console.log(`  ${specsheetNote}`);
-console.log(`links=${links} missing=${missing.length}`);
-for (const line of missing) console.log(`  MISSING ${line}`);
-process.exit(missing.length === 0 ? 0 : 1);
+process.exitCode = result;

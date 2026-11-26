@@ -60,7 +60,7 @@ config written: C:\Users\me\AppData\Local\ntfy-relay\ntfy-deploy.json
 mode: proxy
 base url: https://ntfy.example.ts.net
 container: ntfy (localhost/ntfy:server)
-publish: 8810:8080
+publish: 127.0.0.1:8810:8080
 container state: recreated
 health: 200
 portproxy: 127.0.0.1:8810 -> ::1:8810
@@ -111,7 +111,7 @@ On the Tailscale path the app reconnects over `wss://`; on the other two it uses
 & "$env:NTFY_RELAY_HOME\ntfy-deploy.exe" status
 ```
 
-`status` prints mode, base URL, container, publish, health, and the active portproxy or listener. Exit 0 means the container runs, loopback health is 200, and the rules the mode requires exist; exit 3 means one of those is missing.
+`status` prints mode, base URL, container, publish, health, and the active portproxy or listener. Exit 0 means the container runs, loopback health is 200, and the rules the mode requires exist: on Windows the portproxy entries, on Linux the publish binding. Exit 3 means one of those is missing.
 
 Rolling back is the same command with the other path, for example `mode tailscale` after a Nord session. Going back to proxy removes the mesh portproxy entry. The relay pid and the token do not change.
 

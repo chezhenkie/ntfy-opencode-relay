@@ -335,8 +335,8 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <p>Consequence for publication: the project does not advertise chat-UI compatibility. Agents integrate through MCP, applications through REST and SSE.</p>
 <h2><span class="num">4</span>3. MCP topology</h2>
 <div class="rule"></div>
-<p>Status: agreed direction, no code yet.</p>
-<p>Today: one binary, three modes (<code>ntfy-relay run|mcp|status</code>). MCP mode is about 12 KB of protocol plus one tool, and it calls <code>outbound::files::send_file</code>, so the tool and the daemon share one policy path. OpenCode spawns one process per directory with the project folder as cwd and therefore as topic.</p>
+<p>Status: built. The MCP server lives in <code>rust\crates\app\src\mcp.rs</code> and is registered as <code>mcp.servers.ntfy</code> with <code>command</code> naming <code>&lt;root&gt;\ntfy-relay.exe mcp</code>, <code>cwd: &quot;.&quot;</code>, and <code>codemode: false</code>.</p>
+<p>Today: one binary with four modes (<code>ntfy-relay run|mcp|ensure|status</code>). MCP mode is about 12 KB of protocol plus one tool, and it calls <code>outbound::files::send_file</code>, so the tool and the daemon share one policy path. OpenCode spawns one process per directory with the project folder as cwd and therefore as topic.</p>
 <p>Rules for future domains:</p>
 <ul>
 <li>Domain code does not go inside <code>ntfy-relay.exe</code>. Mail, kanban, voice, and device control are separate projects with separate binaries, because the relay is a standalone public artifact and must not accumulate unrelated policy.</li>

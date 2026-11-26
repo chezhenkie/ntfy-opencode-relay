@@ -41,9 +41,9 @@ Type commands in the message bar the same way as a normal message. A message wit
 | `/to <title fragment>` | send the next message to the single session whose title matches |
 | `/auto` | drop a target set by `/to` or `/new`; routing goes back to automatic |
 | `/steer <text>` | inject text into the running turn instead of queueing a new prompt |
-| `/allow [code]` | allow the newest permission ask once, or the ask with that code |
+| `/allow [code]` | allow the only pending permission ask once, or the ask with that code |
 | `/always [code]` | allow it and remember the approval for matching asks |
-| `/deny [code]` | reject the newest permission ask, or the ask with that code |
+| `/deny [code]` | reject the only pending permission ask, or the ask with that code |
 | `/yes` | confirm a held action |
 | `/no` | cancel a held action |
 
@@ -91,9 +91,9 @@ A permission ask arrives with the `lock` tag and the command the agent wants to 
 
 Answer from the phone:
 
-- `/allow` allows the newest ask once. `/allow 3f2a` or `/allow #3f2a` answers that exact ask; the code is case-insensitive.
+- `/allow` allows the only pending ask once. With several asks pending, a reply without a code lists their codes and titles and approves nothing. `/allow 3f2a` or `/allow #3f2a` answers that exact ask; the code is case-insensitive.
 - `/always` or `/always <code>` allows it and saves a matching approval, which can satisfy later asks silently.
-- `/deny` or `/deny <code>` rejects the newest ask or the named one.
+- `/deny` or `/deny <code>` rejects the only pending ask or the named one.
 
 The push is sent 15 seconds after the ask; replying inside that window cancels the push. An answer other than these three values is rejected and the ask stays pending. The ack names the session title and the code, for example `approved once in Fix links (3f2a), 2 more pending`. A reply with no pending ask answers `no pending permission ask`; the routing target is never named.
 

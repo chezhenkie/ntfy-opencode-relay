@@ -36,9 +36,9 @@ Consequence for publication: the project does not advertise chat-UI compatibilit
 
 ## 3. MCP topology
 
-Status: agreed direction, no code yet.
+Status: built. The MCP server lives in `rust\crates\app\src\mcp.rs` and is registered as `mcp.servers.ntfy` with `command` naming `<root>\ntfy-relay.exe mcp`, `cwd: "."`, and `codemode: false`.
 
-Today: one binary, three modes (`ntfy-relay run|mcp|status`). MCP mode is about 12 KB of protocol plus one tool, and it calls `outbound::files::send_file`, so the tool and the daemon share one policy path. OpenCode spawns one process per directory with the project folder as cwd and therefore as topic.
+Today: one binary with four modes (`ntfy-relay run|mcp|ensure|status`). MCP mode is about 12 KB of protocol plus one tool, and it calls `outbound::files::send_file`, so the tool and the daemon share one policy path. OpenCode spawns one process per directory with the project folder as cwd and therefore as topic.
 
 Rules for future domains:
 

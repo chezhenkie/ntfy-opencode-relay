@@ -212,10 +212,10 @@ General, from the Python and autocache ports; no artefact of those ports exists 
 
 ## Evidence gaps
 
-- Test counts drifted during the port: `00-overview.md` said 69 and this file said 89 at the time of the audit; `npm test` reported 94 at that time. The inbound acceptance gate is the 52 `rust\crates\inbound` tests plus the wire and adapter fixtures, not a count in prose.
+- Test counts drifted during the port: `00-overview.md` said 69 and this file said 89 at the time of the audit; `npm test` reported 94 at that time. The inbound acceptance gate is the 86 `rust\crates\inbound` tests plus the wire and adapter fixtures, not a count in prose.
 - `01-phone-continuation.md` originally said every publish includes a "heartbeat push"; the heartbeat is a log line, which the status report shows. There is no heartbeat publish call in the tree.
 - `03` step 2 said "compare wire bytes with the current client", but there are two clients: `publishNtfy` posts headers to `/{topic}`, `ntfy-client.js` posts JSON to the base URL and PUTs files with query parameters. `rust\crates\ntfy` implements all three and tests each style.
 - `03` says "3400 UTF-8 bytes inline"; the plugin also has `MAX_MESSAGE_BYTES` 4096 and `boundQuestionMessage` with a `(truncated)` marker. `core::text` carries the 3400 ack budget; `ntfy::header` carries the plugin 1024/4096 caps.
 - `04` covers the clock choice (row 10) and the wire format (row 11), but has no row for duplicate-key policy or unknown-field strictness. Config parses through `serde_json::Value`, so a duplicate key takes the last value; typed state rejects a duplicate field.
 - `03` section 6 says the OpenCode calls go through HTTP directly. The Rust adapter retries no-status and 5xx twice, 1 s then 2 s, matching the Node classifier; the parser is gone.
-- The 94 Node tests cover inbound, control, and the inbox prune. Outbound turn, file, gap, and backfill behavior is pinned by the 89 tests in `rust\crates\outbound` and the app MCP test; outbound and the MCP tool are live, and the publisher plugin is deleted.
+- The 94 Node tests cover inbound, control, and the inbox prune. Outbound turn, file, gap, and backfill behavior is pinned by the 104 tests in `rust\crates\outbound` and the app MCP test; outbound and the MCP tool are live, and the publisher plugin is deleted.

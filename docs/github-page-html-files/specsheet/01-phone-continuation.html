@@ -484,7 +484,7 @@ zip 7z tar gz</code></pre>
 <li>Writes its own log with timestamp, level, message. Default level <code>info</code>, console echo off. Prompt text is never logged; decision lines carry the message ID and byte count instead. Rotate at 5 MB, keep one old file. <code>logging.echo</code> may be enabled for a manual console run.</li>
 <li>Heartbeat every 5 minutes with <code>topics=</code>, <code>lastEventAge=</code>, and <code>queue=</code>. A large age is a warning, not a restart condition.</li>
 <li>Config load failures and fatal errors exit non-zero with a clear log line.</li>
-<li>A corrupt state file is renamed to <code>.corrupt-&lt;unix&gt;</code> and the relay starts with empty state instead of crash-looping.</li>
+<li>A file that is unreadable, oversized, not UTF-8, invalid JSON, or another version is renamed to <code>.corrupt-&lt;ms&gt;</code> and the relay starts with empty state instead of crash-looping.</li>
 <li>Network errors never exit. Reconnect with exponential backoff, 1 second to 60 seconds, jitter. Reset the backoff only after a connection stayed up for 60 seconds, and time out the response headers after 30 seconds.</li>
 </ul>
 <h3>6.2 Configuration</h3>
@@ -566,8 +566,8 @@ zip 7z tar gz</code></pre>
 <li>The file is compact JSON, no pretty printing.</li>
 <li>On restart, do not execute a message that is already in <code>lastIds</code> or older than <code>lastTime</code> minus 60 seconds.</li>
 <li>Hints are advisory: <code>last</code> and <code>pending</code> are validated against the live snapshot on every message, and both expire. There is no pin. A 0.10.0 <code>pins</code> field is ignored and dropped on the first write.</li>
-<li>Both paths keep 500 IDs per topic. Target rows and topic rows are capped at 512. A temporarily missing project must not replay its messages.</li>
-<li>A corrupt file is quarantined as <code>&lt;name&gt;.corrupt-&lt;unix&gt;</code> and the relay starts empty. Backups older than 7 days are removed at startup.</li>
+<li>Both paths keep 500 IDs per topic. Target rows and topic rows are capped at 512, and target rows are trimmed on write, so the map cannot grow past the cap between reads. A temporarily missing project must not replay its messages.</li>
+<li>A file that is unreadable, oversized, not UTF-8, invalid JSON, or another version is quarantined as <code>&lt;name&gt;.corrupt-&lt;ms&gt;</code> (a second fault in the same millisecond adds <code>-&lt;n&gt;</code>) and the relay starts empty. Backups older than 7 days are removed at startup.</li>
 </ul>
 <h3>6.7 Session routing</h3>
 <p>For each message:</p>
@@ -575,7 +575,7 @@ zip 7z tar gz</code></pre>
 <li>Resolve project IDs for the topic.</li>
 <li>Read the hints: <code>last</code>/<code>lastAt</code> and <code>pending</code>/<code>pendingAt</code>.</li>
 <li>Fetch the snapshot: <code>/api/session?project=&lt;id&gt;&amp;limit=20&amp;order=desc&amp;archived=false</code> for each project ID, merged, carrying <code>time.updated</code>, <code>time.viewed</code>, and <code>parentID</code>; plus <code>/api/session/active</code> for the running flag.</li>
-<li>Drop child sessions; a subagent is never a target.</li>
+<li>Drop child sessions; a subagent is never a target, including when a pending or continuity hint names one.</li>
 <li>If <code>pending</code> is at most 10 minutes old and its id is in the snapshot, use it.</li>
 <li>Else if <code>last</code> is at most 10 minutes old and its id is in the snapshot, use it.</li>
 <li>Else use the highest activity, where activity is <code>max(time.viewed, time.updated)</code>. Ties break on running, then <code>last</code>, then id.</li>
@@ -604,9 +604,9 @@ zip 7z tar gz</code></pre>
 <h3>6.9 Inbound attachments</h3>
 <ul>
 <li>Use <code>attachment.url</code>, <code>attachment.name</code>, <code>attachment.size</code>.</li>
-<li>Download over HTTPS without a token. Cap at 15 MB and verify the size when present.</li>
-<li>Reject HTTP URLs. Follow redirects manually, at most 3, and require HTTPS on every hop. The deleted Node relay had no host allowlist; the Rust path requires the URL host to equal the <code>ntfy.server</code> host or the deployment <code>baseUrl</code> host on every hop.</li>
-<li>Sanitize the name: basename only, strip control characters, keep <code>[A-Za-z0-9._-]</code>, limit to 120 characters, fallback <code>file</code>.</li>
+<li>Download without a token, over HTTPS except on a loopback host. Cap at 15 MB and verify the size when present.</li>
+<li>Reject a non-loopback HTTP URL. Follow redirects manually, at most 3, and apply the same transport rule and host allowlist on every hop. The deleted Node relay had no host allowlist; the Rust path requires the URL host to equal the <code>ntfy.server</code> host or the deployment <code>baseUrl</code> host on every hop.</li>
+<li>Sanitize the name: basename only, strip control characters, keep <code>[A-Za-z0-9._-]</code>, limit to 120 characters, fallback <code>file-&lt;epoch ms&gt;</code>.</li>
 <li>Save to <code>&lt;project canonical&gt;/&lt;inboxDir&gt;/&lt;unix&gt;-&lt;name&gt;</code>. Create the directory.</li>
 <li>On collision, prefix with unix milliseconds.</li>
 <li>If download fails, publish an error push and do not send the prompt.</li>
@@ -620,7 +620,7 @@ zip 7z tar gz</code></pre>
 <li><code>/always</code>: reply <code>{&quot;decision&quot;: &quot;always&quot;}</code>.</li>
 <li><code>/deny</code>: reply <code>{&quot;decision&quot;: &quot;reject&quot;}</code>.</li>
 <li>Reply to the published ask record. The registry binds session, request id, title, and push time before the push, and a code selects the record; the routing target and the session&#39;s pending list are never read. Spec <code>09</code> defines the registry and the ack.</li>
-<li>With no argument the newest pushed record is used; with a code, the matching record wherever it lives. The ack names the record&#39;s session title.</li>
+<li>With no argument, one live ask on the topic is answered; with several, the reply lists their codes and titles and approves nothing. With a code, the matching record is used wherever it lives. The ack names the record&#39;s session title.</li>
 <li>A desktop answer removes the record through <code>permission.replied</code>; a later phone reply reports that the ask was already answered.</li>
 <li>No pending request: publish an error push.</li>
 </ul>
@@ -636,9 +636,9 @@ zip 7z tar gz</code></pre>
 <tr><td><code>/to &lt;title fragment&gt;</code></td><td>Target the single session whose title contains the fragment</td></tr>
 <tr><td><code>/auto</code></td><td>Drop the pending target</td></tr>
 <tr><td><code>/steer &lt;text&gt;</code></td><td>Prompt with steer delivery</td></tr>
-<tr><td><code>/allow</code></td><td>Approve the first pending permission once</td></tr>
-<tr><td><code>/always</code></td><td>Approve the first pending permission for the session</td></tr>
-<tr><td><code>/deny</code></td><td>Reject the first pending permission</td></tr>
+<tr><td><code>/allow</code></td><td>Approve the only pending permission once; with several, list the codes</td></tr>
+<tr><td><code>/always</code></td><td>Approve the only pending permission for the session; with several, list the codes</td></tr>
+<tr><td><code>/deny</code></td><td>Reject the only pending permission; with several, list the codes</td></tr>
 <tr><td><code>/yes</code></td><td>Confirm a held action</td></tr>
 <tr><td><code>/no</code></td><td>Cancel a held action</td></tr>
 <tr><td><code>/answer &lt;text&gt;</code></td><td>Cancel the newest live question form with the text as its reason</td></tr>
@@ -681,7 +681,7 @@ zip 7z tar gz</code></pre>
 </ul>
 <h2><span class="num">10</span>10. Testing</h2>
 <div class="rule"></div>
-<p>Unit and integration tests run with <code>cargo test</code>. The workspace holds 741 tests at 0.6.13: 107 in <code>deploy</code>, 104 in <code>outbound</code>, 97 in <code>inbound</code>, 129 in <code>app</code>, 101 in <code>core</code>, 61 in <code>ntfy</code>, 56 in <code>opencode</code>, 34 in <code>control</code>, 30 in <code>auth</code>, and 22 in <code>admin</code>. One test makes a connect attempt to an unroutable address to prove the 5 s connect deadline; test directories are unique paths under the system temp and are removed on drop.</p>
+<p>Unit and integration tests run with <code>cargo test</code>. The workspace holds 742 tests at 0.6.13: 108 in <code>deploy</code>, 104 in <code>outbound</code>, 97 in <code>inbound</code>, 129 in <code>app</code>, 101 in <code>core</code>, 61 in <code>ntfy</code>, 56 in <code>opencode</code>, 34 in <code>control</code>, 30 in <code>auth</code>, and 22 in <code>admin</code>. One test makes a connect attempt to an unroutable address to prove the 5 s connect deadline; test directories are unique paths under the system temp and are removed on drop.</p>
 <ul>
 <li>Topic derivation: Windows and POSIX paths, trailing separators, invalid characters, length limit, empty basename, duplicate folder names.</li>
 <li>Filter: <code>oc-out</code>, stale, oversized, empty, attachment-only, duplicate ID.</li>

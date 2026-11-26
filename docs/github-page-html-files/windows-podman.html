@@ -427,12 +427,16 @@ enable-signup: false
 cache-file: /var/cache/ntfy/cache.db
 cache-duration: 72h
 attachment-cache-dir: /var/cache/ntfy/attachments
-attachment-expiry-duration: 72h</code></pre>
+attachment-expiry-duration: 72h
+attachment-total-size-limit: &quot;1G&quot;
+attachment-file-size-limit: &quot;40M&quot;
+visitor-request-limit-burst: 120
+visitor-request-limit-replenish: &quot;5s&quot;</code></pre>
 <p><code>.dockerignore</code> keeps a hand-downloaded copy out of the context; the build fetches its own:</p>
 <pre><code>ntfy
 ntfy_*.tar.gz</code></pre>
 <p><code>base-url</code> and <code>behind-proxy</code> are deployment values, not image keys. <code>ntfy-deploy</code> supplies them as <code>NTFY_BASE_URL</code> and <code>NTFY_BEHIND_PROXY</code> when it creates the container; see <a href="network.html#45-base-url-matrix">section 4.5</a> for the alternatives. A mode switch recreates the container and never rebuilds the image.</p>
-<p><code>cache-duration</code> is 72h. Messages older than three days are pruned; clients that reconnect within that window still get them. <code>attachment-expiry-duration</code> is also 72h; ntfy caps it at <code>cache-duration</code>, so files never outlive their message.</p>
+<p><code>cache-duration</code> is 72h. Messages older than three days are pruned; clients that reconnect within that window still get them. <code>attachment-expiry-duration</code> is also 72h; ntfy caps it at <code>cache-duration</code>, so files never outlive their message. Attachments are bounded at 1 GiB total and 40 MiB per file, and a visitor gets a 120-request burst replenished at one request per 5 seconds. ntfy 2.38.2 has no cache-size key, so the message cache is bounded by time only.</p>
 <h2><span class="num">4</span>2.4 Build the image</h2>
 <div class="rule"></div>
 <pre><code class="language-powershell">.\tools\build-image.ps1</code></pre>

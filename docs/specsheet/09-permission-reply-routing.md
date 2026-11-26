@@ -42,7 +42,7 @@ The routing hint keeps its meaning for text prompts only. Since 0.11.0 it is a o
 
 - R1 Bind at publish: an ask enters the registry immediately before its push is published, with session id, request id, title, and push time.
 - R2 Reply by record: `/allow`, `/always`, `/deny` resolve a registry record, never a routed session.
-- R3 Default target: with no argument, the most recently pushed record. With an argument, the record whose short code matches.
+- R3 Default target: with no argument, the only live record on the topic; several live records answer with their codes and titles and approve nothing. With an argument, the record whose short code matches.
 - R4 Short codes: 4 hex characters, extended to 5, 6, or 7 only on collision; displayed in the push; accepted with or without `#`.
 - R5 Ack from the record: the ack names the record's session title and counts remaining records across the registry.
 - R6 Desktop answer: `permission.replied` removes the record, so a later phone reply cannot target a dead ask.
@@ -59,7 +59,7 @@ The routing hint keeps its meaning for text prompts only. Since 0.11.0 it is a o
 
 Fields per record: `code`, `request` (the permission id, `per_...`), `session` (`ses_...`), `title` (session title at push time), `pushed` (epoch ms).
 
-Ordering: `pushed` ascending, ties broken by `request`. The default target is the last record.
+Ordering: `pushed` ascending, ties broken by `request`. The default target is the last record, and only when no other live record shares the topic.
 
 Code allocation: sha256 of `request`, first 4 lowercase hex characters; if the code already exists in the registry, extend to 5, then 6, then 7; a failure to find a unique code is an error that skips the push and logs. The same request keeps one code while registered.
 
@@ -69,7 +69,7 @@ File: `%LOCALAPPDATA%\ntfy-relay\ntfy-relay-asks.json`, compact JSON:
 {"version":1,"asks":[{"code":"3f2a","request":"per_1d4e...","session":"ses_e2b1...","title":"phone round","pushed":1794573661000}]}
 ```
 
-Write path: serialize, write a temporary file in the same directory, `sync_all`, rename, fsync the parent on Unix, mode 0600. Read path: missing file is an empty registry; invalid JSON or a version other than 1 moves the file to `<name>.corrupt-<unix>` and starts empty.
+Write path: serialize, write a temporary file in the same directory, `sync_all`, rename, fsync the parent on Unix, mode 0600. Read path: missing file is an empty registry; a file that is unreadable, larger than 1 MiB, not UTF-8, invalid JSON, or a version other than 1 moves the file to `<name>.corrupt-<ms>` and starts empty.
 
 The registry stores no tokens, command text, or file paths. Titles are the same text already published to the phone.
 
@@ -78,7 +78,7 @@ The registry stores no tokens, command text, or file paths. Titles are the same 
 Grammar: the existing native verbs plus one optional token, case-insensitive: `/allow`, `/allow 3f2a`, `/allow #3f2a`; same for `always` and `deny`.
 
 1. If a token is present, find the exact code; an unknown code is an error listing up to three current codes and titles.
-2. Without a token, take the newest record.
+2. Without a token, answer the only live record on the topic; with several, list up to three codes and titles and approve nothing.
 3. Post the decision to the record's session and request id.
 4. Remove the record on success.
 5. Ack: `approved once in <title> (<code>), N more pending`, `approved always ...`, or `rejected ...`; `N` counts all remaining records, and the suffix is dropped when `N` is 0.
@@ -171,7 +171,7 @@ Live acceptance, after the 0.9.0 swap:
 
 The relay does not interpret a question form. The phone sends `/answer` followed by any text; the relay resolves the newest pushed form and cancels it with that text as the reason, so the desktop form closes at once and the assistant reads the text as the result of the question it asked. The assistant decides whether the text answers the question and asks again when it does not. The routing target, the pin, and session recency are never consulted.
 
-- No code is printed or required. The lookup is by push recency, the same default as `/allow` without a code; the registry code stays an internal identity and a tombstone key.
+- No code is printed or required. The form lookup is by push recency. A permission reply takes the only live ask on the topic and lists the codes when several are live; the registry code stays an internal identity and a tombstone key.
 - The whole argument is one reason string; there is no field number, option mapping, `send`, or per-field accumulation.
 - An empty `/answer` sends `The user dismissed the question without an answer.`
 - The call is `DELETE /api/session/{session}/form/{form}?message=<reason>`, documented as `session.form.cancel`; a 204 settles the form.

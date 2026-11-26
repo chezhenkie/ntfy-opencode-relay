@@ -345,9 +345,9 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <tr><td><code>/to &lt;title fragment&gt;</code></td><td>send the next message to the single session whose title matches</td></tr>
 <tr><td><code>/auto</code></td><td>drop a target set by <code>/to</code> or <code>/new</code>; routing goes back to automatic</td></tr>
 <tr><td><code>/steer &lt;text&gt;</code></td><td>inject text into the running turn instead of queueing a new prompt</td></tr>
-<tr><td><code>/allow [code]</code></td><td>allow the newest permission ask once, or the ask with that code</td></tr>
+<tr><td><code>/allow [code]</code></td><td>allow the only pending permission ask once, or the ask with that code</td></tr>
 <tr><td><code>/always [code]</code></td><td>allow it and remember the approval for matching asks</td></tr>
-<tr><td><code>/deny [code]</code></td><td>reject the newest permission ask, or the ask with that code</td></tr>
+<tr><td><code>/deny [code]</code></td><td>reject the only pending permission ask, or the ask with that code</td></tr>
 <tr><td><code>/yes</code></td><td>confirm a held action</td></tr>
 <tr><td><code>/no</code></td><td>cancel a held action</td></tr>
 </tbody></table>
@@ -386,9 +386,9 @@ run the link check and fix every broken link</code></pre>
 <p><code>Reply /allow &lt;code&gt;, /always &lt;code&gt;, or /deny &lt;code&gt;; with one ask, /allow is enough.</code></p>
 <p>Answer from the phone:</p>
 <ul>
-<li><code>/allow</code> allows the newest ask once. <code>/allow 3f2a</code> or <code>/allow #3f2a</code> answers that exact ask; the code is case-insensitive.</li>
+<li><code>/allow</code> allows the only pending ask once. With several asks pending, a reply without a code lists their codes and titles and approves nothing. <code>/allow 3f2a</code> or <code>/allow #3f2a</code> answers that exact ask; the code is case-insensitive.</li>
 <li><code>/always</code> or <code>/always &lt;code&gt;</code> allows it and saves a matching approval, which can satisfy later asks silently.</li>
-<li><code>/deny</code> or <code>/deny &lt;code&gt;</code> rejects the newest ask or the named one.</li>
+<li><code>/deny</code> or <code>/deny &lt;code&gt;</code> rejects the only pending ask or the named one.</li>
 </ul>
 <p>The push is sent 15 seconds after the ask; replying inside that window cancels the push. An answer other than these three values is rejected and the ask stays pending. The ack names the session title and the code, for example <code>approved once in Fix links (3f2a), 2 more pending</code>. A reply with no pending ask answers <code>no pending permission ask</code>; the routing target is never named.</p>
 <p>A question form arrives with the <code>question</code> tag and lists the question and its options. The last line reads:</p>

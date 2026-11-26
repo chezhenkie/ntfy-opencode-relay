@@ -159,7 +159,24 @@ Phone: change the server URL to `https://ntfy.example.ts.net`, no port. The app 
 
 ## 5.8 Rollback
 
-Stop the terminator or remove its 443 listener. Then switch back with `ntfy-deploy mode lan`, or set the deploy config by hand, for example `{"mode":"lan","baseUrl":"http://192.168.1.20:8810","behindProxy":false}`, and run `ntfy-deploy apply`. The container is recreated with the HTTP base URL and the VPN entry is removed. The old HTTP URL works again.
+Stop the terminator or remove its 443 listener. Then switch back with `ntfy-deploy mode lan`, or set the full deploy config by hand and run `ntfy-deploy apply`:
+
+```json
+{
+  "version": 1,
+  "mode": "lan",
+  "baseUrl": "http://192.168.1.20:8810",
+  "behindProxy": false,
+  "port": 8810,
+  "container": {
+    "name": "ntfy",
+    "image": "localhost/ntfy:server",
+    "cacheVolume": "ntfy-cache"
+  }
+}
+```
+
+The container is recreated with the HTTP base URL and the VPN entry is removed. The old HTTP URL works again.
 
 ## 5.9 Current status
 
