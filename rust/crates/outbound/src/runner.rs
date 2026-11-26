@@ -53,6 +53,8 @@ pub const EVENT_TYPES: &[&str] = &[
 pub const CHANNEL_CAPACITY: usize = 256;
 /// Persist attempts before a due ask is dropped.
 const ASK_REGISTER_ATTEMPTS: u8 = 3;
+/// Delivery attempts for a body push before its ids are left to backfill.
+const PUBLISH_ATTEMPTS: u8 = 5;
 /// Per-session warnings kept so one bad project cannot spam the log.
 const MAX_WARNED: usize = 512;
 const BACKOFF_START_MS: i64 = 1_000;
@@ -250,6 +252,7 @@ pub async fn run(options: OutboundOptions) -> Result<(), String> {
         last_text_session: None,
         permissions: PermissionScheduler::new(config.permission_delay_ms as i64, log.clone()),
         ask_attempts: HashMap::new(),
+        retries: VecDeque::new(),
         asks,
         forms,
         auto_attach: AutoAttachSettings {
@@ -339,6 +342,8 @@ struct Worker {
     permissions: PermissionScheduler,
     /// Persist attempts per due request; a third failure drops the entry.
     ask_attempts: HashMap<String, u8>,
+    /// Body pushes that failed once and still hold unseen message ids.
+    retries: VecDeque<RetryPush>,
     asks: Arc<AskStore>,
     forms: Arc<FormStore>,
     auto_attach: AutoAttachSettings,
@@ -464,7 +469,7 @@ impl Worker {
                     return false;
                 }
                 let draft = format::error_message(&target.topic, Some(&session_id), &message);
-                self.publish(draft).await;
+                let _ = self.publish(&draft).await;
                 let out = self.tracker.flush_partial(&session_id, now);
                 self.publish_turns(out, now).await;
                 false
@@ -565,7 +570,7 @@ impl Worker {
                 if let Some(message) =
                     format::question_message(&target.topic, &title, kind.as_deref(), &fields)
                 {
-                    self.publish(message).await;
+                    let _ = self.publish(&message).await;
                 }
                 false
             }
@@ -573,6 +578,7 @@ impl Worker {
     }
 
     async fn tick(&mut self, now: i64) {
+        self.retry_pending(now).await;
         if let Some(resume) = self.feed.resume() {
             self.backfill(resume, now).await;
         }
@@ -602,7 +608,7 @@ impl Worker {
                     priority: Priority::High,
                     file: None,
                 };
-                self.publish(message).await;
+                let _ = self.publish(&message).await;
             }
         }
     }
@@ -785,11 +791,12 @@ impl Worker {
             };
             self.seen.accept(&message.id, now);
             let push = body_message("session.backfill", &target.topic, body);
-            self.publish(push).await;
-            self.seen.commit(&message.id, now, self.log.as_ref()).await;
+            let ids = vec![message.id.clone()];
+            if self.deliver(push, ids, now).await {
+                published += 1;
+            }
             self.tracker.discard_message(session_id, &message.id);
             self.last_text_session = Some(session_id.to_string());
-            published += 1;
         }
         Ok((fetched, published))
     }
@@ -804,20 +811,18 @@ impl Worker {
                 Some(body) => {
                     // Mark before the push, commit after it: a crash can repeat
                     // one push, a late part or backfill cannot publish twice.
+                    // A failed push keeps the ids unseen and the body queued.
                     for message in &turn.messages {
                         self.seen.accept(message, now);
                     }
                     let message = body_message("session.text", &target.topic, body);
-                    self.publish(message).await;
-                    for message in &turn.messages {
-                        self.seen.commit(message, now, self.log.as_ref()).await;
-                    }
+                    self.deliver(message, turn.messages, now).await;
                     self.last_text_session = Some(turn.session_id.clone());
                 }
                 None => {
                     if turn.idle {
                         let message = format::idle_message(&target.topic, &turn.session_id);
-                        self.publish(message).await;
+                        let _ = self.publish(&message).await;
                     }
                 }
             }
@@ -906,18 +911,88 @@ impl Worker {
         })
     }
 
-    async fn publish(&mut self, message: OutboundMessage) {
-        let kind = message.kind;
-        let topic = message.topic.clone();
-        match publish::send(&self.publisher, &message).await {
+    async fn publish(&mut self, message: &OutboundMessage) -> Result<(), String> {
+        match publish::send(&self.publisher, message).await {
             Ok(()) => {
-                self.last_topic = Some(topic);
+                self.last_topic = Some(message.topic.clone());
+                Ok(())
             }
             Err(error) => {
                 self.log.warn(&format!(
-                    "outbound publish failed kind={kind} topic={topic}: {error}"
+                    "outbound publish failed kind={} topic={}: {error}",
+                    message.kind, message.topic
+                ));
+                Err(error.to_string())
+            }
+        }
+    }
+
+    /// Publishes a body push and commits its message ids only after the push
+    /// succeeded. A failure keeps the ids unseen on disk and queues the body for
+    /// one retry per tick; after five attempts the ids are forgotten so a later
+    /// backfill can recover the text.
+    async fn deliver(&mut self, message: OutboundMessage, messages: Vec<String>, now: i64) -> bool {
+        match self.publish(&message).await {
+            Ok(()) => {
+                for id in &messages {
+                    self.seen.commit(id, now, self.log.as_ref()).await;
+                }
+                true
+            }
+            Err(_) => {
+                if !messages.is_empty() {
+                    self.retries.push_back(RetryPush {
+                        message,
+                        messages,
+                        attempts: 1,
+                        next_at: now,
+                    });
+                }
+                false
+            }
+        }
+    }
+
+    /// One retry attempt per tick keeps the push rate bounded while the phone
+    /// is unreachable. The fifth failure drops the entry and leaves its ids
+    /// unseen, so the next backfill pass may deliver the text again.
+    async fn retry_pending(&mut self, now: i64) {
+        let Some(front) = self.retries.front() else {
+            return;
+        };
+        if front.next_at > now {
+            return;
+        }
+        let Some(retry) = self.retries.pop_front() else {
+            return;
+        };
+        let RetryPush {
+            message,
+            messages,
+            attempts,
+            ..
+        } = retry;
+        match self.publish(&message).await {
+            Ok(()) => {
+                for id in &messages {
+                    self.seen.commit(id, now, self.log.as_ref()).await;
+                }
+            }
+            Err(_) if attempts + 1 >= PUBLISH_ATTEMPTS => {
+                for id in &messages {
+                    self.seen.forget(id);
+                }
+                self.log.error(&format!(
+                    "outbound publish dropped kind={} topic={} after {} attempts",
+                    message.kind, message.topic, PUBLISH_ATTEMPTS
                 ));
             }
+            Err(_) => self.retries.push_back(RetryPush {
+                message,
+                messages,
+                attempts: attempts + 1,
+                next_at: now,
+            }),
         }
     }
 
@@ -1074,6 +1149,15 @@ impl Worker {
 struct TargetOutcome {
     target: Option<SessionTarget>,
     retryable: bool,
+}
+
+/// A body push whose first attempt failed. `attempts` counts the failed try
+/// that queued it; the ids stay unseen until a retry is accepted.
+struct RetryPush {
+    message: OutboundMessage,
+    messages: Vec<String>,
+    attempts: u8,
+    next_at: i64,
 }
 
 struct SessionTarget {
@@ -1544,11 +1628,17 @@ mod tests {
     struct Recorder {
         requests: Mutex<Vec<HttpRequest>>,
         status: std::sync::atomic::AtomicU16,
+        fail_next: std::sync::atomic::AtomicUsize,
     }
 
     impl Recorder {
         fn fail(&self) {
             self.status.store(500, Ordering::Relaxed);
+        }
+
+        /// The next request answers 500, later ones answer 200.
+        fn fail_next(&self) {
+            self.fail_next.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -1556,11 +1646,22 @@ mod tests {
     impl ntfy_relay_ntfy::http::Transport for Recorder {
         async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
             self.requests.lock().unwrap().push(request);
-            Ok(HttpResponse {
-                status: match self.status.load(Ordering::Relaxed) {
+            let one_shot = self
+                .fail_next
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
+                    left.checked_sub(1)
+                })
+                .is_ok();
+            let status = if one_shot {
+                500
+            } else {
+                match self.status.load(Ordering::Relaxed) {
                     0 => 200,
                     status => status,
-                },
+                }
+            };
+            Ok(HttpResponse {
+                status,
                 headers: Vec::new(),
                 body: Bytes::new(),
             })
@@ -2405,5 +2506,95 @@ mod tests {
             "a journaled message must not publish again after a restart"
         );
         second.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_failed_publish_is_retried_and_journaled_only_after_success() {
+        let harness = harness("publish-retry", 0);
+        harness.transport.fail_next();
+        harness.frame(session_created(&harness.root, "ses_a", None));
+        harness.frame(json!({
+            "id": "e2", "type": "session.execution.started",
+            "data": { "sessionID": "ses_a" }
+        }));
+        harness.frame(json!({
+            "id": "e3", "type": "session.text.ended",
+            "data": {
+                "sessionID": "ses_a",
+                "assistantMessageID": "msg_retry",
+                "ordinal": 0,
+                "text": "retried text"
+            }
+        }));
+        harness.frame(json!({
+            "id": "e4", "type": "session.execution.succeeded",
+            "data": { "sessionID": "ses_a" }
+        }));
+        let requests = harness.wait_requests(2).await;
+        assert_eq!(requests.len(), 2);
+        assert_eq!(json_body(&requests[0])["message"], "retried text");
+        assert_eq!(json_body(&requests[1])["message"], "retried text");
+        assert!(
+            harness
+                .log
+                .warnings()
+                .iter()
+                .any(|line| line.contains("outbound publish failed kind=session.text")),
+            "{:?}",
+            harness.log.warnings()
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let journal = std::fs::read_to_string(harness.seen.as_ref().unwrap()).unwrap_or_default();
+        assert!(
+            journal.contains("msg_retry"),
+            "the id is committed only after the retry succeeded: {journal}"
+        );
+        harness.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_publish_that_keeps_failing_stops_after_five_attempts() {
+        let harness = harness("publish-give-up", 0);
+        harness.transport.fail();
+        harness.frame(session_created(&harness.root, "ses_a", None));
+        harness.frame(json!({
+            "id": "e2", "type": "session.execution.started",
+            "data": { "sessionID": "ses_a" }
+        }));
+        harness.frame(json!({
+            "id": "e3", "type": "session.text.ended",
+            "data": {
+                "sessionID": "ses_a",
+                "assistantMessageID": "msg_give_up",
+                "ordinal": 0,
+                "text": "lost text"
+            }
+        }));
+        harness.frame(json!({
+            "id": "e4", "type": "session.execution.succeeded",
+            "data": { "sessionID": "ses_a" }
+        }));
+        let requests = harness.wait_requests(PUBLISH_ATTEMPTS as usize).await;
+        assert_eq!(requests.len(), PUBLISH_ATTEMPTS as usize);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            harness.transport.requests.lock().unwrap().len(),
+            PUBLISH_ATTEMPTS as usize,
+            "a dropped push is not retried again"
+        );
+        assert!(
+            harness.log.errors().iter().any(|line| {
+                line.contains("outbound publish dropped kind=session.text")
+                    && line.contains("after 5 attempts")
+            }),
+            "{:?}",
+            harness.log.errors()
+        );
+        let journal = std::fs::read_to_string(harness.seen.as_ref().unwrap()).unwrap_or_default();
+        assert!(
+            !journal.contains("msg_give_up"),
+            "a dropped push leaves its id unseen for a later backfill: {journal}"
+        );
+        harness.stop().await.unwrap();
     }
 }
