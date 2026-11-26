@@ -93,6 +93,16 @@ impl SessionResolver {
             .unwrap_or_else(|_| self.current.clone())
     }
 
+    /// Shared root list for a lane task that resolves its own sessions.
+    pub fn roots_handle(&self) -> Arc<RwLock<ProjectRoots>> {
+        self.roots.clone()
+    }
+
+    /// Shared topic ownership for a lane task that resolves its own sessions.
+    pub fn owners_handle(&self) -> Arc<RwLock<TopicOwners>> {
+        self.owners.clone()
+    }
+
     /// Drops the session cache when the shared root list moved. A denied
     /// session may now be served and a resolved one may now be out of scope,
     /// so every cached decision is stale.

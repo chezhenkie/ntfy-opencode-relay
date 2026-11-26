@@ -11,6 +11,7 @@
 
 pub mod files;
 pub mod format;
+pub mod lane;
 pub mod log;
 pub mod permission;
 pub mod publish;

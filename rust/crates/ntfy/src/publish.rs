@@ -276,6 +276,7 @@ impl From<HttpError> for PublishError {
 
 /// One publisher per base URL and token. The transport is injected so the
 /// daemon and the MCP command share the same wire code.
+#[derive(Clone)]
 pub struct Publisher {
     server: NtfyServer,
     token: Option<String>,

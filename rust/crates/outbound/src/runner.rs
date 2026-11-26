@@ -6,7 +6,7 @@
 //! publishes through `rust/crates/ntfy`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -19,7 +19,7 @@ use ntfy_relay_core::topic::{topic_for_project, ProjectRoots, TopicOwners};
 use ntfy_relay_ntfy::header::Priority;
 use ntfy_relay_ntfy::publish::Publisher;
 use ntfy_relay_ntfy::sse::SseParser;
-use ntfy_relay_opencode::api::{Api, ApiError, MessageInfo};
+use ntfy_relay_opencode::api::Api;
 use ntfy_relay_opencode::event::{parse as parse_event, Envelope, FileAction, RuntimeEvent};
 use ntfy_relay_opencode::event_stream::EventSource;
 use serde_json::Value;
@@ -27,13 +27,13 @@ use tokio::sync::{mpsc, watch};
 
 use crate::files::{self, AutoAttachSettings};
 use crate::format;
+use crate::lane::{self, LaneMsg};
 use crate::log::Log;
 use crate::permission::{PendingNotice, PermissionScheduler};
 use crate::publish::{self, OutboundFile, OutboundMessage};
-use crate::scope::within_roots;
 use crate::seen::SeenEvents;
 use crate::topic::{short_session_id, SessionMeta, SessionResolver};
-use crate::turn::{self, TerminalMode, TurnBody, TurnOut, TurnSettings, TurnTracker};
+use crate::turn::{TerminalMode, TurnBody, TurnOut, TurnSettings, TurnTracker};
 
 pub const EVENT_TYPES: &[&str] = &[
     "session.created",
@@ -65,13 +65,8 @@ const STABLE_CONNECTION: Duration = Duration::from_secs(60);
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 /// Reconnect backfill starts 60 s before the stream ended.
 const BACKFILL_MARGIN_MS: i64 = 60_000;
-const BACKFILL_PAGE: usize = 20;
-const BACKFILL_MAX_PAGES: usize = 10;
-/// Messages fetched by one reconnect or start.
-const BACKFILL_MAX_MESSAGES: usize = 200;
-/// Sessions read per project root on a cold start.
-const BACKFILL_COLD_SESSIONS: usize = 20;
-const BACKFILL_TIMEOUT: Duration = Duration::from_secs(5);
+/// Results a spawned lane task may hold before it waits for the worker.
+const LANE_CAPACITY: usize = 64;
 
 /// Connection generation and gap start, shared by the reader and the worker.
 ///
@@ -110,17 +105,28 @@ impl FeedState {
         self.lock().gap_start_ms = now;
     }
 
-    /// The next start the worker has not handled yet.
-    pub fn resume(&self) -> Option<FeedResume> {
-        let mut inner = self.lock();
+    /// The newest start the worker has not handled yet. The worker commits the
+    /// generation only after its backfill task has reported back.
+    pub fn peek(&self) -> Option<(u64, FeedResume)> {
+        let inner = self.lock();
         if inner.generation <= inner.consumed {
             return None;
         }
-        inner.consumed = inner.generation;
-        Some(FeedResume {
-            gap_start_ms: inner.gap_start_ms,
-            cold: inner.generation == 1,
-        })
+        Some((
+            inner.generation,
+            FeedResume {
+                gap_start_ms: inner.gap_start_ms,
+                cold: inner.generation == 1,
+            },
+        ))
+    }
+
+    /// Marks every generation up to `generation` as handled.
+    pub fn commit(&self, generation: u64) {
+        let mut inner = self.lock();
+        if generation > inner.consumed {
+            inner.consumed = generation;
+        }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, FeedInner> {
@@ -155,6 +161,12 @@ struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
 impl<T> Drop for AbortOnDrop<T> {
     fn drop(&mut self) {
         self.0.abort();
+    }
+}
+
+impl<T> AbortOnDrop<T> {
+    fn is_finished(&self) -> bool {
+        self.0.is_finished()
     }
 }
 
@@ -222,6 +234,7 @@ pub async fn run(options: OutboundOptions) -> Result<(), String> {
         _ => None,
     };
     let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
+    let (lane_sender, mut lane_receiver) = mpsc::channel(LANE_CAPACITY);
     let dropped = Arc::new(AtomicU64::new(0));
     let last_drop_log = Arc::new(std::sync::atomic::AtomicI64::new(0));
     let mut reader = AbortOnDrop(tokio::spawn(subscribe_forever(
@@ -253,6 +266,10 @@ pub async fn run(options: OutboundOptions) -> Result<(), String> {
         permissions: PermissionScheduler::new(config.permission_delay_ms as i64, log.clone()),
         ask_attempts: HashMap::new(),
         retries: VecDeque::new(),
+        lane: lane_sender,
+        tasks: Vec::new(),
+        backfill_active: None,
+        backfill_published: 0,
         asks,
         forms,
         auto_attach: AutoAttachSettings {
@@ -298,6 +315,11 @@ pub async fn run(options: OutboundOptions) -> Result<(), String> {
                     }
                 }
             }
+            lane = lane_receiver.recv() => {
+                if let Some(message) = lane {
+                    worker.handle_lane(message, now_ms()).await;
+                }
+            }
             _ = tick.tick() => {
                 worker.tick(now_ms()).await;
             }
@@ -319,6 +341,13 @@ pub async fn run(options: OutboundOptions) -> Result<(), String> {
         log.warn(&format!(
             "shutdown dropped {permissions} pending permission notification(s)"
         ));
+    }
+    // A running lane task may be blocked in an API query or an upload; the
+    // worker is the only owner, so shutdown cancels it instead of waiting.
+    let tasks = worker.tasks.len();
+    worker.tasks.clear();
+    if tasks > 0 {
+        log.warn(&format!("shutdown cancelled {tasks} outbound lane task(s)"));
     }
     drop(receiver);
     let _ = tokio::time::timeout(Duration::from_secs(5), &mut reader.0).await;
@@ -344,6 +373,14 @@ struct Worker {
     ask_attempts: HashMap<String, u8>,
     /// Body pushes that failed once and still hold unseen message ids.
     retries: VecDeque<RetryPush>,
+    /// Results from spawned lane tasks.
+    lane: mpsc::Sender<LaneMsg>,
+    /// Spawned backfill and auto-attach tasks; dropped tasks are aborted.
+    tasks: Vec<AbortOnDrop<()>>,
+    /// Feed generation whose backfill task is still running.
+    backfill_active: Option<u64>,
+    /// Messages the running backfill pass delivered on the first attempt.
+    backfill_published: usize,
     asks: Arc<AskStore>,
     forms: Arc<FormStore>,
     auto_attach: AutoAttachSettings,
@@ -579,9 +616,8 @@ impl Worker {
 
     async fn tick(&mut self, now: i64) {
         self.retry_pending(now).await;
-        if let Some(resume) = self.feed.resume() {
-            self.backfill(resume, now).await;
-        }
+        self.start_backfill(now);
+        self.tasks.retain(|task| !task.is_finished());
         let out = self.tracker.tick(now);
         self.publish_turns(out, now).await;
         for (request_id, notice) in self.permissions.tick(now) {
@@ -613,192 +649,88 @@ impl Worker {
         }
     }
 
-    /// One gap recovery pass. Runs inside the worker, so live events arriving
-    /// during the queries wait in the bounded channel and dedupe normally.
-    async fn backfill(&mut self, resume: FeedResume, now: i64) {
-        let from = backfill_from(resume, now);
-        let sessions = self.backfill_scope(resume.cold).await;
-        let session_count = sessions.len();
-        let mut budget = BACKFILL_MAX_MESSAGES;
-        let mut fetched = 0usize;
-        let mut published = 0usize;
-        for session_id in sessions {
-            if budget == 0 {
-                break;
-            }
-            match self
-                .backfill_session(&session_id, from, now, &mut budget)
-                .await
-            {
-                Ok((messages, sent)) => {
-                    fetched += messages;
-                    published += sent;
-                }
-                Err(error) => self.log.warn(&format!(
-                    "backfill session={session_id} failed: {}; live stream stays up",
-                    clip(error.message(), 200)
-                )),
-            }
+    /// Starts one gap recovery when the reader opened a stream the worker has
+    /// not answered yet. The fetch runs in a lane task; publishing stays here so
+    /// one seen window and one turn tracker decide every duplicate.
+    fn start_backfill(&mut self, now: i64) {
+        if self.backfill_active.is_some() {
+            return;
         }
+        let Some((generation, resume)) = self.feed.peek() else {
+            return;
+        };
         let gap_ms = if resume.cold {
             0
         } else {
             (now - resume.gap_start_ms).max(0)
         };
-        self.log.info(&format!(
-            "backfill cold={} gap={gap_ms}ms sessions={session_count} messages={fetched} published={published}",
-            resume.cold
-        ));
+        self.backfill_active = Some(generation);
+        self.backfill_published = 0;
+        let request = lane::BackfillRequest {
+            generation,
+            cold: resume.cold,
+            from: backfill_from(resume, now),
+            gap_ms,
+            now,
+            focus: (self.focus)(),
+            open: self.tracker.open_sessions(),
+            last_text: self.last_text_session.clone(),
+        };
+        let api = self.api.clone();
+        let log = self.log.clone();
+        let roots = self.resolver.roots_handle();
+        let owners = self.resolver.owners_handle();
+        let settings = self.turn_settings.clone();
+        let out = self.lane.clone();
+        self.tasks.push(AbortOnDrop(tokio::spawn(lane::backfill(
+            request, api, log, roots, owners, settings, out,
+        ))));
     }
 
-    async fn backfill_scope(&mut self, cold: bool) -> Vec<String> {
-        let mut scope: Vec<String> = Vec::new();
-        for id in (self.focus)() {
-            push_scope(&mut scope, &id);
-        }
-        if !cold {
-            for id in self.tracker.open_sessions() {
-                push_scope(&mut scope, &id);
+    /// One result from a lane task. A recovered message is published here, not
+    /// in the fetch task, so a live part and its recovered copy cannot both
+    /// pass the seen window.
+    async fn handle_lane(&mut self, message: LaneMsg, now: i64) {
+        match message {
+            LaneMsg::Backfill(item) => {
+                if self.seen.contains(&item.message_id, now) {
+                    self.tracker
+                        .discard_message(&item.session_id, &item.message_id);
+                    return;
+                }
+                self.seen.accept(&item.message_id, now);
+                let push = body_message("session.backfill", &item.topic, item.body);
+                let ids = vec![item.message_id.clone()];
+                if self.deliver(push, ids, now).await {
+                    self.backfill_published += 1;
+                }
+                self.tracker
+                    .discard_message(&item.session_id, &item.message_id);
+                self.last_text_session = Some(item.session_id);
             }
-            if let Some(last) = self.last_text_session.clone() {
-                push_scope(&mut scope, &last);
-            }
-            return scope;
-        }
-        let projects = match tokio::time::timeout(BACKFILL_TIMEOUT, self.api.projects()).await {
-            Ok(Ok(projects)) => projects,
-            Ok(Err(error)) => {
-                self.log.warn(&format!(
-                    "backfill project query failed: {}; live stream stays up",
-                    clip(error.message(), 200)
+            LaneMsg::Done(done) => {
+                self.feed.commit(done.generation);
+                if self.backfill_active == Some(done.generation) {
+                    self.backfill_active = None;
+                }
+                self.log.info(&format!(
+                    "backfill cold={} gap={}ms sessions={} messages={} published={}",
+                    done.cold, done.gap_ms, done.sessions, done.fetched, self.backfill_published
                 ));
-                return scope;
             }
-            Err(_) => {
-                self.log.warn("backfill project query timed out");
-                return scope;
-            }
-        };
-        let roots = self.resolver.roots();
-        let mut candidates: Vec<(usize, i64, String)> = Vec::new();
-        for project in projects {
-            let Some(canonical) = project.canonical.as_deref() else {
-                continue;
-            };
-            let Some(root) = roots
-                .iter()
-                .position(|root| within_roots(Path::new(canonical), std::slice::from_ref(root)))
-            else {
-                continue;
-            };
-            match tokio::time::timeout(
-                BACKFILL_TIMEOUT,
-                self.api.sessions(&project.id, BACKFILL_COLD_SESSIONS),
-            )
-            .await
-            {
-                Ok(Ok(sessions)) => {
-                    for session in sessions {
-                        if !candidates.iter().any(|(_, _, id)| id == &session.id) {
-                            candidates.push((root, session.time.updated, session.id));
-                        }
-                    }
+            LaneMsg::Attached {
+                topic,
+                published,
+                skipped,
+                bytes,
+            } => {
+                if published > 0 || skipped > 0 {
+                    self.log.info(&format!(
+                        "auto-attach topic={topic} published={published} skipped={skipped} bytes={bytes}"
+                    ));
                 }
-                Ok(Err(error)) => self.log.warn(&format!(
-                    "backfill session list {} failed: {}",
-                    project.id,
-                    clip(error.message(), 200)
-                )),
-                Err(_) => self
-                    .log
-                    .warn(&format!("backfill session list {} timed out", project.id)),
             }
         }
-        candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.1));
-        let mut per_root = vec![0usize; roots.len()];
-        for (root, _, id) in candidates {
-            if per_root[root] < BACKFILL_COLD_SESSIONS {
-                per_root[root] += 1;
-                push_scope(&mut scope, &id);
-            }
-        }
-        scope
-    }
-
-    async fn backfill_session(
-        &mut self,
-        session_id: &str,
-        from: i64,
-        now: i64,
-        budget: &mut usize,
-    ) -> Result<(usize, usize), ApiError> {
-        let outcome = self.target_forced(session_id, None, now).await;
-        let Some(target) = outcome.target else {
-            return Ok((0, 0));
-        };
-        if target.is_child {
-            return Ok((0, 0));
-        }
-        let mut cursor: Option<String> = None;
-        let mut collected: Vec<MessageInfo> = Vec::new();
-        let mut fetched = 0usize;
-        for _ in 0..BACKFILL_MAX_PAGES {
-            if *budget == 0 {
-                break;
-            }
-            let page = tokio::time::timeout(
-                BACKFILL_TIMEOUT,
-                self.api
-                    .messages(session_id, BACKFILL_PAGE, cursor.as_deref()),
-            )
-            .await
-            .map_err(|_| ApiError::new("message query timed out"))??;
-            let mut page_has_old = false;
-            for message in page.messages {
-                let Some(completed) = message.completed_at() else {
-                    continue;
-                };
-                if completed < from {
-                    page_has_old = true;
-                    continue;
-                }
-                if *budget == 0 {
-                    break;
-                }
-                *budget -= 1;
-                fetched += 1;
-                collected.push(message);
-            }
-            cursor = page.next;
-            if cursor.is_none() || page_has_old {
-                break;
-            }
-        }
-        collected.sort_by_key(|message| message.completed_at().unwrap_or(0));
-        let mut published = 0usize;
-        for message in collected {
-            let parts = message.text_parts();
-            if parts.is_empty() {
-                continue;
-            }
-            if self.seen.contains(&message.id, now) {
-                self.tracker.discard_message(session_id, &message.id);
-                continue;
-            }
-            let Some(body) = turn::recovered_body(session_id, &parts, &self.turn_settings, now)
-            else {
-                continue;
-            };
-            self.seen.accept(&message.id, now);
-            let push = body_message("session.backfill", &target.topic, body);
-            let ids = vec![message.id.clone()];
-            if self.deliver(push, ids, now).await {
-                published += 1;
-            }
-            self.tracker.discard_message(session_id, &message.id);
-            self.last_text_session = Some(session_id.to_string());
-        }
-        Ok((fetched, published))
     }
 
     async fn publish_turns(&mut self, out: Vec<TurnOut>, now: i64) {
@@ -827,21 +759,35 @@ impl Worker {
                 }
             }
             if let (Some(started_at), Some(root)) = (turn.started_at, target.canonical) {
-                let stats = files::publish_auto_attached(
-                    &self.publisher,
-                    &target.topic,
-                    &root,
-                    &turn.files,
-                    started_at,
-                    &self.auto_attach,
-                    self.log.as_ref(),
-                )
-                .await;
-                if stats.published > 0 || stats.skipped > 0 {
-                    self.log.info(&format!(
-                        "auto-attach topic={} published={} skipped={} bytes={}",
-                        target.topic, stats.published, stats.skipped, stats.bytes
-                    ));
+                // The per-turn scan and uploads are slow; the lane task runs
+                // them and reports the summary, so the worker stays free.
+                if self.auto_attach.enabled && !turn.files.is_empty() {
+                    let publisher = self.publisher.clone();
+                    let log = self.log.clone();
+                    let settings = self.auto_attach.clone();
+                    let lane = self.lane.clone();
+                    let topic = target.topic.clone();
+                    let files = turn.files.clone();
+                    self.tasks.push(AbortOnDrop(tokio::spawn(async move {
+                        let stats = files::publish_auto_attached(
+                            &publisher,
+                            &topic,
+                            &root,
+                            &files,
+                            started_at,
+                            &settings,
+                            log.as_ref(),
+                        )
+                        .await;
+                        let _ = lane
+                            .send(LaneMsg::Attached {
+                                topic,
+                                published: stats.published,
+                                skipped: stats.skipped,
+                                bytes: stats.bytes,
+                            })
+                            .await;
+                    })));
                 }
             }
         }
@@ -853,29 +799,9 @@ impl Worker {
         location: Option<&str>,
         now: i64,
     ) -> TargetOutcome {
-        self.target_with(session_id, location, now, false).await
-    }
-
-    /// Backfill retries a lookup that failed when the event arrived.
-    async fn target_forced(
-        &mut self,
-        session_id: &str,
-        location: Option<&str>,
-        now: i64,
-    ) -> TargetOutcome {
-        self.target_with(session_id, location, now, true).await
-    }
-
-    async fn target_with(
-        &mut self,
-        session_id: &str,
-        location: Option<&str>,
-        now: i64,
-        force: bool,
-    ) -> TargetOutcome {
         let meta = self
             .resolver
-            .meta_with(self.api.as_ref(), session_id, location, now, force)
+            .meta(self.api.as_ref(), session_id, location, now)
             .await;
         let retryable = meta.retryable;
         TargetOutcome {
@@ -1180,13 +1106,6 @@ fn backfill_from(resume: FeedResume, now: i64) -> i64 {
     }
 }
 
-fn push_scope(scope: &mut Vec<String>, id: &str) {
-    if id.is_empty() || scope.iter().any(|known| known == id) {
-        return;
-    }
-    scope.push(id.to_string());
-}
-
 fn body_message(kind: &'static str, topic: &str, body: TurnBody) -> OutboundMessage {
     match body {
         TurnBody::Text(text) => OutboundMessage {
@@ -1295,7 +1214,7 @@ async fn subscribe_forever(
                             }
                         }
                         for value in events {
-                            forward(value, &sender, &dropped, &last_drop_log, log.as_ref());
+                            forward(value, &sender, &dropped, &last_drop_log, log.as_ref()).await;
                         }
                     }
                     Some(Err(error)) => break error.message().to_string(),
@@ -1310,7 +1229,7 @@ async fn subscribe_forever(
                             }
                         }
                         for value in events {
-                            forward(value, &sender, &dropped, &last_drop_log, log.as_ref());
+                            forward(value, &sender, &dropped, &last_drop_log, log.as_ref()).await;
                         }
                         break "event stream ended".to_string();
                     }
@@ -1348,7 +1267,7 @@ fn overflow_name(kind: ntfy_relay_ntfy::sse::SseOverflow) -> &'static str {
     }
 }
 
-pub(crate) fn forward(
+pub(crate) async fn forward(
     value: Value,
     sender: &mpsc::Sender<RawEvent>,
     dropped: &AtomicU64,
@@ -1367,6 +1286,12 @@ pub(crate) fn forward(
         location: envelope.location,
         event,
     };
+    if control_event(&raw.event) {
+        // An ask, a form push or an error must not be lost to a text flood.
+        // It waits for the worker to free a slot instead of dropping.
+        let _ = sender.send(raw).await;
+        return;
+    }
     match sender.try_send(raw) {
         Ok(()) => {}
         Err(mpsc::error::TrySendError::Full(_)) => {
@@ -1382,6 +1307,15 @@ pub(crate) fn forward(
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {}
     }
+}
+
+fn control_event(event: &RuntimeEvent) -> bool {
+    matches!(
+        event,
+        RuntimeEvent::PermissionAsked { .. }
+            | RuntimeEvent::FormCreated { .. }
+            | RuntimeEvent::SessionError { .. }
+    )
 }
 
 async fn wait_or_stop(shutdown: &mut watch::Receiver<bool>, millis: i64) -> bool {
@@ -1400,7 +1334,7 @@ fn jitter(ms: i64) -> i64 {
     (ms as f64 * factor).round() as i64
 }
 
-fn clip(value: &str, limit: usize) -> String {
+pub(crate) fn clip(value: &str, limit: usize) -> String {
     if value.chars().count() <= limit {
         value.to_string()
     } else {
@@ -1449,6 +1383,8 @@ mod tests {
         by_id: Mutex<HashMap<String, SessionInfo>>,
         pages: Mutex<HashMap<String, Vec<Vec<MessageInfo>>>>,
         fail_messages: Mutex<bool>,
+        gate: Mutex<Option<Arc<tokio::sync::Notify>>>,
+        gated: std::sync::atomic::AtomicBool,
     }
 
     impl TestApi {
@@ -1493,6 +1429,13 @@ mod tests {
         fn fail_message_queries(&self) {
             *self.fail_messages.lock().unwrap() = true;
         }
+
+        /// Holds every message query until the returned gate is notified.
+        fn gate_messages(&self) -> Arc<tokio::sync::Notify> {
+            let gate = Arc::new(tokio::sync::Notify::new());
+            *self.gate.lock().unwrap() = Some(gate.clone());
+            gate
+        }
     }
 
     #[async_trait]
@@ -1536,6 +1479,11 @@ mod tests {
         ) -> Result<MessagePage, ApiError> {
             if *self.fail_messages.lock().unwrap() {
                 return Err(ApiError::with_status(500, "messages unavailable"));
+            }
+            let gate = self.gate.lock().unwrap().clone();
+            if let Some(gate) = gate {
+                self.gated.store(true, Ordering::Relaxed);
+                gate.notified().await;
             }
             let index = cursor
                 .and_then(|value| value.parse::<usize>().ok())
@@ -2596,5 +2544,117 @@ mod tests {
             "a dropped push leaves its id unseen for a later backfill: {journal}"
         );
         harness.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_slow_backfill_does_not_block_a_permission_ask() {
+        let harness = harness_with("lane-permission", 0, |api| {
+            api.add_session("ses_a");
+            api.add_session("ses_p");
+            api.set_messages(
+                "ses_a",
+                vec![message("msg_slow", now_ms() - 1_000, &["slow text"])],
+            );
+            api.gate_messages();
+        });
+        let gate = harness.api.gate.lock().unwrap().clone().unwrap();
+        for _ in 0..100 {
+            if harness.api.gated.load(Ordering::Relaxed) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        harness.frame(session_created(&harness.root, "ses_p", None));
+        harness.frame(json!({
+            "id": "e2", "type": "permission.asked",
+            "data": { "id": "per_p", "sessionID": "ses_p", "action": "bash", "resources": [] }
+        }));
+        let requests = harness.wait_requests(1).await;
+        assert_eq!(
+            json_body(&requests[0])["title"],
+            "proj - permission requested",
+            "the ask goes out while the backfill query is still gated"
+        );
+        gate.notify_one();
+        let requests = harness.wait_requests(2).await;
+        assert_eq!(json_body(&requests[1])["message"], "slow text");
+        harness.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_control_event_waits_for_a_slot_instead_of_dropping() {
+        let (sender, mut receiver) = mpsc::channel(1);
+        let dropped = Arc::new(AtomicU64::new(0));
+        let last = Arc::new(std::sync::atomic::AtomicI64::new(0));
+        let log = Arc::new(TestLog::default());
+        forward(
+            json!({
+                "id": "e1", "type": "session.text.ended",
+                "data": {
+                    "sessionID": "s", "assistantMessageID": "m",
+                    "ordinal": 0, "text": "x"
+                }
+            }),
+            &sender,
+            &dropped,
+            &last,
+            log.as_ref(),
+        )
+        .await;
+        assert_eq!(dropped.load(Ordering::Relaxed), 0);
+
+        let tx = sender.clone();
+        let task_dropped = dropped.clone();
+        let task_last = last.clone();
+        let task_log = log.clone();
+        let blocked = tokio::spawn(async move {
+            forward(
+                json!({
+                    "id": "e2", "type": "permission.asked",
+                    "data": { "id": "p", "sessionID": "s", "action": "bash", "resources": [] }
+                }),
+                &tx,
+                &task_dropped,
+                &task_last,
+                task_log.as_ref(),
+            )
+            .await;
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            !blocked.is_finished(),
+            "a control event waits for a slot instead of dropping"
+        );
+        let first = receiver.recv().await.expect("text event");
+        assert!(matches!(first.event, RuntimeEvent::TextEnded { .. }));
+        let second = receiver.recv().await.expect("control event");
+        assert!(matches!(second.event, RuntimeEvent::PermissionAsked { .. }));
+        blocked.await.unwrap();
+        assert_eq!(dropped.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn shutdown_cancels_a_running_backfill() {
+        let harness = harness_with("lane-shutdown", 0, |api| {
+            api.add_session("ses_a");
+            api.set_messages(
+                "ses_a",
+                vec![message("msg_blocked", now_ms() - 1_000, &["blocked text"])],
+            );
+            api.gate_messages();
+        });
+        for _ in 0..100 {
+            if harness.api.gated.load(Ordering::Relaxed) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(
+            harness.api.gated.load(Ordering::Relaxed),
+            "the backfill reached the gated query"
+        );
+        let result = tokio::time::timeout(Duration::from_secs(2), harness.stop()).await;
+        assert!(result.is_ok(), "shutdown was held by the lane task");
+        result.unwrap().unwrap();
     }
 }
