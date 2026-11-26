@@ -172,7 +172,7 @@ pub fn install(
     if dry_run {
         report.push("relay: would restart".to_string());
     } else {
-        stop_relay(runner, platform, &paths.root)?;
+        stop_relay(runner, platform, &paths.root, &mut report)?;
         start_relay(runner, platform, &paths.root, &mut report)?;
     }
     report.push(match (dry_run, autostart) {
@@ -196,14 +196,14 @@ pub fn remove(
         if dry_run {
             report.push("relay: would stop".to_string());
         } else {
-            stop_relay(runner, platform, &paths.root)?;
+            stop_relay(runner, platform, &paths.root, &mut report)?;
         }
         remove_windows(runner, paths, dry_run, &mut report)?;
     } else {
         if dry_run {
             report.push("relay: would stop".to_string());
         } else {
-            stop_relay(runner, platform, &paths.root)?;
+            stop_relay(runner, platform, &paths.root, &mut report)?;
         }
         remove_linux(runner, paths, dry_run, &mut report)?;
     }
@@ -212,6 +212,21 @@ pub fn remove(
         let name = binary_name(platform, stem);
         let previous = previous_name(platform, &name);
         let target = paths.root.join(&name);
+        let staged = staged_path(&target);
+        if staged.exists() {
+            let label = staged
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if dry_run {
+                report.push(format!("remove: would delete {label}"));
+            } else {
+                match fs::remove_file(&staged) {
+                    Ok(()) => report.push(format!("remove: deleted {label}")),
+                    Err(error) => report.push(format!("remove: kept {label}, {error}")),
+                }
+            }
+        }
         if target.exists() {
             if dry_run {
                 report.push(format!("remove: would delete {name}"));
@@ -315,10 +330,11 @@ fn same_bytes(left: &Path, right: &Path) -> std::io::Result<bool> {
     }
 }
 
-/// Rename the outgoing image to the previous name, then copy the new one.
-/// A failed copy restores the outgoing image. A running MCP process can hold
-/// the canonical previous name as its own image; that file cannot be deleted,
-/// so the outgoing image moves to the next free numbered name instead. The
+/// Stage the new image beside the target, then rename it over the target. A
+/// failed copy restores the outgoing image and removes the staged file, so the
+/// target always holds a complete binary. A running MCP process can hold the
+/// canonical previous name as its own image; that file cannot be deleted, so
+/// the outgoing image moves to the next free numbered name instead. The
 /// returned path is the file that now holds the outgoing image.
 fn place(source: &Path, target: &Path, previous: &Path) -> std::io::Result<PathBuf> {
     let mut restored = None;
@@ -328,15 +344,27 @@ fn place(source: &Path, target: &Path, previous: &Path) -> std::io::Result<PathB
         fs::rename(target, &moved_to)?;
         restored = Some(moved_to.clone());
     }
-    match fs::copy(source, target) {
-        Ok(_) => Ok(moved_to),
+    let staged = staged_path(target);
+    let result = fs::copy(source, &staged).and_then(|_| fs::rename(&staged, target));
+    match result {
+        Ok(()) => Ok(moved_to),
         Err(error) => {
+            let _ = fs::remove_file(&staged);
             if let Some(previous) = restored {
                 let _ = fs::rename(previous, target);
             }
             Err(error)
         }
     }
+}
+
+/// `<target>.new` beside the target, on the same volume as the rename.
+fn staged_path(target: &Path) -> PathBuf {
+    let name = target
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    target.with_file_name(format!("{name}.new"))
 }
 
 /// The previous name when it is free, else the first free `<name>.N` variant.
@@ -380,6 +408,7 @@ fn stop_relay(
     runner: &dyn CommandRunner,
     platform: Platform,
     root: &Path,
+    report: &mut InstallReport,
 ) -> Result<(), DeployError> {
     let pid = endpoint_pid(root);
     let program = root.join(binary_name(platform, "ntfy-admin"));
@@ -391,10 +420,64 @@ fn stop_relay(
             format!("stop exited {}: {}", output.status, output.stderr.trim()),
         ));
     }
-    if let Some(pid) = pid {
+    if output.status != 1 {
+        // A clean stop needs no kill; exit 3 means no relay answered, so the
+        // endpoint pid cannot be trusted.
+        return Ok(());
+    }
+    let Some(pid) = pid else {
+        report.push("stop: not killed, no endpoint pid".to_string());
+        return Ok(());
+    };
+    if pid_runs_root_relay(runner, platform, root, pid) {
         force_kill(runner, platform, pid);
+    } else {
+        report.push("stop: not killed, endpoint stale".to_string());
     }
     Ok(())
+}
+
+/// True when the pid still runs the relay image under this install root. A
+/// stale endpoint file can name any process, and a force kill of an unrelated
+/// process is worse than leaving a stuck relay for the operator.
+fn pid_runs_root_relay(
+    runner: &dyn CommandRunner,
+    platform: Platform,
+    root: &Path,
+    pid: u32,
+) -> bool {
+    let output = match platform {
+        Platform::Windows => runner.run(
+            "powershell",
+            &[
+                "-NoProfile".to_string(),
+                "-NonInteractive".to_string(),
+                "-Command".to_string(),
+                format!("(Get-Process -Id {pid} -ErrorAction SilentlyContinue).Path"),
+            ],
+        ),
+        Platform::Linux => runner.run("readlink", &["-f".to_string(), format!("/proc/{pid}/exe")]),
+    };
+    let output = match output {
+        Ok(output) if output.status == 0 => output,
+        _ => return false,
+    };
+    let expected = root.join(binary_name(platform, "ntfy-relay"));
+    same_path(Path::new(output.stdout.trim()), &expected)
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    let left = fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
+    let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
+    #[cfg(windows)]
+    {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
 }
 
 /// The endpoint file names the daemon that answered the stop. A process still
@@ -1400,6 +1483,10 @@ mod tests {
         .unwrap();
         let runner = windows_runner();
         runner.fail_on("stop", 1);
+        runner.set_stdout(
+            "powershell",
+            &format!("{}\n", root.join("ntfy-relay.exe").display()),
+        );
         let report = install(
             &runner,
             Platform::Windows,
@@ -1417,6 +1504,103 @@ mod tests {
             kill.1,
             vec!["/F".to_string(), "/PID".to_string(), "4242".to_string()]
         );
+    }
+
+    #[test]
+    fn a_stale_endpoint_pid_is_not_killed() {
+        let scratch = Scratch::new("stale");
+        let (source, root) = release(&scratch, b"one");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("ntfy-relay-endpoint.json"),
+            "{\"pid\":4242,\"port\":1,\"token\":\"x\"}\n",
+        )
+        .unwrap();
+        let runner = windows_runner();
+        runner.fail_on("stop", 3);
+        let report = install(
+            &runner,
+            Platform::Windows,
+            &paths(source, root, &scratch),
+            false,
+        )
+        .unwrap();
+        assert!(report.lines.contains(&"result: installed".to_string()));
+        assert!(
+            !runner
+                .calls()
+                .iter()
+                .any(|(program, _)| program == "taskkill"),
+            "no relay answered, so the pid cannot be trusted"
+        );
+    }
+
+    #[test]
+    fn a_stuck_stop_with_a_foreign_pid_is_not_killed() {
+        let scratch = Scratch::new("foreign");
+        let (source, root) = release(&scratch, b"one");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("ntfy-relay-endpoint.json"),
+            "{\"pid\":4242,\"port\":1,\"token\":\"x\"}\n",
+        )
+        .unwrap();
+        let runner = windows_runner();
+        runner.fail_on("stop", 1);
+        runner.set_stdout("powershell", "C:\\Windows\\System32\\notepad.exe\n");
+        let report = install(
+            &runner,
+            Platform::Windows,
+            &paths(source, root, &scratch),
+            false,
+        )
+        .unwrap();
+        assert!(report
+            .lines
+            .contains(&"stop: not killed, endpoint stale".to_string()));
+        assert!(
+            !runner
+                .calls()
+                .iter()
+                .any(|(program, _)| program == "taskkill"),
+            "a pid that does not run the root relay must not be killed"
+        );
+    }
+
+    #[test]
+    fn a_failed_copy_leaves_the_old_image_in_place() {
+        let scratch = Scratch::new("place-fail");
+        let dir = scratch.path();
+        let target = dir.join("ntfy-relay.exe");
+        fs::write(&target, b"old").unwrap();
+        let previous = dir.join("ntfy-relay.previous.exe");
+        let source = dir.join("source-dir");
+        fs::create_dir_all(&source).unwrap();
+        let result = place(&source, &target, &previous);
+        assert!(result.is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"old");
+        assert!(!staged_path(&target).exists());
+    }
+
+    #[test]
+    fn remove_deletes_a_stale_staged_image() {
+        let scratch = Scratch::new("staged-remove");
+        let (source, root) = release(&scratch, b"one");
+        fs::create_dir_all(&root).unwrap();
+        let staged = root.join("ntfy-relay.exe.new");
+        fs::write(&staged, b"partial").unwrap();
+        let runner = windows_runner();
+        let report = remove(
+            &runner,
+            Platform::Windows,
+            &paths(source, root, &scratch),
+            false,
+        )
+        .unwrap();
+        assert!(!staged.exists());
+        assert!(report
+            .lines
+            .contains(&"remove: deleted ntfy-relay.exe.new".to_string()));
     }
 
     #[test]

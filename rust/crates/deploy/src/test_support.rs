@@ -94,7 +94,14 @@ impl FakeRunner {
     fn key(program: &str, args: &[String]) -> String {
         if matches!(
             program,
-            "whoami" | "reg" | "schtasks" | "systemctl" | "where" | "setx"
+            "whoami"
+                | "reg"
+                | "schtasks"
+                | "systemctl"
+                | "where"
+                | "setx"
+                | "powershell"
+                | "readlink"
         ) {
             return program.to_string();
         }
