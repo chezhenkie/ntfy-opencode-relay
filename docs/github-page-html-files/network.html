@@ -315,7 +315,7 @@ ping &lt;host-private-ip&gt;</code></pre>
 <p>No public address, port forward, or third-party relay is needed. Nothing in this chapter exposes the server outside the private network.</p>
 <h2><span class="num">2</span>4.2 Windows: Podman binds loopback only</h2>
 <div class="rule"></div>
-<p><code>podman ps</code> shows <code>127.0.0.1:8810-&gt;8080/tcp</code> for a deploy-created container, and the compose file uses the same loopback default. The real Windows listener is IPv6 loopback only:</p>
+<p><code>podman ps</code> shows <code>0.0.0.0:8810-&gt;8080/tcp</code> for a deploy-created container on Windows: the container publishes inside the Podman VM, and the Windows portproxy is the exposure boundary. The compose file binds <code>127.0.0.1</code> by default. The real Windows listener is IPv6 loopback only:</p>
 <pre><code class="language-powershell">Get-NetTCPConnection -LocalPort 8810 -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess</code></pre>
 <pre><code>LocalAddress LocalPort OwningProcess
 ::1                  8810          5076     (wslrelay.exe)</code></pre>

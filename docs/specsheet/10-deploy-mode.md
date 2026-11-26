@@ -96,7 +96,7 @@ A mode switch is never started by the relay. The relay validates the request and
 |---|---|---|---|
 | `baseUrl` | `https://<name>` | `http://<vpn-ip>:8810` | `http://<lan-ip>:8810` |
 | `behindProxy` | true | false | false |
-| container publish | loopback | loopback | LAN interface or all |
+| container publish | Windows VM `8810:8080`, Linux loopback | all interfaces | all interfaces |
 | Windows portproxy | loopback only | loopback plus VPN IP | loopback only |
 | ingress | TLS terminator on 443 | VPN client | LAN |
 | phone URL | https name | http VPN IP | http host |

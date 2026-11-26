@@ -60,7 +60,7 @@ config written: C:\Users\me\AppData\Local\ntfy-relay\ntfy-deploy.json
 mode: proxy
 base url: https://ntfy.example.ts.net
 container: ntfy (localhost/ntfy:server)
-publish: 127.0.0.1:8810:8080
+publish: 8810:8080
 container state: recreated
 health: 200
 portproxy: 127.0.0.1:8810 -> ::1:8810

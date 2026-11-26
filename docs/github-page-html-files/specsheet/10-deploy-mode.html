@@ -397,7 +397,7 @@ pre code{background:none;color:inherit;border:0;padding:0}
 <table><thead><tr><th></th><th>proxy</th><th>vpn</th><th>lan</th></tr></thead><tbody>
 <tr><td><code>baseUrl</code></td><td><code>https://&lt;name&gt;</code></td><td><code>http://&lt;vpn-ip&gt;:8810</code></td><td><code>http://&lt;lan-ip&gt;:8810</code></td></tr>
 <tr><td><code>behindProxy</code></td><td>true</td><td>false</td><td>false</td></tr>
-<tr><td>container publish</td><td>loopback</td><td>loopback</td><td>LAN interface or all</td></tr>
+<tr><td>container publish</td><td>Windows VM <code>8810:8080</code>, Linux loopback</td><td>all interfaces</td><td>all interfaces</td></tr>
 <tr><td>Windows portproxy</td><td>loopback only</td><td>loopback plus VPN IP</td><td>loopback only</td></tr>
 <tr><td>ingress</td><td>TLS terminator on 443</td><td>VPN client</td><td>LAN</td></tr>
 <tr><td>phone URL</td><td>https name</td><td>http VPN IP</td><td>http host</td></tr>

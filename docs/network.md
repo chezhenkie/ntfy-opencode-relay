@@ -20,7 +20,7 @@ No public address, port forward, or third-party relay is needed. Nothing in this
 
 ## 4.2 Windows: Podman binds loopback only
 
-`podman ps` shows `127.0.0.1:8810->8080/tcp` for a deploy-created container, and the compose file uses the same loopback default. The real Windows listener is IPv6 loopback only:
+`podman ps` shows `0.0.0.0:8810->8080/tcp` for a deploy-created container on Windows: the container publishes inside the Podman VM, and the Windows portproxy is the exposure boundary. The compose file binds `127.0.0.1` by default. The real Windows listener is IPv6 loopback only:
 
 ```powershell
 Get-NetTCPConnection -LocalPort 8810 -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess
