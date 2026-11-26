@@ -393,6 +393,26 @@ fn read_token_file(path: &Path) -> Result<Option<String>, AuthError> {
 }
 
 fn write_token_file(path: &Path, token: &str) -> Result<(), AuthError> {
+    let temp = token_temp_path(path);
+    let result = write_token_temp(&temp, token).and_then(|()| fs::rename(&temp, path));
+    if let Err(error) = result {
+        let _ = fs::remove_file(&temp);
+        return Err(AuthError::Io {
+            detail: format!("token file {}: {error}", path.display()),
+        });
+    }
+    Ok(())
+}
+
+/// A sibling the rename can swap in, so an interrupted write never leaves the
+/// real token file empty or short.
+fn token_temp_path(path: &Path) -> std::path::PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".tmp");
+    std::path::PathBuf::from(name)
+}
+
+fn write_token_temp(temp: &Path, token: &str) -> std::io::Result<()> {
     let mut options = fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -400,22 +420,15 @@ fn write_token_file(path: &Path, token: &str) -> Result<(), AuthError> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(path).map_err(|error| AuthError::Io {
-        detail: format!("token file {}: {error}", path.display()),
-    })?;
-    file.write_all(token.as_bytes())
-        .and_then(|_| file.write_all(b"\n"))
-        .map_err(|error| AuthError::Io {
-            detail: format!("token file {}: {error}", path.display()),
-        })?;
+    let mut file = options.open(temp)?;
+    file.write_all(token.as_bytes())?;
+    file.write_all(b"\n")?;
+    file.sync_all()?;
+    drop(file);
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|error| {
-            AuthError::Io {
-                detail: format!("token file {}: {error}", path.display()),
-            }
-        })?;
+        fs::set_permissions(temp, fs::Permissions::from_mode(0o600))?;
     }
     Ok(())
 }
@@ -701,6 +714,26 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.exit_code(), 4);
         assert!(error.to_string().contains("token file"), "{error}");
+    }
+
+    #[test]
+    fn a_token_write_leaves_no_temp_and_keeps_one_copy() {
+        let dir = TempDir::new("token-temp");
+        let path = token_file(&dir);
+        let temp = dir.path().join("ntfy-token.txt.tmp");
+        std::fs::write(&temp, "stale\n").unwrap();
+        AuthEngine::new(&FakeRunner::new())
+            .apply(&config(), &path, false)
+            .unwrap();
+        let token = std::fs::read_to_string(&path).unwrap();
+        assert!(token.starts_with("tk_"));
+        assert!(!temp.exists());
+
+        let before = token.clone();
+        AuthEngine::new(&FakeRunner::new())
+            .apply(&config(), &path, false)
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
     }
 
     #[cfg(unix)]

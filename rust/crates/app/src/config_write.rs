@@ -51,11 +51,9 @@ pub fn write_roots(config_path: &Path, roots: &[PathBuf], home: &Path) -> Result
 
 fn replace(path: &Path, temp: &Path, bytes: &[u8]) -> io::Result<()> {
     let permissions = fs::metadata(path).ok().map(|meta| meta.permissions());
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(temp)?;
+    // Owner-only while the document is staged on Unix; the original mode is
+    // applied before the swap. Windows keeps the inherited ACL.
+    let mut file = ntfy_relay_core::fsutil::owner_only(temp)?;
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);

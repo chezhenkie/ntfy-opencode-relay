@@ -191,7 +191,8 @@ pub fn topics_data(config: &Config, projects: &ProjectMap) -> TopicsData {
 
 /// 0.3.0 to 0.4.1 wrote the endpoint runtime into the command-table path. A
 /// hard kill left it behind, and the next start read it as a table and refused.
-/// The runtime shape is exact, so a real command table is never removed.
+/// The runtime shape is exact, so a real command table is never moved; the file
+/// is kept beside the table as `.legacy.bak` for inspection.
 pub fn retire_legacy_runtime(control_path: &Path, logger: &Logger) {
     let Ok(bytes) = std::fs::read(control_path) else {
         return;
@@ -199,16 +200,33 @@ pub fn retire_legacy_runtime(control_path: &Path, logger: &Logger) {
     if serde_json::from_slice::<ControlFile>(&bytes).is_err() {
         return;
     }
-    match std::fs::remove_file(control_path) {
+    let backup = legacy_backup_path(control_path);
+    match std::fs::rename(control_path, &backup) {
         Ok(()) => logger.warn(&format!(
-            "control: removed legacy runtime file {}",
-            control_path.display()
+            "control: moved legacy runtime file to {}",
+            backup.display()
         )),
         Err(error) => logger.warn(&format!(
-            "control: cannot remove legacy runtime file {}: {error}",
+            "control: cannot move legacy runtime file {}: {error}",
             control_path.display()
         )),
     }
+}
+
+/// `<path>.legacy.bak`, then `.legacy.2.bak` and up, so a second find does not
+/// replace the first sample.
+fn legacy_backup_path(path: &Path) -> PathBuf {
+    let mut target = path.as_os_str().to_owned();
+    target.push(".legacy.bak");
+    let mut target = PathBuf::from(target);
+    let mut counter = 1;
+    while target.exists() {
+        counter += 1;
+        let mut name = path.as_os_str().to_owned();
+        name.push(format!(".legacy.{counter}.bak"));
+        target = PathBuf::from(name);
+    }
+    target
 }
 
 /// The listener plus the runtime file. The call receiver is handed to the main
@@ -499,12 +517,21 @@ mod tests {
     }
 
     #[test]
-    fn a_legacy_runtime_file_is_removed_from_the_table_path() {
+    fn a_legacy_runtime_file_is_kept_as_a_backup() {
         let root = temp("legacy-runtime");
         let path = root.join("ntfy-relay-control.json");
-        fs::write(&path, r#"{"pid":42,"port":51234,"token":"abc"}"#).unwrap();
+        let body = r#"{"pid":42,"port":51234,"token":"abc"}"#;
+        fs::write(&path, body).unwrap();
         retire_legacy_runtime(&path, &quiet_logger());
         assert!(!path.exists());
+        let first = root.join("ntfy-relay-control.json.legacy.bak");
+        assert_eq!(fs::read_to_string(&first).unwrap(), body);
+
+        fs::write(&path, body).unwrap();
+        retire_legacy_runtime(&path, &quiet_logger());
+        let second = root.join("ntfy-relay-control.json.legacy.2.bak");
+        assert_eq!(fs::read_to_string(&second).unwrap(), body);
+        assert!(first.exists());
     }
 
     #[test]

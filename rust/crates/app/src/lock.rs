@@ -79,7 +79,10 @@ pub enum Acquired {
 
 pub fn lock_path_for(state_file: &Path) -> PathBuf {
     let text = state_file.to_string_lossy();
-    let stem = if text.len() >= 5 && text[text.len() - 5..].eq_ignore_ascii_case(".json") {
+    let stem = if text.len() >= 5
+        && text.is_char_boundary(text.len() - 5)
+        && text[text.len() - 5..].eq_ignore_ascii_case(".json")
+    {
         &text[..text.len() - 5]
     } else {
         text.as_ref()
@@ -107,7 +110,11 @@ pub fn acquire_lock(path: &Path, pid: u32, now_ms: i64) -> io::Result<Acquired> 
     for _attempt in 0..2 {
         match OpenOptions::new().write(true).create_new(true).open(path) {
             Ok(mut handle) => {
-                handle.write_all(body.as_bytes())?;
+                if let Err(error) = handle.write_all(body.as_bytes()) {
+                    drop(handle);
+                    let _ = fs::remove_file(path);
+                    return Err(error);
+                }
                 return Ok(Acquired::Yes);
             }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
@@ -140,11 +147,11 @@ pub fn acquire_lock(path: &Path, pid: u32, now_ms: i64) -> io::Result<Acquired> 
         let Some(existing) = existing else {
             return Ok(Acquired::Unreadable);
         };
-        let Some(existing_pid) = LockBody::from_value(&existing).map(|body| body.pid) else {
+        let Some(existing_body) = LockBody::from_value(&existing) else {
             return Ok(Acquired::Unreadable);
         };
-        if existing_pid != pid && pid_is_relay(existing_pid) {
-            return Ok(Acquired::Running(existing_pid));
+        if existing_body.pid != pid && pid_is_relay(existing_body.pid, &existing_body.exe) {
+            return Ok(Acquired::Running(existing_body.pid));
         }
         fs::remove_file(path)?;
     }
@@ -211,7 +218,7 @@ pub fn read_lock_body(path: &Path) -> io::Result<Option<LockBody>> {
 /// file is an error, because a second relay would fail closed on it too.
 pub fn live_lock(path: &Path) -> io::Result<Option<LockBody>> {
     match read_lock_body(path)? {
-        Some(body) if pid_is_relay(body.pid) => Ok(Some(body)),
+        Some(body) if pid_is_relay(body.pid, &body.exe) => Ok(Some(body)),
         _ => Ok(None),
     }
 }
@@ -232,19 +239,21 @@ impl fmt::Display for Acquired {
     }
 }
 
-/// A live pid only blocks the lock when it is this relay image. Windows can
+/// A live pid only blocks the lock when it runs this relay image. Windows can
 /// reuse a pid right after a hard kill; without the image check the lock looks
-/// live and the next start exits until that unrelated process ends.
-fn pid_is_relay(pid: u32) -> bool {
+/// live and the next start exits until that unrelated process ends. The full
+/// path from the lock body separates two installs; a lock written before the
+/// `exe` field existed falls back to the image file name.
+fn pid_is_relay(pid: u32, expected_exe: &str) -> bool {
     if !pid_alive(pid) {
         return false;
     }
-    same_image(pid).unwrap_or(true)
+    same_image(pid, expected_exe).unwrap_or(true)
 }
 
 /// `None` means the image could not be read; the caller must stay conservative.
 #[cfg(windows)]
-fn same_image(pid: u32) -> Option<bool> {
+fn same_image(pid: u32, expected_exe: &str) -> Option<bool> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -264,7 +273,19 @@ fn same_image(pid: u32) -> Option<bool> {
     }
     let target = String::from_utf16_lossy(&buffer[..size as usize]);
     let current = std::env::current_exe().ok()?;
-    Some(image_name(&target)? == image_name(&current.to_string_lossy())?)
+    Some(image_matches(
+        &target,
+        &current.to_string_lossy(),
+        expected_exe,
+    ))
+}
+
+#[cfg(windows)]
+fn image_matches(target: &str, current: &str, expected: &str) -> bool {
+    if expected.is_empty() {
+        return image_name(target) == image_name(current);
+    }
+    target.to_lowercase() == expected.to_lowercase()
 }
 
 #[cfg(windows)]
@@ -275,14 +296,21 @@ fn image_name(path: &str) -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-fn same_image(pid: u32) -> Option<bool> {
+fn same_image(pid: u32, expected_exe: &str) -> Option<bool> {
     let target = fs::read_link(format!("/proc/{pid}/exe")).ok()?;
     let current = std::env::current_exe().ok()?;
-    Some(target.file_name()? == current.file_name()?)
+    if expected_exe.is_empty() {
+        return Some(target.file_name()? == current.file_name()?);
+    }
+    // A binary replaced in place keeps running from a deleted inode whose
+    // link carries this suffix; the path itself is still the same entry.
+    let target = target.to_string_lossy();
+    let target = target.strip_suffix(" (deleted)").unwrap_or(&target);
+    Some(target == expected_exe)
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
-fn same_image(_pid: u32) -> Option<bool> {
+fn same_image(_pid: u32, _expected_exe: &str) -> Option<bool> {
     None
 }
 
@@ -495,5 +523,37 @@ mod tests {
             lock_path_for(Path::new("/state/relay")),
             PathBuf::from("/state/relay.lock")
         );
+    }
+
+    #[test]
+    fn lock_path_survives_a_non_ascii_suffix() {
+        let path = Path::new("/state/relay-\u{e9}");
+        assert_eq!(
+            lock_path_for(path),
+            PathBuf::from("/state/relay-\u{e9}.lock")
+        );
+    }
+
+    #[cfg(any(windows, target_os = "linux"))]
+    #[test]
+    fn a_lock_naming_another_image_path_is_not_live() {
+        let dir = temp_dir("path-identity");
+        let path = dir.join("state.lock");
+        let pid = std::process::id();
+        let other = dir.join("ntfy-relay.exe");
+        fs::write(
+            &path,
+            json!({ "pid": pid, "started": "x", "exe": other }).to_string(),
+        )
+        .unwrap();
+        assert_eq!(live_lock(&path).unwrap(), None);
+
+        let current = std::env::current_exe().unwrap();
+        fs::write(
+            &path,
+            json!({ "pid": pid, "started": "x", "exe": current }).to_string(),
+        )
+        .unwrap();
+        assert_eq!(live_lock(&path).unwrap().unwrap().pid, pid);
     }
 }
