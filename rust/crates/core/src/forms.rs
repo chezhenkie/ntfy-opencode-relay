@@ -21,6 +21,8 @@ use std::sync::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::fsutil::BoundedRead;
+
 pub use crate::asks::OpenReport;
 
 /// File name next to the relay state file.
@@ -28,6 +30,8 @@ pub const FORM_FILE: &str = "ntfy-relay-forms.json";
 pub const FORM_VERSION: u32 = 1;
 /// Pending forms held at once; the oldest pushed is evicted.
 pub const MAX_FORMS: usize = 64;
+/// Hard read cap; a larger file is quarantined instead of parsed.
+pub const MAX_FORM_BYTES: usize = 512 * 1024;
 /// A form answered on the desktop is remembered this long for a phone ack.
 pub const TOMBSTONE_TTL_MS: i64 = 15 * 60 * 1000;
 pub const MAX_TOMBSTONES: usize = 16;
@@ -133,15 +137,27 @@ pub struct FormStore {
 }
 
 impl FormStore {
-    /// Missing file is an empty registry; invalid JSON or another version is
-    /// quarantined and the registry starts empty. Startup is never blocked.
+    /// Missing file is an empty registry; a file that is unreadable, oversized,
+    /// not UTF-8, invalid JSON, or another version is quarantined and the
+    /// registry starts empty. Startup is never blocked.
     pub fn open(path: PathBuf, now_ms: i64) -> (Self, OpenReport) {
         let mut report = OpenReport::default();
-        let raw = match fs::read_to_string(&path) {
-            Ok(text) => Some(text),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        let raw = match crate::fsutil::read_bounded(&path, MAX_FORM_BYTES) {
+            Ok(BoundedRead::Missing) => None,
+            Ok(BoundedRead::Text(text)) => Some(text),
+            Ok(BoundedRead::Oversize) => {
+                report.read_error = Some(format!("file is larger than {MAX_FORM_BYTES} bytes"));
+                report.quarantine_error = quarantine(&path, now_ms, &mut report);
+                None
+            }
+            Ok(BoundedRead::NotText) => {
+                report.read_error = Some("file is not valid UTF-8".to_string());
+                report.quarantine_error = quarantine(&path, now_ms, &mut report);
+                None
+            }
             Err(error) => {
                 report.read_error = Some(error.to_string());
+                report.quarantine_error = quarantine(&path, now_ms, &mut report);
                 None
             }
         };
@@ -196,7 +212,7 @@ impl FormStore {
                 evicted: None,
             });
         }
-        let code = allocate_code(&next, &record.form)?;
+        let code = allocate_code(&next, &inner.tombstones, &record.form)?;
         record.code = code.clone();
         next.push(record);
         sort_forms(&mut next);
@@ -375,12 +391,20 @@ fn sort_forms(forms: &mut [FormRecord]) {
     });
 }
 
-fn allocate_code(forms: &[FormRecord], form: &str) -> Result<String, RegisterError> {
+fn allocate_code(
+    forms: &[FormRecord],
+    tombstones: &[Tombstone],
+    form: &str,
+) -> Result<String, RegisterError> {
     let digest = Sha256::digest(form.as_bytes());
     let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
     for len in CODE_MIN_LEN..=CODE_MAX_LEN {
         let candidate = &hex[..len];
-        if !forms.iter().any(|record| record.code == candidate) {
+        if !forms.iter().any(|record| record.code == candidate)
+            && !tombstones
+                .iter()
+                .any(|tombstone| tombstone.code == candidate)
+        {
             return Ok(candidate.to_string());
         }
     }
@@ -582,6 +606,49 @@ mod tests {
             other => panic!("expected a tombstone, got {other:?}"),
         }
         assert_eq!(store.count(), 0);
+    }
+
+    #[test]
+    fn a_non_text_file_is_quarantined_and_left_readable() {
+        let path = temp_path("not-text");
+        fs::write(&path, [0x7b, 0xff, 0x7d]).unwrap();
+        let (store, report) = FormStore::open(path.clone(), 1_700_000_000_000);
+        assert_eq!(store.count(), 0);
+        assert!(report.read_error.is_some());
+        let quarantined = report.quarantined.expect("the sample is kept");
+        assert_eq!(fs::read(&quarantined).unwrap(), [0x7b, 0xff, 0x7d]);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_tombstoned_code_is_not_reissued() {
+        let store = FormStore::open(temp_path("tombstone-code"), 0).0;
+        let removed = store
+            .register(record("frm_old", 1, vec![field("a", "string", false)]))
+            .unwrap();
+        store.remove("frm_old").unwrap();
+        let prefix = removed.code.clone();
+        let mut index = 0u32;
+        let form = loop {
+            let text = format!("frm_new_{index}");
+            let digest = Sha256::digest(text.as_bytes());
+            let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+            if hex.starts_with(&prefix) {
+                break text;
+            }
+            index += 1;
+        };
+        let registered = store
+            .register(record(&form, 2, vec![field("a", "string", false)]))
+            .unwrap();
+        assert!(
+            registered.code.len() > prefix.len(),
+            "the live tombstone must push the code past {prefix}"
+        );
+        assert!(matches!(
+            store.resolve(Some(&prefix), "proj"),
+            Resolve::AlreadyAnswered(_)
+        ));
     }
 
     #[test]

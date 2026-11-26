@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use ntfy_relay_core::state::{
     corrupt_state_path, prune_corrupt_backups, quarantine_state, read_state, read_state_report,
     write_state_atomic, State, StateError, CORRUPT_BACKUP_TTL_SECS, MAX_PROCESSED_IDS,
-    MAX_TOPIC_ROWS,
+    MAX_STATE_BYTES, MAX_TOPIC_ROWS,
 };
 
 struct TempDir(PathBuf);
@@ -97,6 +97,43 @@ fn corrupt_file_is_quarantined() {
     assert_eq!(target, corrupt_state_path(&file, 1_700_000_000_000));
     assert!(target.exists());
     assert!(!file.exists());
+}
+
+#[test]
+fn two_corruptions_in_one_millisecond_keep_both_samples() {
+    let temp = TempDir::new("quarantine-twin");
+    let file = temp.path().join("state.json");
+    let now_ms = 1_700_000_000_123;
+    fs::write(&file, "first").unwrap();
+    let first = quarantine_state(&file, now_ms).unwrap();
+    fs::write(&file, "second").unwrap();
+    let second = quarantine_state(&file, now_ms).unwrap();
+    assert_ne!(first, second);
+    assert_eq!(fs::read_to_string(&first).unwrap(), "first");
+    assert_eq!(fs::read_to_string(&second).unwrap(), "second");
+}
+
+#[test]
+fn an_oversized_state_file_is_refused_before_parsing() {
+    let temp = TempDir::new("oversize");
+    let file = temp.path().join("state.json");
+    fs::write(&file, vec![b'x'; MAX_STATE_BYTES + 1]).unwrap();
+    match read_state(&file) {
+        Err(StateError::Oversize) => {}
+        other => panic!("expected an oversize error, got {other:?}"),
+    }
+    assert!(file.exists());
+}
+
+#[test]
+fn a_non_text_state_file_is_refused_before_parsing() {
+    let temp = TempDir::new("not-text");
+    let file = temp.path().join("state.json");
+    fs::write(&file, [0x7b, 0xff, 0x7d]).unwrap();
+    match read_state(&file) {
+        Err(StateError::NotText) => {}
+        other => panic!("expected a not-text error, got {other:?}"),
+    }
 }
 
 #[test]

@@ -20,11 +20,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::fsutil::BoundedRead;
+
 /// File name next to the relay state file.
 pub const ASK_FILE: &str = "ntfy-relay-asks.json";
 pub const ASK_VERSION: u32 = 1;
 /// Records held at once; the oldest pushed is evicted.
 pub const MAX_ASKS: usize = 512;
+/// Hard read cap; a larger file is quarantined instead of parsed.
+pub const MAX_ASK_BYTES: usize = 1024 * 1024;
 /// A desktop answer is remembered this long for a truthful phone ack.
 pub const TOMBSTONE_TTL_MS: i64 = 15 * 60 * 1000;
 pub const MAX_TOMBSTONES: usize = 32;
@@ -135,16 +139,27 @@ pub struct AskStore {
 }
 
 impl AskStore {
-    /// Missing file is an empty registry; invalid JSON or a version other than
-    /// 1 is quarantined and the registry starts empty. Startup is never
-    /// blocked by the file.
+    /// Missing file is an empty registry; a file that is unreadable, oversized,
+    /// not UTF-8, invalid JSON, or another version is quarantined and the
+    /// registry starts empty. Startup is never blocked by the file.
     pub fn open(path: PathBuf, now_ms: i64) -> (Self, OpenReport) {
         let mut report = OpenReport::default();
-        let raw = match fs::read_to_string(&path) {
-            Ok(text) => Some(text),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        let raw = match crate::fsutil::read_bounded(&path, MAX_ASK_BYTES) {
+            Ok(BoundedRead::Missing) => None,
+            Ok(BoundedRead::Text(text)) => Some(text),
+            Ok(BoundedRead::Oversize) => {
+                report.read_error = Some(format!("file is larger than {MAX_ASK_BYTES} bytes"));
+                report.quarantine_error = quarantine(&path, now_ms, &mut report);
+                None
+            }
+            Ok(BoundedRead::NotText) => {
+                report.read_error = Some("file is not valid UTF-8".to_string());
+                report.quarantine_error = quarantine(&path, now_ms, &mut report);
+                None
+            }
             Err(error) => {
                 report.read_error = Some(error.to_string());
+                report.quarantine_error = quarantine(&path, now_ms, &mut report);
                 None
             }
         };
@@ -205,7 +220,7 @@ impl AskStore {
                 evicted: None,
             });
         }
-        let code = allocate_code(&next, request)?;
+        let code = allocate_code(&next, &inner.tombstones, request)?;
         next.push(Ask {
             code: code.clone(),
             request: request.to_string(),
@@ -396,12 +411,20 @@ fn sort_asks(asks: &mut [Ask]) {
     });
 }
 
-fn allocate_code(asks: &[Ask], request: &str) -> Result<String, RegisterError> {
+fn allocate_code(
+    asks: &[Ask],
+    tombstones: &[Tombstone],
+    request: &str,
+) -> Result<String, RegisterError> {
     let digest = Sha256::digest(request.as_bytes());
     let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
     for len in CODE_MIN_LEN..=CODE_MAX_LEN {
         let candidate = &hex[..len];
-        if !asks.iter().any(|ask| ask.code == candidate) {
+        if !asks.iter().any(|ask| ask.code == candidate)
+            && !tombstones
+                .iter()
+                .any(|tombstone| tombstone.code == candidate)
+        {
             return Ok(candidate.to_string());
         }
     }

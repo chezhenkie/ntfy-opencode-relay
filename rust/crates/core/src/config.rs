@@ -198,7 +198,23 @@ pub struct Config {
     pub logging: LoggingConfig,
     pub state_file: PathBuf,
     pub config_path: Option<PathBuf>,
+    /// Top-level keys the loader does not read. The caller warns once.
+    pub unknown_keys: Vec<String>,
 }
+
+/// Top-level config keys this loader reads.
+const TOP_LEVEL_KEYS: &[&str] = &[
+    "enabled",
+    "ntfy",
+    "projectRoots",
+    "opencode",
+    "adapter",
+    "routing",
+    "files",
+    "outbound",
+    "logging",
+    "stateFile",
+];
 
 /// `~` and `~/` expansion. Absolute and other values are returned unchanged.
 pub fn expand_home(value: &str, home: &Path) -> PathBuf {
@@ -254,9 +270,8 @@ pub fn load_config(file: &Path) -> Result<Config, ConfigError> {
     let text = fs::read_to_string(file).map_err(|error| {
         ConfigError::new(format!("config: cannot read {}: {error}", file.display()))
     })?;
-    let home = home_dir()
-        .ok_or_else(|| ConfigError::new("config: cannot determine the home directory"))?;
-    load_config_from_text(&text, Some(file), &home)
+    let home = home_dir();
+    load_config_with_home(&text, Some(file), home.as_deref())
 }
 
 /// Testable core of `loadConfig`: JSON, defaults, validation, path resolution.
@@ -264,6 +279,17 @@ pub fn load_config_from_text(
     text: &str,
     config_path: Option<&Path>,
     home: &Path,
+) -> Result<Config, ConfigError> {
+    load_config_with_home(text, config_path, Some(home))
+}
+
+/// As [`load_config_from_text`], but the home directory is optional: it is
+/// needed only to expand a `~` path, so a config of absolute and relative
+/// paths loads on a host without `HOME` or `USERPROFILE`.
+pub fn load_config_with_home(
+    text: &str,
+    config_path: Option<&Path>,
+    home: Option<&Path>,
 ) -> Result<Config, ConfigError> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let raw: Value = serde_json::from_str(text)
@@ -424,19 +450,27 @@ fn valid_inbox_dir(value: &str) -> bool {
         .all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
-fn resolve_path(value: &str, base_dir: &Path, home: &Path) -> PathBuf {
-    let expanded = expand_home(value, home);
-    if expanded.is_absolute() {
+fn resolve_path(value: &str, base_dir: &Path, home: Option<&Path>) -> Result<PathBuf, ConfigError> {
+    let expanded = match home {
+        Some(home) => expand_home(value, home),
+        None if value == "~" || value.starts_with("~/") || value.starts_with("~\\") => {
+            return Err(ConfigError::new(format!(
+                "config: {value} needs a home directory to expand ~"
+            )))
+        }
+        None => PathBuf::from(value),
+    };
+    Ok(if expanded.is_absolute() {
         expanded
     } else {
         base_dir.join(expanded)
-    }
+    })
 }
 
 fn resolve(
     raw: &Value,
     base_dir: &Path,
-    home: &Path,
+    home: Option<&Path>,
     config_path: Option<PathBuf>,
 ) -> Result<Config, ConfigError> {
     let enabled = require_bool(raw.get("enabled"), "enabled")?;
@@ -467,7 +501,7 @@ fn resolve(
     let mut project_roots = Vec::with_capacity(roots.len());
     for root in roots {
         let root = require_string(Some(root), "projectRoots[]")?;
-        project_roots.push(resolve_path(&root, base_dir, home));
+        project_roots.push(resolve_path(&root, base_dir, home)?);
     }
 
     let opencode = raw.get("opencode");
@@ -575,11 +609,23 @@ fn resolve(
 
     let state_file = require_string(raw.get("stateFile"), "stateFile")?;
 
+    let mut unknown_keys: Vec<String> = raw
+        .as_object()
+        .map(|object| {
+            object
+                .keys()
+                .filter(|key| !TOP_LEVEL_KEYS.contains(&key.as_str()))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    unknown_keys.sort();
+
     Ok(Config {
         enabled,
         ntfy: NtfyConfig {
             server: server.trim_end_matches('/').to_string(),
-            token_file: resolve_path(&token_file, base_dir, home),
+            token_file: resolve_path(&token_file, base_dir, home)?,
             replay_window_minutes,
             max_message_bytes,
         },
@@ -599,13 +645,14 @@ fn resolve(
         },
         outbound,
         logging: LoggingConfig {
-            file: resolve_path(&log_file, base_dir, home),
+            file: resolve_path(&log_file, base_dir, home)?,
             heartbeat_minutes,
             level,
             echo,
         },
-        state_file: resolve_path(&state_file, base_dir, home),
+        state_file: resolve_path(&state_file, base_dir, home)?,
         config_path,
+        unknown_keys,
     })
 }
 
@@ -916,6 +963,54 @@ mod tests {
         wrong_adapter["adapter"] = json!({ "name": "pi" });
         let error = load_config_from_text(&wrong_adapter.to_string(), None, &home()).unwrap_err();
         assert!(error.message().contains("adapter.name"), "{error}");
+    }
+
+    #[test]
+    fn unknown_top_level_keys_are_reported_once_and_do_not_block() {
+        let mut raw = minimal();
+        raw["ntfyServe"] = json!({ "server": "https://elsewhere" });
+        raw["stateFil"] = json!("typo");
+        let config = load_config_from_text(
+            &raw.to_string(),
+            Some(&base().join("ntfy-relay.json")),
+            &home(),
+        )
+        .unwrap();
+        assert_eq!(config.unknown_keys, vec!["ntfyServe", "stateFil"]);
+        // The known value still wins over the unknown look-alike.
+        assert_eq!(config.ntfy.server, "https://ntfy.test");
+        assert_eq!(config.state_file, base().join(DEFAULT_STATE_FILE));
+
+        let plain = load_config_from_text(&minimal().to_string(), None, &home()).unwrap();
+        assert!(plain.unknown_keys.is_empty());
+    }
+
+    #[test]
+    fn absolute_paths_load_without_a_home_directory() {
+        let raw = json!({
+            "ntfy": { "server": "https://ntfy.test", "tokenFile": "/abs/token.txt" },
+            "projectRoots": ["/srv/projects"],
+            "logging": { "file": "/var/log/relay.log" },
+            "stateFile": "/var/lib/relay-state.json"
+        });
+        let config = load_config_with_home(
+            &raw.to_string(),
+            Some(&base().join("ntfy-relay.json")),
+            None,
+        )
+        .unwrap();
+        assert_eq!(config.ntfy.token_file, PathBuf::from("/abs/token.txt"));
+        assert_eq!(config.project_roots, vec![PathBuf::from("/srv/projects")]);
+        assert_eq!(config.logging.file, PathBuf::from("/var/log/relay.log"));
+        assert_eq!(
+            config.state_file,
+            PathBuf::from("/var/lib/relay-state.json")
+        );
+
+        let mut tilde = minimal();
+        tilde["stateFile"] = json!("~/state.json");
+        let error = load_config_with_home(&tilde.to_string(), None, None).unwrap_err();
+        assert!(error.message().contains("home directory"), "{error}");
     }
 
     #[test]

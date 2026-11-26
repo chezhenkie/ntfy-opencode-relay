@@ -20,9 +20,13 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::fsutil::{read_bounded, BoundedRead};
+
 pub const STATE_VERSION: u32 = 1;
 pub const MAX_PROCESSED_IDS: usize = 500;
 pub const MAX_TOPIC_ROWS: usize = 512;
+/// Hard read cap; a larger file is quarantined instead of parsed.
+pub const MAX_STATE_BYTES: usize = 1024 * 1024;
 /// Quarantined state files older than this are removed at startup.
 pub const CORRUPT_BACKUP_TTL_SECS: i64 = 7 * 24 * 60 * 60;
 
@@ -91,6 +95,7 @@ impl State {
         let target = self.target_mut(topic);
         target.last = Some(session_id.to_string());
         target.last_at = at;
+        self.trim_targets();
     }
 
     /// Set or clear the one-shot pending target. Clearing keeps `last`.
@@ -100,7 +105,29 @@ impl State {
         target.pending_at = if session_id.is_some() { at } else { 0 };
         if target.last.is_none() && target.pending.is_none() {
             self.targets.remove(topic);
+        } else {
+            self.trim_targets();
         }
+    }
+
+    /// Keeps the newest `MAX_TOPIC_ROWS` hint rows. Recency is the later of the
+    /// two stamps; ties break on the topic name.
+    fn trim_targets(&mut self) {
+        if self.targets.len() <= MAX_TOPIC_ROWS {
+            return;
+        }
+        let mut keys: Vec<(i64, String)> = self
+            .targets
+            .iter()
+            .map(|(topic, target)| (target.last_at.max(target.pending_at), topic.clone()))
+            .collect();
+        keys.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+        let keep: BTreeSet<String> = keys
+            .into_iter()
+            .take(MAX_TOPIC_ROWS)
+            .map(|(_, topic)| topic)
+            .collect();
+        self.targets.retain(|topic, _| keep.contains(topic));
     }
 
     pub fn topic(&mut self, topic: &str) -> &mut TopicState {
@@ -131,6 +158,10 @@ pub enum StateError {
     Io(io::Error),
     Invalid(serde_json::Error),
     Version(u32),
+    /// The file is larger than `MAX_STATE_BYTES`.
+    Oversize,
+    /// The file is not valid UTF-8.
+    NotText,
 }
 
 impl fmt::Display for StateError {
@@ -139,6 +170,8 @@ impl fmt::Display for StateError {
             Self::Io(error) => write!(f, "{error}"),
             Self::Invalid(error) => write!(f, "invalid JSON: {error}"),
             Self::Version(version) => write!(f, "unsupported state version {version}"),
+            Self::Oversize => write!(f, "state file is larger than {MAX_STATE_BYTES} bytes"),
+            Self::NotText => f.write_str("state file is not valid UTF-8"),
         }
     }
 }
@@ -158,13 +191,15 @@ pub fn read_state(path: &Path) -> Result<State, StateError> {
     read_state_report(path).map(|(state, _)| state)
 }
 
-/// `read_state` plus the normalization counts for one log line.
+/// `read_state` plus the normalization counts for one log line. The read is
+/// capped; a larger or non-text file is surfaced so the caller can quarantine
+/// it, and the daemon starts empty.
 pub fn read_state_report(path: &Path) -> Result<(State, LoadReport), StateError> {
-    let text = match fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return Ok((State::new(), LoadReport::default()))
-        }
+    let text = match read_bounded(path, MAX_STATE_BYTES) {
+        Ok(BoundedRead::Missing) => return Ok((State::new(), LoadReport::default())),
+        Ok(BoundedRead::Text(text)) => text,
+        Ok(BoundedRead::Oversize) => return Err(StateError::Oversize),
+        Ok(BoundedRead::NotText) => return Err(StateError::NotText),
         Err(error) => return Err(StateError::Io(error)),
     };
     let mut state: State = serde_json::from_str(&text).map_err(StateError::Invalid)?;
@@ -208,20 +243,7 @@ fn normalize(state: &mut State) -> LoadReport {
     state
         .targets
         .retain(|_, target| target.last.is_some() || target.pending.is_some());
-    if state.targets.len() > MAX_TOPIC_ROWS {
-        let mut keys: Vec<(i64, String)> = state
-            .targets
-            .iter()
-            .map(|(topic, target)| (target.last_at.max(target.pending_at), topic.clone()))
-            .collect();
-        keys.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
-        let keep: BTreeSet<String> = keys
-            .into_iter()
-            .take(MAX_TOPIC_ROWS)
-            .map(|(_, topic)| topic)
-            .collect();
-        state.targets.retain(|topic, _| keep.contains(topic));
-    }
+    state.trim_targets();
     report
 }
 
@@ -248,19 +270,41 @@ pub fn write_state_atomic(path: &Path, state: &State) -> io::Result<()> {
     Ok(())
 }
 
+/// First quarantine name for a corrupt file: epoch milliseconds.
+/// `quarantine_state` appends a counter when the name is taken.
 pub fn corrupt_state_path(path: &Path, now_ms: i64) -> PathBuf {
     let mut name = OsString::from(path.as_os_str());
-    name.push(format!(".corrupt-{}", now_ms.div_euclid(1000)));
+    name.push(format!(".corrupt-{now_ms}"));
     PathBuf::from(name)
 }
 
+/// Moves a corrupt file aside without replacing an earlier sample. A second
+/// corruption in the same millisecond gets a numeric suffix. Only a regular
+/// file is moved; a directory at the path is an error, not a sample.
 pub fn quarantine_state(path: &Path, now_ms: i64) -> io::Result<PathBuf> {
-    let target = corrupt_state_path(path, now_ms);
+    if !fs::metadata(path)
+        .map(|meta| meta.is_file())
+        .unwrap_or(false)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    let base = corrupt_state_path(path, now_ms);
+    let mut target = base.clone();
+    let mut counter = 1;
+    while target.exists() {
+        counter += 1;
+        let mut name = OsString::from(base.as_os_str());
+        name.push(format!("-{counter}"));
+        target = PathBuf::from(name);
+    }
     fs::rename(path, &target)?;
     Ok(target)
 }
 
-/// Removes `<state>.corrupt-<unix>` files older than `ttl_secs` and returns the
+/// Removes `<state>.corrupt-<stamp>` files older than `ttl_secs` and returns the
 /// count. Anything that does not parse as a timestamp is left alone, and a
 /// missing parent directory is not an error.
 pub fn prune_corrupt_backups(path: &Path, now_ms: i64, ttl_secs: i64) -> io::Result<usize> {
@@ -277,7 +321,7 @@ pub fn prune_corrupt_backups(path: &Path, now_ms: i64, ttl_secs: i64) -> io::Res
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
         Err(error) => return Err(error),
     };
-    let now_secs = now_ms.div_euclid(1000);
+    let ttl_ms = ttl_secs.saturating_mul(1000);
     let mut removed = 0;
     for entry in entries {
         let entry = entry?;
@@ -286,10 +330,10 @@ pub fn prune_corrupt_backups(path: &Path, now_ms: i64, ttl_secs: i64) -> io::Res
         let Some(stamp) = name.strip_prefix(&prefix) else {
             continue;
         };
-        let Ok(seconds) = stamp.parse::<i64>() else {
+        let Some(at_ms) = backup_stamp_ms(stamp) else {
             continue;
         };
-        if now_secs.saturating_sub(seconds) <= ttl_secs {
+        if now_ms.saturating_sub(at_ms) <= ttl_ms {
             continue;
         }
         if !entry.file_type()?.is_file() {
@@ -302,6 +346,25 @@ pub fn prune_corrupt_backups(path: &Path, now_ms: i64, ttl_secs: i64) -> io::Res
         }
     }
     Ok(removed)
+}
+
+/// A backup name carries epoch milliseconds and an optional counter; names
+/// written before this rule carry whole seconds.
+fn backup_stamp_ms(stamp: &str) -> Option<i64> {
+    let (number, counter) = match stamp.split_once('-') {
+        Some((number, counter)) => (number, Some(counter)),
+        None => (stamp, None),
+    };
+    if let Some(counter) = counter {
+        counter.parse::<u32>().ok()?;
+    }
+    let value = number.parse::<i64>().ok()?;
+    // Anything below 1e11 is a seconds stamp from the older naming.
+    Some(if value < 100_000_000_000 {
+        value.saturating_mul(1000)
+    } else {
+        value
+    })
 }
 
 #[cfg(test)]
@@ -342,6 +405,22 @@ mod tests {
         state.set_pending("oc-x", None, 120);
         assert_eq!(state.target("oc-x").unwrap().pending, None);
         assert_eq!(state.target("oc-x").unwrap().last.as_deref(), Some("ses_1"));
+    }
+
+    #[test]
+    fn target_rows_trim_on_write_not_only_on_load() {
+        let mut state = State::new();
+        for index in 0..(MAX_TOPIC_ROWS + 8) {
+            state.set_last(&format!("oc-{index:03}"), "ses_1", 1_000 + index as i64);
+        }
+        assert_eq!(state.targets.len(), MAX_TOPIC_ROWS);
+        assert!(state.target("oc-000").is_none());
+        assert!(state.target("oc-519").is_some());
+
+        state.set_pending("oc-new", Some("ses_2"), 9_000);
+        assert_eq!(state.targets.len(), MAX_TOPIC_ROWS);
+        assert!(state.target("oc-new").is_some());
+        assert!(state.target("oc-008").is_none());
     }
 
     #[test]

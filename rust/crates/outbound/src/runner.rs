@@ -2088,9 +2088,11 @@ mod tests {
     #[tokio::test]
     async fn a_persist_failure_past_the_budget_drops_the_ask_without_a_push() {
         let root = temp_root("permission-persist");
+        // A regular file where the store expects a directory: the read, the
+        // quarantine and the persist all fail, so the ask never reaches the wire.
         let blocked = root.join("asks-blocked");
-        std::fs::create_dir_all(&blocked).unwrap();
-        let harness = harness_at_asks(root, 20, blocked);
+        std::fs::write(&blocked, b"not a directory").unwrap();
+        let harness = harness_at_asks(root, 20, blocked.join("ntfy-relay-asks.json"));
         harness.frame(session_created(&harness.root, "ses_a", None));
         harness.frame(json!({
             "id": "e2", "type": "permission.asked",

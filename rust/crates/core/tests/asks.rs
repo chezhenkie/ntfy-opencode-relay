@@ -4,7 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ntfy_relay_core::asks::{
-    AskStore, OpenReport, RegisterError, Resolve, ASK_FILE, ASK_VERSION, MAX_ASKS, MAX_TOMBSTONES,
+    AskStore, OpenReport, RegisterError, Resolve, ASK_FILE, ASK_VERSION, MAX_ASKS, MAX_ASK_BYTES,
+    MAX_TOMBSTONES,
 };
 use sha2::{Digest, Sha256};
 
@@ -109,6 +110,58 @@ fn an_unknown_version_is_quarantined() {
     let (store, report) = AskStore::open(temp.file(), 1_700_000_000_000);
     assert_eq!(store.count(), 0);
     assert!(report.quarantined.is_some());
+}
+
+#[test]
+fn an_oversized_file_is_quarantined_and_not_overwritten() {
+    let temp = TempDir::new("oversize");
+    let body = " ".repeat(MAX_ASK_BYTES + 1);
+    fs::write(temp.file(), body.as_bytes()).unwrap();
+    let (store, report) = AskStore::open(temp.file(), 1_700_000_000_000);
+    assert_eq!(store.count(), 0);
+    assert!(report.read_error.is_some());
+    let quarantined = report.quarantined.expect("the sample is kept");
+    assert_eq!(fs::metadata(&quarantined).unwrap().len(), body.len() as u64);
+    assert!(!temp.file().exists());
+
+    store.register("per_1", "ses_1", "proj", "T", 1).unwrap();
+    assert!(temp.file().exists());
+    assert!(fs::metadata(&quarantined).unwrap().len() > 0);
+}
+
+#[test]
+fn a_tombstoned_code_is_not_reissued() {
+    let temp = TempDir::new("tombstone-code");
+    let (store, _) = AskStore::open(temp.file(), 0);
+    let removed = store
+        .register("per_old", "ses_1", "proj", "Old", 1)
+        .unwrap();
+    store.remove("per_old").unwrap();
+
+    let prefix = removed.code.clone();
+    let mut index = 0u32;
+    let candidate = loop {
+        let text = format!("per_new_{index}");
+        if hash(&text).starts_with(&prefix) {
+            break text;
+        }
+        index += 1;
+    };
+    let registered = store
+        .register(&candidate, "ses_1", "proj", "New", 2)
+        .unwrap();
+    assert!(
+        registered.code.len() > prefix.len(),
+        "the live tombstone must push the code past {prefix}"
+    );
+    match store.resolve(Some(&prefix), "proj") {
+        Resolve::AlreadyAnswered(ask) => assert_eq!(ask.request, "per_old"),
+        other => panic!("expected the old tombstone, got {other:?}"),
+    }
+    match store.resolve(Some(&registered.code), "proj") {
+        Resolve::Found(ask) => assert_eq!(ask.request, candidate),
+        other => panic!("expected the new record, got {other:?}"),
+    }
 }
 
 #[test]

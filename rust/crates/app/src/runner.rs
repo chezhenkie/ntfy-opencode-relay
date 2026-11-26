@@ -97,6 +97,13 @@ pub async fn run(config_path: PathBuf) -> Result<(), String> {
         )
     })?;
 
+    if !config.unknown_keys.is_empty() {
+        logger.warn(&format!(
+            "config: unknown keys ignored: {}",
+            config.unknown_keys.join(", ")
+        ));
+    }
+
     if !config.enabled {
         logger.info("relay disabled by config, stopping any live relay");
         if let Some(root) = install_root() {
@@ -189,21 +196,22 @@ pub async fn run(config_path: PathBuf) -> Result<(), String> {
             }
             state
         }
-        Err(StateError::Invalid(_)) | Err(StateError::Version(_)) => {
-            match quarantine_state(&config.state_file, now_ms()) {
-                Ok(target) => {
-                    logger.warn(&format!(
-                        "state quarantined to {}, starting empty",
-                        target.display()
-                    ));
-                    State::new()
-                }
-                Err(error) => {
-                    logger.error(&format!("state quarantine failed: {error}"));
-                    return Err(error.to_string());
-                }
+        Err(StateError::Invalid(_))
+        | Err(StateError::Version(_))
+        | Err(StateError::Oversize)
+        | Err(StateError::NotText) => match quarantine_state(&config.state_file, now_ms()) {
+            Ok(target) => {
+                logger.warn(&format!(
+                    "state quarantined to {}, starting empty",
+                    target.display()
+                ));
+                State::new()
             }
-        }
+            Err(error) => {
+                logger.error(&format!("state quarantine failed: {error}"));
+                return Err(error.to_string());
+            }
+        },
         Err(error) => {
             logger.error(&error.to_string());
             return Err(error.to_string());

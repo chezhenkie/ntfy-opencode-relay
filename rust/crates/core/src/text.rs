@@ -29,12 +29,16 @@ pub fn trim_js(text: &str) -> &str {
 }
 
 /// `clampBytes`: keep whole characters under `limit - 3` bytes, then append
-/// `...`. Text that already fits is returned unchanged.
+/// `...`. Text that already fits is returned unchanged; a limit below three
+/// bytes leaves no room for the marker and returns an empty string.
 pub fn clamp_bytes(text: &str, limit: usize) -> String {
     if text.len() <= limit {
         return text.to_string();
     }
-    let budget = limit.saturating_sub(3);
+    if limit < 3 {
+        return String::new();
+    }
+    let budget = limit - 3;
     let mut used = 0;
     let mut end = text.len();
     for (index, ch) in text.char_indices() {
@@ -65,6 +69,17 @@ mod tests {
         assert!(multibyte.ends_with("..."));
 
         assert_eq!(clamp_bytes("short", ACK_MAX_BYTES), "short");
+    }
+
+    #[test]
+    fn clamp_never_exceeds_a_small_limit() {
+        assert_eq!(clamp_bytes("abc", 2), "");
+        assert_eq!(clamp_bytes("ab", 2), "ab");
+        assert_eq!(clamp_bytes("abcd", 3), "...");
+        assert_eq!(clamp_bytes("abcd", 4), "abcd");
+        assert_eq!(clamp_bytes("abcde", 4), "a...");
+        assert_eq!(clamp_bytes("abcd", 0), "");
+        assert_eq!(clamp_bytes("", 0), "");
     }
 
     #[test]
