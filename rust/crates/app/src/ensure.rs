@@ -101,7 +101,9 @@ fn write_line(file: &Path, text: &str) -> io::Result<()> {
 
 fn write_line_limited(file: &Path, text: &str, limit: u64) -> io::Result<()> {
     if matches!(fs::metadata(file), Ok(meta) if meta.len() >= limit) {
-        let _ = fs::rename(file, file.with_extension("log.1"));
+        let rotated = file.with_extension("log.1");
+        let _ = fs::remove_file(&rotated);
+        let _ = fs::rename(file, &rotated);
     }
     let mut handle = OpenOptions::new().create(true).append(true).open(file)?;
     writeln!(handle, "{} {text}", format_timestamp(now_ms()))
@@ -135,9 +137,19 @@ fn spawn(root: &Path, logs: &Path) -> Result<Child, String> {
 }
 
 fn open_log(path: &Path) -> Result<std::fs::File, String> {
-    OpenOptions::new()
-        .create(true)
-        .append(true)
+    if matches!(fs::metadata(path), Ok(meta) if meta.len() >= LOG_LIMIT) {
+        let rotated = path.with_extension("log.1");
+        let _ = fs::remove_file(&rotated);
+        let _ = fs::rename(path, &rotated);
+    }
+    let mut options = OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options
         .open(path)
         .map_err(|error| format!("log {}: {error}", path.display()))
 }
@@ -201,6 +213,30 @@ mod tests {
             ..ready
         };
         assert_eq!(live_line(&starting), "starting pid=42");
+    }
+
+    #[test]
+    fn a_full_child_log_rotates_and_starts_empty() {
+        let dir = temp_dir("log-rotate");
+        let path = dir.join("relay-stdout.log");
+        fs::write(&path, vec![b'x'; (LOG_LIMIT + 1) as usize]).unwrap();
+        drop(open_log(&path).unwrap());
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+        assert_eq!(
+            fs::metadata(dir.join("relay-stdout.log.1")).unwrap().len(),
+            LOG_LIMIT + 1
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_child_log_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("log-mode");
+        let path = dir.join("relay-stderr.log");
+        drop(open_log(&path).unwrap());
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]

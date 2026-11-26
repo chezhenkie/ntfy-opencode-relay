@@ -4,10 +4,11 @@
 //! rotate at 5 MB into `<file>.1`, and never let a write failure stop the
 //! relay. Echo is off in the deployed daemon because it runs hidden.
 //!
-//! One writer thread owns the file. Callers format and enqueue a line; the
-//! runtime thread never opens, appends, or rotates, so a slow disk or a rotate
-//! cannot stall the select loop. The thread ends, after draining, when the last
-//! logger clone drops; `flush` waits for the queue.
+//! One writer thread owns an open handle. Callers format and enqueue a line;
+//! the runtime thread never opens, appends, or rotates, so a slow disk or a
+//! rotate cannot stall the select loop. The handle is reopened after a rotate
+//! or a write failure. The thread ends, after draining, when the last logger
+//! clone drops; `flush` waits for the queue, and the drop waits at most 2 s.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -15,10 +16,13 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use ntfy_relay_core::config::LogLevel;
 
 pub const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
+/// A hung writer must not hold process exit past this.
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 enum Command {
     Line(String),
@@ -47,9 +51,22 @@ impl Drop for Inner {
             .unwrap_or_else(|poison| poison.into_inner())
             .take()
         {
-            let _ = worker.join();
+            join_with_deadline(worker, JOIN_TIMEOUT);
         }
     }
+}
+
+/// Joins the writer on a helper thread so a hung write cannot hold exit. A
+/// writer that misses the deadline is left detached.
+fn join_with_deadline(worker: thread::JoinHandle<()>, deadline: Duration) {
+    let (done, finished) = mpsc::channel();
+    let _ = thread::Builder::new()
+        .name("log-join".to_string())
+        .spawn(move || {
+            let _ = worker.join();
+            let _ = done.send(());
+        });
+    let _ = finished.recv_timeout(deadline);
 }
 
 #[derive(Clone)]
@@ -76,7 +93,7 @@ impl Logger {
         }
     }
 
-    /// Creates the log directory and records the current file size.
+    /// Creates the log directory and tightens an existing file on Unix.
     pub fn init(&self) -> io::Result<()> {
         let Some(file) = &self.inner.file else {
             return Ok(());
@@ -86,14 +103,11 @@ impl Logger {
                 fs::create_dir_all(parent)?;
             }
         }
-        let size = fs::metadata(file).map(|meta| meta.len()).unwrap_or(0);
         #[cfg(unix)]
-        if size > 0 {
+        if file.exists() {
             use std::os::unix::fs::PermissionsExt;
             let _ = fs::set_permissions(file, fs::Permissions::from_mode(0o600));
         }
-        #[cfg(not(unix))]
-        let _ = size;
         Ok(())
     }
 
@@ -157,51 +171,102 @@ impl Logger {
     }
 }
 
+struct Writer {
+    file: PathBuf,
+    max_bytes: u64,
+    /// The open handle and the bytes already in the file.
+    handle: Option<(fs::File, u64)>,
+}
+
+impl Writer {
+    fn new(file: PathBuf, max_bytes: u64) -> Self {
+        Self {
+            file,
+            max_bytes,
+            handle: None,
+        }
+    }
+
+    fn write(&mut self, line: &str) {
+        if self.handle.is_none() {
+            self.open();
+        }
+        let over = self
+            .handle
+            .as_ref()
+            .map(|(_, size)| *size >= self.max_bytes)
+            .unwrap_or(false);
+        if over {
+            self.rotate();
+        }
+        let Some((handle, size)) = self.handle.as_mut() else {
+            return;
+        };
+        let written = format!("{line}\n");
+        match handle.write_all(written.as_bytes()) {
+            Ok(()) => *size += written.len() as u64,
+            Err(error) => {
+                eprintln!("log write failed: {error}");
+                // Reopen on the next line; a failed handle stays unusable.
+                self.handle = None;
+            }
+        }
+    }
+
+    fn open(&mut self) {
+        if let Some(parent) = self.file.parent() {
+            if !parent.as_os_str().is_empty() {
+                let _ = fs::create_dir_all(parent);
+            }
+        }
+        let size = fs::metadata(&self.file).map(|meta| meta.len()).unwrap_or(0);
+        let mut options = OpenOptions::new();
+        options.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&self.file) {
+            Ok(handle) => self.handle = Some((handle, size)),
+            Err(error) => eprintln!("log write failed: {error}"),
+        }
+    }
+
+    fn rotate(&mut self) {
+        self.handle = None;
+        rotate(&self.file);
+        self.open();
+    }
+
+    fn flush(&mut self) {
+        if let Some((handle, _)) = self.handle.as_mut() {
+            let _ = handle.flush();
+        }
+    }
+}
+
 fn writer_loop(file: Option<PathBuf>, max_bytes: u64, receiver: Receiver<Command>) {
-    let mut size: Option<u64> = None;
+    let Some(file) = file else {
+        // No file: drain so a flush still answers.
+        for command in receiver {
+            if let Command::Flush(done) = command {
+                let _ = done.send(());
+            }
+        }
+        return;
+    };
+    let mut writer = Writer::new(file, max_bytes);
     for command in receiver {
         match command {
-            Command::Line(line) => {
-                let Some(file) = &file else {
-                    continue;
-                };
-                let mut current = size.unwrap_or_else(|| {
-                    if let Some(parent) = file.parent() {
-                        if !parent.as_os_str().is_empty() {
-                            let _ = fs::create_dir_all(parent);
-                        }
-                    }
-                    fs::metadata(file).map(|meta| meta.len()).unwrap_or(0)
-                });
-                if current >= max_bytes {
-                    rotate(file);
-                    current = 0;
-                }
-                let mut options = OpenOptions::new();
-                options.create(true).append(true);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::OpenOptionsExt;
-                    options.mode(0o600);
-                }
-                match options.open(file) {
-                    Ok(mut handle) => {
-                        let written = format!("{line}\n");
-                        if let Err(error) = handle.write_all(written.as_bytes()) {
-                            eprintln!("log write failed: {error}");
-                        } else {
-                            current += written.len() as u64;
-                        }
-                    }
-                    Err(error) => eprintln!("log write failed: {error}"),
-                }
-                size = Some(current);
-            }
+            Command::Line(line) => writer.write(&line),
             Command::Flush(done) => {
+                writer.flush();
                 let _ = done.send(());
             }
         }
     }
+    writer.flush();
 }
 
 impl ntfy_relay_outbound::log::Log for Logger {
@@ -288,6 +353,29 @@ mod tests {
         assert!(text.contains(" INFO visible"));
         assert!(text.contains(" ERROR also visible"));
         assert_eq!(text.lines().count(), 2);
+    }
+
+    #[test]
+    fn ten_thousand_lines_are_written_through_one_open_handle() {
+        let dir = temp_dir("volume");
+        let file = dir.join("relay.log");
+        let logger = Logger::new(Some(file.clone()), LogLevel::Info, false, 64 * 1024 * 1024);
+        logger.init().unwrap();
+        for index in 0..10_000 {
+            logger.info(&format!("line {index}"));
+        }
+        logger.flush();
+        let text = fs::read_to_string(&file).unwrap();
+        assert_eq!(text.lines().count(), 10_000);
+        assert!(text.ends_with("line 9999\n"));
+    }
+
+    #[test]
+    fn a_hung_writer_does_not_hold_the_drop_past_the_deadline() {
+        let worker = thread::spawn(|| thread::sleep(Duration::from_secs(10)));
+        let started = std::time::Instant::now();
+        join_with_deadline(worker, Duration::from_millis(100));
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
