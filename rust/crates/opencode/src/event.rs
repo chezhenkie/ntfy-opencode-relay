@@ -165,6 +165,23 @@ pub fn parse(value: &Value) -> Option<RuntimeEvent> {
     parse_envelope(&envelope)
 }
 
+/// True when a `session.text.ended` frame carries no assistant message id, the
+/// one drop the reader names in a debug line.
+pub fn missing_text_message_id(value: &Value) -> bool {
+    let Some(envelope) = Envelope::parse(value) else {
+        return false;
+    };
+    if envelope.kind != "session.text.ended" {
+        return false;
+    }
+    envelope
+        .data
+        .as_object()
+        .and_then(|data| data.get("assistantMessageID"))
+        .and_then(non_empty)
+        .is_none()
+}
+
 pub fn parse_envelope(envelope: &Envelope) -> Option<RuntimeEvent> {
     let kind = envelope.kind.as_str();
     // `question.*` frames are not emitted by this build; `form.created` is the
@@ -216,9 +233,9 @@ pub fn parse_envelope(envelope: &Envelope) -> Option<RuntimeEvent> {
             }
             Some(RuntimeEvent::TextEnded {
                 session_id: session_id.to_string(),
-                assistant_message_id: text_field(data, "assistantMessageID")
-                    .unwrap_or("unknown")
-                    .to_string(),
+                // The message id is the dedupe key and the backfill cursor; a
+                // frame without it cannot be placed and is dropped.
+                assistant_message_id: text_field(data, "assistantMessageID")?.to_string(),
                 ordinal: data
                     .and_then(|data| data.get("ordinal"))
                     .and_then(integer)
@@ -496,6 +513,18 @@ mod tests {
             json!({"sessionID": "ses_a", "assistantMessageID": "msg_1", "text": "  "}),
         );
         assert_eq!(parse(&blank), None);
+
+        let no_id = envelope(
+            "session.text.ended",
+            json!({"sessionID": "ses_a", "text": "done"}),
+        );
+        assert_eq!(parse(&no_id), None);
+        assert!(missing_text_message_id(&no_id));
+        let with_id = envelope(
+            "session.text.ended",
+            json!({"sessionID": "ses_a", "assistantMessageID": "msg_1", "text": "done"}),
+        );
+        assert!(!missing_text_message_id(&with_id));
     }
 
     #[test]

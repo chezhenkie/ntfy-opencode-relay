@@ -374,10 +374,7 @@ async fn session_signals_carry_viewed_and_parent() {
 #[test]
 fn clean_title_keeps_the_javascript_budget() {
     assert_eq!(clean_title(Some("a\u{feff}b")).as_deref(), Some("a b"));
-    assert_eq!(
-        clean_title(Some("a\u{0085}b")).as_deref(),
-        Some("a\u{0085}b")
-    );
+    assert_eq!(clean_title(Some("a\u{0085}b")).as_deref(), Some("a b"));
     assert_eq!(
         clean_title(Some("x".repeat(201).as_str())),
         Some("x".repeat(200))

@@ -325,7 +325,8 @@ pub fn clean_title(value: Option<&str>) -> Option<String> {
     let mut text = String::with_capacity(value.len());
     let mut pending_space = false;
     for ch in value.chars() {
-        if is_js_space(ch) || ch == '\u{7f}' || (ch as u32) < 0x20 {
+        let code = ch as u32;
+        if is_js_space(ch) || ch == '\u{7f}' || code < 0x20 || (0x80..=0x9f).contains(&code) {
             if !text.is_empty() {
                 pending_space = true;
             }
@@ -391,6 +392,11 @@ mod tests {
             Some("prune check now")
         );
         assert_eq!(clean_title(Some("\u{0}\u{1}\u{7f}")), None);
+        assert_eq!(
+            clean_title(Some("c1 \u{85} and c1 \u{9b} controls")).as_deref(),
+            Some("c1 and c1 controls")
+        );
+        assert_eq!(clean_title(Some("\u{85}\u{9b}")), None);
         assert_eq!(clean_title(Some("   ")), None);
         assert_eq!(clean_title(None), None);
     }

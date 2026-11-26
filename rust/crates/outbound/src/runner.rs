@@ -1296,6 +1296,9 @@ pub(crate) async fn forward(
         None => return,
     };
     let Some(event) = parse_event(&value) else {
+        if ntfy_relay_opencode::event::missing_text_message_id(&value) {
+            log.debug("event skipped: session.text.ended without assistantMessageID");
+        }
         return;
     };
     let raw = RawEvent {
