@@ -18,18 +18,18 @@ const genericUsers = new Set(["example", "me", "you", "user", "username", "name"
 const fakePassword = /^(?:<|\$|fixture-|changeme|redacted|secret)/i;
 
 const rules = [
-  ["ntfy-token", new RegExp("\\b" + tokenPrefix + "[A-Za-z0-9]{8,}\\b", "g"), true],
-  ["bearer", /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/g, true],
-  ["basic", /\bBasic\s+[A-Za-z0-9+/=]{16,}/g, true],
-  ["private-key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/g, true],
-  ["tailnet-dns", /\b(?:[a-z0-9][a-z0-9-]*\.)+ts\.net\b/g, false],
-  ["tailnet-ip", /\b100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.\d{1,3}\.\d{1,3}\b/g, false],
-  ["tailnet-ipv6", /\bfd7a:115c:a1e0:[0-9a-f:]{2,}\b/g, false],
-  ["windows-home", /[A-Za-z]:\\Users\\[^\\\s"'`]+/g, false],
-  ["posix-home", /\/(?:home|Users)\/[a-z0-9][a-z0-9._-]*/g, false],
-  ["wsl-mount", /\/mnt\/[a-z]\/Users\/[^\/\s"']+/g, false],
-  ["device-name", new RegExp("\\b(?:" + devices + ")\\b", "g"), false],
-  ["password", /"password"\s*:\s*"([^"]+)"/g, true],
+  ["ntfy-token", new RegExp("\\b" + tokenPrefix + "[A-Za-z0-9]{8,}\\b", "g")],
+  ["bearer", /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/g],
+  ["basic", /\bBasic\s+[A-Za-z0-9+/=]{16,}/g],
+  ["private-key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/g],
+  ["tailnet-dns", /\b(?:[a-z0-9][a-z0-9-]*\.)+ts\.net\b/g],
+  ["tailnet-ip", /\b100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.\d{1,3}\.\d{1,3}\b/g],
+  ["tailnet-ipv6", /\bfd7a:115c:a1e0:[0-9a-f:]{2,}\b/g],
+  ["windows-home", /[A-Za-z]:\\Users\\[^\\\s"'`]+/g],
+  ["posix-home", /\/(?:home|Users)\/[a-z0-9][a-z0-9._-]*/g],
+  ["wsl-mount", /\/mnt\/[a-z]\/Users\/[^\/\s"']+/g],
+  ["device-name", new RegExp("\\b(?:" + devices + ")\\b", "g")],
+  ["password", /"password"\s*:\s*"([^"]+)"/g],
 ];
 const ruleIds = new Set(rules.map(([id]) => id));
 
@@ -76,15 +76,15 @@ let skipped = 0;
 
 function scan(label, text) {
   const lines = text.split("\n");
-  for (const [id, re, secret] of rules) {
+  for (const [id, re] of rules) {
     for (let i = 0; i < lines.length; i += 1) {
       const line = lines[i].replace(/\r$/, "");
       re.lastIndex = 0;
       let match;
       while ((match = re.exec(line)) !== null) {
         if (skipMatch(id, match)) continue;
-        const value = secret ? match[0].slice(0, 8) + "..." : match[0].slice(0, 80);
-        hits.push({ id, where: label + ":" + (i + 1), value });
+        // The rule and the length locate a hit without echoing its characters.
+        hits.push({ id, where: label + ":" + (i + 1), value: "len=" + match[0].length });
       }
     }
   }

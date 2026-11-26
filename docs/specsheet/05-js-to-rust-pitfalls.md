@@ -144,11 +144,11 @@ There are three byte budgets and three truncation behaviors. `clampBytes` reserv
 
 ## Byte parity
 
-The generated table in `rust\crates\core\src\tlds.rs` is the only link-safety TLD list. `tools/link-safety/build-tlds.mjs --check` (wrapped by `npm run tlds`) fails when the generated `IANA_TLDS` literal is out of date. The Node copies and the plugin verifier were deleted with the publisher plugin in 0.7.0 and with the Node relay in 0.8.0.
+The generated table in `rust\crates\core\src\tlds.rs` is the only link-safety TLD list. `tools/link-safety/build-tlds.mjs` (wrapped by `npm run tlds`) checks the generated `IANA_TLDS` literal and fails when it is out of date; the table is rewritten only with `--write` (`npm run tlds:write`). The Node copies and the plugin verifier were deleted with the publisher plugin in 0.7.0 and with the Node relay in 0.8.0.
 
 | Concern | Trap | Mitigation |
 | --- | --- | --- |
-| The TLD table is a generated literal inside `link-safe.js`, built from `tools/link-safety/tlds.txt`, ASCII 2 to 24 letters, punycode dropped. | The Rust table is generated from the same source; a manual edit drifts silently. | `tools\link-safety\build-tlds.mjs --check`, wrapped by `npm run tlds`, fails when the Rust table drifts. The Node copy was deleted in 0.8.0. |
+| The TLD table is a generated literal inside `link-safe.js`, built from `tools/link-safety/tlds.txt`, ASCII 2 to 24 letters, punycode dropped. | The Rust table is generated from the same source; a manual edit drifts silently. | `tools\link-safety\build-tlds.mjs`, wrapped by `npm run tlds`, fails when the Rust table drifts; `--write` rewrites it. The Node copy was deleted in 0.8.0. |
 | `SCAN_PATTERN` uses the `g` and `i` flags and `String.replace` with a callback. | Rust `replace_all` is equivalent for this pattern, but `(?i)` in the regex crate uses Unicode folding; JS `/i` on `[A-Za-z]` also folds U+212A and U+017F. | Use `(?i-u)` or explicit ASCII classes, then prove it on a fixture with those code points. |
 | `\s` and `\S` differ between JS and the regex crate at U+FEFF (JS whitespace, Unicode White_Space is not). | A prefix or verb separated by FEFF parses differently. | `core::text::is_js_space` matches the ECMAScript set; the control parser uses it and tests FEFF. |
 | The JS parity check compared two Node files in one tree; the Rust table was a third copy. | A Rust port makes parity a multi-file problem, and a "looks the same" review does not scale. | Shared fixture corpus: tokens for every ALLOWED_TLD, unknown 2-letter, unknown long, scheme URL, plain dotted word, `readme.md`, `package.json`, and the unicode edge cases; assert identical output strings. Since 0.8.0 the Rust table is the only copy and `npm run tlds` checks it against the source. |

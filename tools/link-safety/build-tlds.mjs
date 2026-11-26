@@ -1,7 +1,9 @@
-// Writes the IANA TLD table in rust/crates/core/src/tlds.rs from tlds.txt.
+// Checks the IANA TLD table in rust/crates/core/src/tlds.rs against tlds.txt.
+// The table is written only when asked, so a pipeline call cannot silently
+// rewrite a tracked source file.
 //
-// usage: node tools\link-safety\build-tlds.mjs [--check]
-//   --check  report drift without writing, exit 1 when out of date
+// usage: node tools\link-safety\build-tlds.mjs [--write]
+//   --write  rewrite the Rust table; without it, drift exits 1
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -11,7 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const source = path.join(here, "tlds.txt");
 const rustTable = path.join(root, "rust", "crates", "core", "src", "tlds.rs");
-const checkOnly = process.argv.includes("--check");
+const write = process.argv.includes("--write");
 
 const lines = readFileSync(source, "utf8")
     .split(/\r?\n/)
@@ -53,7 +55,7 @@ const normalize = (value) => value.replace(/\r\n/g, "\n");
 const rustCurrent = existsSync(rustTable) ? readFileSync(rustTable, "utf8") : "";
 const rustDrift = normalize(rustCurrent) !== rustText;
 
-if (checkOnly) {
+if (!write) {
     if (rustDrift) {
         console.error(`FAIL tlds=${unique.length} rustDrift=true`);
         process.exit(1);

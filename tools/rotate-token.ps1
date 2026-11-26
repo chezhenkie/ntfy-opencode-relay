@@ -6,10 +6,11 @@
 # failed restart never locks the phone or the relay out.
 # Temporary: -Expires issues a token that expires and writes no consumer file;
 #            it is refused for a relay restart or the live consumer path.
+# The container and the default user come from ntfy-auth.json in the relay root.
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('phone')][string]$User,
+    [string]$User = '',
     [string]$Label = '',
     [string]$TokenFile = '',
     [string]$Expires = '',
@@ -20,7 +21,6 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
-$Container = 'ntfy'
 $ProbeTopic = 'ntfy-probe'
 
 function Fail([string]$Text) {
@@ -105,6 +105,22 @@ function Get-TokenFile {
     return (Get-DefaultTokenFile)
 }
 
+function Read-AuthConfig {
+    $path = Join-Path (Get-RelayRoot) 'ntfy-auth.json'
+    if (-not (Test-Path $path)) { Fail "auth-config missing path=$path" }
+    try {
+        return (Get-Content -Path $path -Raw -ErrorAction Stop | ConvertFrom-Json)
+    } catch {
+        Fail "auth-config invalid path=$path"
+    }
+}
+
+$Auth = Read-AuthConfig
+$Container = [string]$Auth.container
+if (-not $Container) { Fail 'container not found in ntfy-auth.json' }
+if (-not $User) { $User = [string]$Auth.user }
+if (-not $User) { Fail 'user not found in ntfy-auth.json' }
+
 function ConvertTo-ExpirySpan([string]$Text) {
     if ($Text -notmatch '^([1-9][0-9]{0,3})([mhdw])$') { return $null }
     $count = [int]$Matches[1]
@@ -158,7 +174,8 @@ if ($RevokeOld) {
         Write-Host "DRY-RUN podman exec $Container ntfy token remove $User $($Old.Substring(0, 8))..."
         exit 0
     }
-    & podman exec $Container ntfy token remove $User $Old 2>&1 | Out-Null
+    $payload = $Old + "`n"
+    $payload | & podman exec -i $Container sh -c 'IFS= read -r t; ntfy token remove "$1" "$(printf %s "$t" | tr -d "\r")"' sh $User 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "token-remove user=$User exit=$LASTEXITCODE" }
     $After = Get-UserTokens $User
     if ($After -contains $Old) { Fail 'revoke-still-present' }
@@ -234,11 +251,18 @@ if ($RestartRelay) {
     $server = Get-RelayServer
     if (-not $server) { Fail 'relay-server missing in config' }
     $codes = @()
-    for ($i = 0; $i -lt 10; $i++) {
-        $code = & curl.exe -sS -o NUL -m 10 -w '%{http_code}' -H "Authorization: Bearer $New" -d 'rotate-check' "$server/$ProbeTopic" 2>&1
-        $codes += [string]$code
-        if ([string]$code -eq '200') { break }
-        Start-Sleep -Seconds 2
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) ('ntfy-rotate-' + [guid]::NewGuid().ToString('N') + '.curl')
+    try {
+        $config = 'header = "Authorization: Bearer ' + $New + '"'
+        [System.IO.File]::WriteAllText($temp, $config + "`n", (New-Object System.Text.UTF8Encoding($false)))
+        for ($i = 0; $i -lt 10; $i++) {
+            $code = & curl.exe -sS -o NUL -m 10 -w '%{http_code}' -K $temp -d 'rotate-check' "$server/$ProbeTopic" 2>&1
+            $codes += [string]$code
+            if ([string]$code -eq '200') { break }
+            Start-Sleep -Seconds 2
+        }
+    } finally {
+        Remove-Item -Force -LiteralPath $temp -ErrorAction SilentlyContinue
     }
     if ($codes[-1] -ne '200') { Fail "publish-probe codes=$($codes -join ',')" }
     Write-Host "PASS publish-probe topic=$ProbeTopic code=200"
@@ -249,7 +273,8 @@ if ($RestartRelay) {
     Write-Host 'PASS relay-log clean'
 }
 
-if ($Expires) { Write-Host "NEXT remove the temporary token by prefix when it is no longer needed: .\tools\rotate-token.ps1 -User $User -RevokeOld <prefix>" }
-else { Write-Host "NEXT revoke the old token: .\tools\rotate-token.ps1 -User $User -RevokeOld <prefix>" }
-Write-Host "TOKEN $New"
+if ($Expires) { Write-Host "NEXT remove the temporary token by prefix when it is no longer needed: .\tools\rotate-token.ps1 -RevokeOld <prefix>" }
+else { Write-Host "NEXT revoke the old token: .\tools\rotate-token.ps1 -RevokeOld <prefix>" }
+if ($Expires) { Write-Host "TOKEN prefix=$($New.Substring(0, 8))... file=none" }
+else { Write-Host "TOKEN prefix=$($New.Substring(0, 8))... file=$File" }
 Write-Host 'MCP processes pick up the new token only after an OpenCode reload.'

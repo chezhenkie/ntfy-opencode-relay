@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # The history scan is slow, so it runs weekly rather than per push.
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
@@ -58,3 +61,78 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+
+  audit:
+    name: audit (ubuntu)
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: rust
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Audit dependencies
+        # Reviewed advisories go here as additional --ignore <id> flags; none
+        # are accepted today.
+        run: cargo audit --deny warnings
+
+  container:
+    name: container (ubuntu)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Build image
+        run: docker build -t localhost/ntfy:server container
+      - name: Start container
+        run: |
+          set -euo pipefail
+          docker run -d --name ntfy --read-only --tmpfs /tmp --cap-drop=ALL \
+            --security-opt no-new-privileges -p 127.0.0.1:8810:8080 \
+            -v ntfy-cache:/var/cache/ntfy \
+            -e NTFY_BASE_URL=http://127.0.0.1:8810 -e NTFY_BEHIND_PROXY=true \
+            localhost/ntfy:server
+          ready=false
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8810/v1/health > /dev/null; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = true
+      - name: Create token
+        run: |
+          set -euo pipefail
+          docker exec -e NTFY_PASSWORD=ci-only-password ntfy ntfy user add --role=user ci
+          docker exec ntfy ntfy access ci '*' rw
+          token=$(docker exec ntfy ntfy token add --label=ci ci | grep -oE 'tk_[A-Za-z0-9]+' | head -n 1)
+          test -n "$token"
+          echo "::add-mask::$token"
+          printf '%s\n' "$token" > "$RUNNER_TEMP/ntfy-token.txt"
+      - name: Smoke
+        run: node e2e-smoke-tests/smoke.mjs --token-file "$RUNNER_TEMP/ntfy-token.txt"
+      - name: Container log
+        if: failure()
+        run: docker logs ntfy || true
+
+  history:
+    name: secret history (weekly)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Secret history
+        run: npm run secrets -- --history

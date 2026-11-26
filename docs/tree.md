@@ -142,7 +142,7 @@ ntfy-proj\
     build-docs-site.mjs           regenerates the published pages and checks their links
     secret-scan.mjs               scans tracked files for tokens, hosts, and absolute paths
     secret-scan.allow             allowlisted fixture matches
-    link-safety\build-tlds.mjs    writes the Rust TLD table
+    link-safety\build-tlds.mjs    checks or writes the Rust TLD table
     link-safety\tlds.txt          IANA TLD source list
   e2e-smoke-tests\
     smoke.mjs                     live ntfy smoke: health, auth, publish, SSE, attachment
