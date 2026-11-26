@@ -68,6 +68,9 @@ pub struct TurnOut {
     /// out for that empty turn.
     pub body: Option<TurnBody>,
     pub idle: bool,
+    /// The body is an incomplete answer (TTL, eviction, suppression or a new
+    /// start), not a terminal answer.
+    pub partial: bool,
     pub files: Vec<String>,
     pub started_at: Option<i64>,
     /// Assistant message ids carried by `body`; empty when nothing is sent.
@@ -405,13 +408,16 @@ impl TurnTracker {
             }
         }
         for session_id in expired {
-            self.states.remove(&session_id);
-            if self.active.as_deref() == Some(session_id.as_str()) {
-                self.active = None;
+            if let Some(state) = self.states.remove(&session_id) {
+                // The TTL is the last chance for text whose terminal never
+                // arrived; publish it as a partial instead of dropping it.
+                self.log.debug(&format!(
+                    "turn text buffer expired for session \"{session_id}\"; flushing a partial"
+                ));
+                let mut state = state;
+                state.mode = TerminalMode::Partial;
+                out.extend(self.flush(&session_id, state, now));
             }
-            self.log.debug(&format!(
-                "turn text buffer expired for session \"{session_id}\""
-            ));
         }
         out
     }
@@ -480,6 +486,7 @@ impl TurnTracker {
             session_id: session_id.to_string(),
             body,
             idle,
+            partial: mode == TerminalMode::Partial,
             files,
             started_at,
             messages,
@@ -602,8 +609,25 @@ mod tests {
         tracker.append("ses_a", "msg", 0, "done", 100, 1_000);
         tracker.terminal("ses_a", TerminalMode::Idle, 1_000);
         assert!(tracker.tick(1_099).is_empty());
-        assert_eq!(tracker.tick(1_100).len(), 1);
+        let out = tracker.tick(1_100);
+        assert_eq!(out.len(), 1);
+        assert!(!out[0].partial);
         assert!(tracker.tick(2_000).is_empty());
+    }
+
+    #[test]
+    fn buffered_text_is_flushed_as_a_partial_at_the_ttl() {
+        let mut tracker = tracker();
+        tracker.started("ses_a", 1_000);
+        tracker.append("ses_a", "msg", 0, "late text", 1, 1_000);
+        let out = tracker.tick(1_000 + 10_000);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].partial);
+        assert_eq!(text(&out[0]), "late text");
+        assert!(
+            tracker.tick(1_000 + 10_100).is_empty(),
+            "the flush clears the buffer"
+        );
     }
 
     #[test]
@@ -728,6 +752,7 @@ mod tests {
         tracker.append("ses_a", "msg", 0, "buffered", 1, 1_000);
         let out = tracker.started("ses_a", 1_100);
         assert_eq!(out.len(), 1);
+        assert!(out[0].partial);
         assert_eq!(text(&out[0]), "buffered");
         assert!(!text(&out[0]).contains("interrupted"));
         assert!(tracker.tick(2_000).is_empty());
@@ -789,8 +814,12 @@ mod tests {
         let mut tracker = tracker();
         tracker.started("ses_a", 1_000);
         assert_eq!(tracker.pending(), 1);
-        tracker.tick(1_000 + 10_000);
-        assert_eq!(tracker.pending(), 0);
+        let out = tracker.tick(1_000 + 10_000);
+        assert_eq!(out.len(), 1, "an empty state still leaves one output");
+        assert!(out[0].body.is_none());
+        assert!(!out[0].idle);
+        assert_eq!(tracker.pending(), 1, "the consumed tombstone is kept");
+        assert!(tracker.tick(1_000 + 20_000).is_empty());
     }
 
     #[test]

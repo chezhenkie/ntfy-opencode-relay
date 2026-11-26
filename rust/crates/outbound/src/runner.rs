@@ -476,6 +476,10 @@ impl Worker {
             }
             RuntimeEvent::SessionIdle { session_id } => {
                 if !self.events.session_idle {
+                    // The notice is off, but its text still belongs on the
+                    // phone; publish it as a partial before the early return.
+                    let out = self.tracker.flush_partial(&session_id, now);
+                    self.publish_turns(out, now).await;
                     return false;
                 }
                 let outcome = self.target(&session_id, raw.location.as_deref(), now).await;
@@ -495,6 +499,8 @@ impl Worker {
                 message,
             } => {
                 if !self.events.session_error {
+                    let out = self.tracker.flush_partial(&session_id, now);
+                    self.publish_turns(out, now).await;
                     return false;
                 }
                 let outcome = self.target(&session_id, raw.location.as_deref(), now).await;
@@ -748,6 +754,14 @@ impl Worker {
                         self.seen.accept(message, now);
                     }
                     let message = body_message("session.text", &target.topic, body);
+                    let message = if turn.partial {
+                        let mut message = message;
+                        message.kind = "session.text.partial";
+                        message.tags.push("partial");
+                        message
+                    } else {
+                        message
+                    };
                     self.deliver(message, turn.messages, now).await;
                     self.last_text_session = Some(turn.session_id.clone());
                 }
@@ -1738,6 +1752,21 @@ mod tests {
         asks_path: Option<PathBuf>,
         setup: impl FnOnce(&TestApi),
     ) -> Harness {
+        harness_config(root, config(delay_ms), asks_path, setup)
+    }
+
+    fn harness_events(name: &str, events: OutboundEvents) -> Harness {
+        let mut cfg = config(0);
+        cfg.events = events;
+        harness_config(temp_root(name), cfg, None, |_| {})
+    }
+
+    fn harness_config(
+        root: PathBuf,
+        cfg: OutboundConfig,
+        asks_path: Option<PathBuf>,
+        setup: impl FnOnce(&TestApi),
+    ) -> Harness {
         let transport = Arc::new(Recorder::default());
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let source = Arc::new(FakeSource {
@@ -1779,7 +1808,7 @@ mod tests {
         );
         let forms = Arc::new(form_store);
         let options = OutboundOptions {
-            config: config(delay_ms),
+            config: cfg,
             roots: Arc::new(std::sync::RwLock::new(ProjectRoots::new(
                 vec![root.clone()],
             ))),
@@ -2659,5 +2688,64 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_secs(2), harness.stop()).await;
         assert!(result.is_ok(), "shutdown was held by the lane task");
         result.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_idle_with_the_notice_off_flushes_the_buffer() {
+        let mut events = config(0).events;
+        events.session_idle = false;
+        let harness = harness_events("notice-idle-off", events);
+        harness.frame(session_created(&harness.root, "ses_a", None));
+        harness.frame(json!({
+            "id": "e2", "type": "session.execution.started",
+            "data": { "sessionID": "ses_a" }
+        }));
+        harness.frame(json!({
+            "id": "e3", "type": "session.text.ended",
+            "data": {
+                "sessionID": "ses_a", "assistantMessageID": "msg_1",
+                "ordinal": 0, "text": "first text"
+            }
+        }));
+        harness.frame(json!({
+            "id": "e4", "type": "session.execution.started",
+            "data": { "sessionID": "ses_a" }
+        }));
+        let requests = harness.wait_requests(1).await;
+        let body = json_body(&requests[0]);
+        assert_eq!(body["message"], "first text");
+        assert_eq!(body["tags"], json!(["oc-out", "partial"]));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            harness.transport.requests.lock().unwrap().len(),
+            1,
+            "the buffer is published once"
+        );
+        harness.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn both_notices_off_still_publishes_the_buffer_at_the_ttl() {
+        let mut events = config(0).events;
+        events.session_idle = false;
+        events.session_error = false;
+        let harness = harness_events("notice-both-off", events);
+        harness.frame(session_created(&harness.root, "ses_a", None));
+        harness.frame(json!({
+            "id": "e2", "type": "session.execution.started",
+            "data": { "sessionID": "ses_a" }
+        }));
+        harness.frame(json!({
+            "id": "e3", "type": "session.text.ended",
+            "data": {
+                "sessionID": "ses_a", "assistantMessageID": "msg_ttl",
+                "ordinal": 0, "text": "kept text"
+            }
+        }));
+        let requests = harness.wait_requests(1).await;
+        let body = json_body(&requests[0]);
+        assert_eq!(body["message"], "kept text");
+        assert_eq!(body["tags"], json!(["oc-out", "partial"]));
+        harness.stop().await.unwrap();
     }
 }
