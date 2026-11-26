@@ -28,7 +28,9 @@ use crate::api::{
 };
 
 pub const MAX_CREATED_TITLE_CHARS: usize = 200;
-/// `withRetry`: two retries, 1 s then 2 s, for network errors and 5xx only.
+/// `withRetry`: two retries, 1 s then 2 s, and only when the request provably
+/// never reached the server or the server answered 429. A timeout, a reset or
+/// a 5xx may already have run the prompt, so those return after one call.
 pub const PROMPT_RETRIES: usize = 2;
 pub const PROMPT_RETRY_DELAYS_MS: [u64; PROMPT_RETRIES] = [1000, 2000];
 
@@ -196,10 +198,7 @@ impl SessionApi for OpenCodeAdapter {
                 Ok(()) => return Ok(()),
                 Err(error) => {
                     attempt += 1;
-                    let retriable = match error.code() {
-                        None => true,
-                        Some(status) => status >= 500,
-                    };
+                    let retriable = error.is_connect() || error.code() == Some(429);
                     if !retriable || attempt > PROMPT_RETRIES {
                         return Err(adapter_error(error));
                     }

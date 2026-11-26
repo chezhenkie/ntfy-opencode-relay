@@ -35,6 +35,9 @@ const ERROR_DETAIL_CHARS: usize = 200;
 pub struct ApiError {
     status: Option<u16>,
     message: String,
+    /// The connection itself failed, so the request provably never reached the
+    /// server and repeating it is safe.
+    connect: bool,
 }
 
 impl ApiError {
@@ -42,6 +45,7 @@ impl ApiError {
         Self {
             status: None,
             message: message.into(),
+            connect: false,
         }
     }
 
@@ -49,11 +53,24 @@ impl ApiError {
         Self {
             status: Some(status),
             message: message.into(),
+            connect: false,
+        }
+    }
+
+    pub fn connect(message: impl Into<String>) -> Self {
+        Self {
+            status: None,
+            message: message.into(),
+            connect: true,
         }
     }
 
     pub fn code(&self) -> Option<u16> {
         self.status
+    }
+
+    pub fn is_connect(&self) -> bool {
+        self.connect
     }
 
     pub fn is_not_found(&self) -> bool {
@@ -594,10 +611,14 @@ impl HttpApi {
                 .header("content-type", "application/json")
                 .body(body);
         }
-        let response = builder
-            .send()
-            .await
-            .map_err(|error| ApiError::new(format!("{label}: {error}")))?;
+        let response = builder.send().await.map_err(|error| {
+            let message = format!("{label}: {error}");
+            if error.is_connect() {
+                ApiError::connect(message)
+            } else {
+                ApiError::new(message)
+            }
+        })?;
         let status = response.status().as_u16();
         let bytes = read_bounded(response).await?;
         if !(200..300).contains(&status) {

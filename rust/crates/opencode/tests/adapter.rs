@@ -151,6 +151,7 @@ impl Api for FakeApi {
             files: files.to_vec(),
         });
         match self.prompt_failures.lock().unwrap().pop_front() {
+            Some(0) => Err(ApiError::connect("control connection refused")),
             Some(status) => Err(ApiError::with_status(status, format!("HTTP {status}"))),
             None => Ok(()),
         }
@@ -403,7 +404,7 @@ async fn get_session_maps_fields_and_missing_is_none() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn prompt_builds_the_node_body_and_retries_5xx() {
+async fn prompt_builds_the_node_body_and_does_not_retry_5xx() {
     let api = Arc::new(FakeApi::default());
     api.prompt_failures.lock().unwrap().push_back(503);
     let adapter = adapter(api.clone(), true);
@@ -413,7 +414,7 @@ async fn prompt_builds_the_node_body_and_retries_5xx() {
         name: "note.md".to_string(),
     }];
 
-    adapter
+    let error = adapter
         .prompt(PromptRequest {
             session_id: "ses_one",
             text: "read this",
@@ -421,10 +422,11 @@ async fn prompt_builds_the_node_body_and_retries_5xx() {
             files: &files,
         })
         .await
-        .unwrap();
+        .unwrap_err();
+    assert_eq!(error.status(), Some(503));
 
     let prompts = api.prompts.lock().unwrap();
-    assert_eq!(prompts.len(), 2, "one failure plus one retry");
+    assert_eq!(prompts.len(), 1, "a 5xx may already have run the prompt");
     let first = &prompts[0];
     assert_eq!(first.session_id, "ses_one");
     assert_eq!(first.delivery, Delivery::Queue);
@@ -435,6 +437,44 @@ async fn prompt_builds_the_node_body_and_retries_5xx() {
     assert_eq!(first.files.len(), 1);
     assert_eq!(first.files[0].name, "note.md");
     assert!(first.files[0].uri.starts_with("file://"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_connect_failure_is_retried() {
+    let api = Arc::new(FakeApi::default());
+    api.prompt_failures.lock().unwrap().push_back(0);
+    let adapter = adapter(api.clone(), true);
+    adapter
+        .prompt(PromptRequest {
+            session_id: "ses_one",
+            text: "hello",
+            delivery: CoreDelivery::Queue,
+            files: &[],
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        api.prompts.lock().unwrap().len(),
+        2,
+        "a connect failure never reached the server"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_429_is_retried() {
+    let api = Arc::new(FakeApi::default());
+    api.prompt_failures.lock().unwrap().push_back(429);
+    let adapter = adapter(api.clone(), true);
+    adapter
+        .prompt(PromptRequest {
+            session_id: "ses_one",
+            text: "hello",
+            delivery: CoreDelivery::Queue,
+            files: &[],
+        })
+        .await
+        .unwrap();
+    assert_eq!(api.prompts.lock().unwrap().len(), 2);
 }
 
 #[tokio::test(start_paused = true)]
