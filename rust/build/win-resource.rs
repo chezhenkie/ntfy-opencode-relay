@@ -3,9 +3,9 @@
 // then includes this file. The product version comes from package.json at
 // the repository root, so the binaries and the changelog share one source.
 //
-// windows-gnu targets compile the resource with windres, which the release
-// build uses. An MSVC build uses rc.exe when it is on PATH and otherwise
-// builds without the resource, so CI test builds stay green.
+// windows-gnu targets compile the resource with windres. An MSVC build uses
+// rc.exe and fails when it is missing, because a binary without the icon or
+// the version resource is not a release artefact.
 
 use std::env;
 use std::fs;
@@ -17,6 +17,8 @@ fn main() {
     println!("cargo:rerun-if-changed=../../build/win-resource.rs");
     println!("cargo:rerun-if-changed=../../../package.json");
     println!("cargo:rerun-if-changed=../../assets/ntfy.ico");
+    println!("cargo:rerun-if-env-changed=NTFY_WINDRES");
+    println!("cargo:rerun-if-env-changed=NTFY_RC");
 
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
@@ -67,7 +69,7 @@ fn main() {
             println!("cargo:rustc-link-arg-bins={}", res.display());
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            println!("cargo:warning=rc.exe not found, {DESCRIPTION} has no icon or version resource");
+            panic!("{rc_tool} not found; install the Windows SDK or set NTFY_RC");
         }
         Err(err) => panic!("run {rc_tool}: {err}"),
     }
@@ -76,16 +78,13 @@ fn main() {
 fn read_version(path: &Path) -> String {
     let text =
         fs::read_to_string(path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
-    let key = "\"version\"";
-    let at = text
-        .find(key)
-        .unwrap_or_else(|| panic!("{} has no version", path.display()))
-        + key.len();
-    let rest = &text[at..];
-    let open = rest.find('"').expect("version is not a string") + 1;
-    let rest = &rest[open..];
-    let close = rest.find('"').expect("version is not closed");
-    let version = rest[..close].to_string();
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("parse {}: {err}", path.display()));
+    let version = value
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| panic!("{} has no top-level version", path.display()))
+        .to_string();
     let parts: Vec<&str> = version.split('.').collect();
     assert!(
         (2..=4).contains(&parts.len())
@@ -97,6 +96,16 @@ fn read_version(path: &Path) -> String {
     version
 }
 
+/// One `.rc` string: a backslash, quote, or newline would end the value or the
+/// directive early, so each is escaped.
+fn rc_string(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "\\r")
+        .replace('\n', "\\n")
+}
+
 fn resource(version: &str, icon: &Path) -> String {
     let mut four: Vec<u16> = version
         .split('.')
@@ -106,7 +115,11 @@ fn resource(version: &str, icon: &Path) -> String {
         four.push(0);
     }
     let numbers = format!("{},{},{},{}", four[0], four[1], four[2], four[3]);
-    let icon = icon.display().to_string().replace('\\', "\\\\");
+    let icon = rc_string(&icon.display().to_string());
+    let version_text = rc_string(version);
+    let description = rc_string(DESCRIPTION);
+    let internal_name = rc_string(INTERNAL_NAME);
+    let original_name = rc_string(ORIGINAL_NAME);
     format!(
         "1 ICON \"{icon}\"\n\
          1 VERSIONINFO\n\
@@ -122,12 +135,12 @@ fn resource(version: &str, icon: &Path) -> String {
          BEGIN\n\
          BLOCK \"040904b0\"\n\
          BEGIN\n\
-         VALUE \"FileDescription\", \"{DESCRIPTION}\"\n\
-         VALUE \"FileVersion\", \"{version}\"\n\
-         VALUE \"InternalName\", \"{INTERNAL_NAME}\"\n\
-         VALUE \"OriginalFilename\", \"{ORIGINAL_NAME}\"\n\
+         VALUE \"FileDescription\", \"{description}\"\n\
+         VALUE \"FileVersion\", \"{version_text}\"\n\
+         VALUE \"InternalName\", \"{internal_name}\"\n\
+         VALUE \"OriginalFilename\", \"{original_name}\"\n\
          VALUE \"ProductName\", \"ntfy relay\"\n\
-         VALUE \"ProductVersion\", \"{version}\"\n\
+         VALUE \"ProductVersion\", \"{version_text}\"\n\
          VALUE \"CompanyName\", \"chezhenkie\"\n\
          VALUE \"LegalCopyright\", \"MIT License, Copyright (c) 2026 chezhenkie\"\n\
          END\n\

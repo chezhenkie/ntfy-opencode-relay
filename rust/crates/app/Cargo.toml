@@ -18,12 +18,15 @@ ntfy-relay-outbound = { path = "../outbound" }
 async-trait = "0.1"
 bytes = "1"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-serde_json = "1"
-tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "rt-multi-thread", "signal", "sync", "time"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-std", "io-util", "macros", "rt-multi-thread", "signal", "sync", "time"] }
+
+[build-dependencies]
+serde_json = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
 
 [dev-dependencies]
 async-trait = "0.1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "test-util"] }
