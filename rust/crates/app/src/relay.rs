@@ -372,8 +372,13 @@ impl Relay {
                 }
             }
             "answer" => {
-                match apply_form_reply(self.forms.as_ref(), self.form_api.as_ref(), &native.arg)
-                    .await
+                match apply_form_reply(
+                    self.forms.as_ref(),
+                    self.form_api.as_ref(),
+                    &entry.topic,
+                    &native.arg,
+                )
+                .await
                 {
                     Ok(outcome) => {
                         self.logger.info(&format!(
@@ -421,6 +426,7 @@ impl Relay {
                     self.asks.as_ref(),
                     decision,
                     native.arg_token(),
+                    &entry.topic,
                 )
                 .await
                 {
@@ -1202,7 +1208,13 @@ mod tests {
         let harness = harness_with_state("permission", state);
         let registered = harness
             .asks
-            .register("per_2", "ses_other", "Other work", 1_700_000_000_000)
+            .register(
+                "per_2",
+                "ses_other",
+                "proj",
+                "Other work",
+                1_700_000_000_000,
+            )
             .unwrap();
         let clock = FixedClock;
         let mut control = Control::new(builtin_control_table(), harness.adapter.as_ref(), &clock);
@@ -1231,11 +1243,11 @@ mod tests {
         let harness = harness("permission-code");
         let older = harness
             .asks
-            .register("per_1", "ses_a", "Older", 1_700_000_000_000)
+            .register("per_1", "ses_a", "proj", "Older", 1_700_000_000_000)
             .unwrap();
         harness
             .asks
-            .register("per_2", "ses_b", "Newer", 1_700_000_000_100)
+            .register("per_2", "ses_b", "proj", "Newer", 1_700_000_000_100)
             .unwrap();
         let clock = FixedClock;
         let mut control = Control::new(builtin_control_table(), harness.adapter.as_ref(), &clock);
@@ -1281,7 +1293,7 @@ mod tests {
         let harness = harness("status-asks");
         harness
             .asks
-            .register("per_1", "ses_1", "Fix links", 1_700_000_000_000)
+            .register("per_1", "ses_1", "proj", "Fix links", 1_700_000_000_000)
             .unwrap();
         let asks = harness.asks.clone();
         let status = move || ntfy_relay_inbound::control::engine::Status {

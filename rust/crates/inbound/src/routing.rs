@@ -118,10 +118,14 @@ pub fn resolve(
     if let Some(id) = hints.pending {
         if fresh(hints.pending_at, now, windows.pending_ms) {
             if let Some(signal) = find(signals, id) {
-                return Some(Resolved {
-                    session: signal.session.clone(),
-                    source: Source::Pending,
-                });
+                // A one-shot target that names a child session is ignored; a
+                // child never receives a routed prompt.
+                if signal.parent_id.is_none() {
+                    return Some(Resolved {
+                        session: signal.session.clone(),
+                        source: Source::Pending,
+                    });
+                }
             }
         }
     }
@@ -131,18 +135,20 @@ pub fn resolve(
                 // The hint only holds the thread while nothing else was active
                 // after the previous prompt. A desktop view or a message in
                 // another session is newer evidence and wins.
-                let newest_other = signals
-                    .iter()
-                    .filter(|other| other.session.id != id && !other.session.id.is_empty())
-                    .filter(|other| other.parent_id.is_none())
-                    .map(activity)
-                    .max()
-                    .unwrap_or(i64::MIN);
-                if newest_other <= hints.last_at {
-                    return Some(Resolved {
-                        session: signal.session.clone(),
-                        source: Source::Continuity,
-                    });
+                if signal.parent_id.is_none() {
+                    let newest_other = signals
+                        .iter()
+                        .filter(|other| other.session.id != id && !other.session.id.is_empty())
+                        .filter(|other| other.parent_id.is_none())
+                        .map(activity)
+                        .max()
+                        .unwrap_or(i64::MIN);
+                    if newest_other <= hints.last_at {
+                        return Some(Resolved {
+                            session: signal.session.clone(),
+                            source: Source::Continuity,
+                        });
+                    }
                 }
             }
         }
@@ -281,6 +287,46 @@ mod tests {
         )
         .unwrap();
         assert_eq!(resolved.session.id, "ses_b");
+    }
+
+    #[test]
+    fn a_pending_child_id_is_ignored() {
+        let mut child = signal("ses_child", 300, 300, false);
+        child.parent_id = Some("ses_parent".to_string());
+        let resolved = resolve(
+            &[signal("ses_a", 100, 100, false), child],
+            Hints {
+                pending: Some("ses_child"),
+                pending_at: 300,
+                ..Hints::default()
+            },
+            400,
+            true,
+            Windows::default(),
+        )
+        .unwrap();
+        assert_eq!(resolved.session.id, "ses_a");
+        assert_eq!(resolved.source, Source::Activity);
+    }
+
+    #[test]
+    fn a_continuity_child_id_is_ignored() {
+        let mut child = signal("ses_child", 100, 100, false);
+        child.parent_id = Some("ses_parent".to_string());
+        let resolved = resolve(
+            &[signal("ses_a", 50, 50, false), child],
+            Hints {
+                last: Some("ses_child"),
+                last_at: 100,
+                ..Hints::default()
+            },
+            200,
+            true,
+            Windows::default(),
+        )
+        .unwrap();
+        assert_eq!(resolved.session.id, "ses_a");
+        assert_eq!(resolved.source, Source::Activity);
     }
 
     #[test]

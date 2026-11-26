@@ -106,11 +106,14 @@ impl PermissionApi for FakePermissions {
 }
 
 #[test]
-fn a_default_reply_uses_the_newest_ask_in_another_session() {
+fn a_code_less_reply_uses_the_only_ask_on_its_topic() {
     let temp = TempDir::new("newest");
     let asks = temp.store();
-    asks.register("per_1", "ses_a", "Older", 100).unwrap();
-    let newest = asks.register("per_2", "ses_other", "Newer", 200).unwrap();
+    let older = asks
+        .register("per_1", "ses_a", "proj-a", "Older", 100)
+        .unwrap();
+    asks.register("per_2", "ses_other", "proj-b", "Newer", 200)
+        .unwrap();
     let permissions = FakePermissions::default();
 
     let outcome = block_on(reply_to_permission(
@@ -118,29 +121,73 @@ fn a_default_reply_uses_the_newest_ask_in_another_session() {
         &asks,
         PermissionDecision::Once,
         None,
+        "proj-a",
     ))
     .unwrap();
     assert_eq!(
         permissions.calls(),
         vec![(
-            "ses_other".to_string(),
-            "per_2".to_string(),
+            "ses_a".to_string(),
+            "per_1".to_string(),
             PermissionDecision::Once
         )]
     );
     assert_eq!(
-        outcome,
-        PermissionOutcome::Answered {
-            title: "Newer".to_string(),
-            code: newest.code.clone(),
-            decision: PermissionDecision::Once,
-            remaining: 1,
-        }
-    );
-    assert_eq!(
         outcome.ack_body(),
-        format!("approved once in Newer ({}), 1 more pending", newest.code)
+        format!("approved once in Older ({}), 1 more pending", older.code)
     );
+    assert_eq!(asks.count(), 1);
+}
+
+#[test]
+fn two_asks_on_one_topic_need_a_code() {
+    let temp = TempDir::new("ambiguous");
+    let asks = temp.store();
+    let first = asks
+        .register("per_1", "ses_a", "proj", "Older", 100)
+        .unwrap();
+    let second = asks
+        .register("per_2", "ses_b", "proj", "Newer", 200)
+        .unwrap();
+    let permissions = FakePermissions::default();
+    let error = block_on(reply_to_permission(
+        &permissions,
+        &asks,
+        PermissionDecision::Once,
+        None,
+        "proj",
+    ))
+    .unwrap_err();
+    match error {
+        PermissionError::Ambiguous { available } => {
+            assert_eq!(available.len(), 2);
+            assert!(available.iter().any(|ask| ask.code == first.code));
+            assert!(available.iter().any(|ask| ask.code == second.code));
+        }
+        other => panic!("expected both codes, got {other:?}"),
+    }
+    assert!(permissions.calls().is_empty());
+    assert_eq!(asks.count(), 2);
+}
+
+#[test]
+fn a_code_from_another_topic_is_not_answered() {
+    let temp = TempDir::new("other-topic");
+    let asks = temp.store();
+    let registered = asks
+        .register("per_1", "ses_1", "other", "Fix links", 1)
+        .unwrap();
+    let permissions = FakePermissions::default();
+    let error = block_on(reply_to_permission(
+        &permissions,
+        &asks,
+        PermissionDecision::Once,
+        Some(&registered.code),
+        "proj",
+    ))
+    .unwrap_err();
+    assert_eq!(error, PermissionError::NoAsk);
+    assert!(permissions.calls().is_empty());
     assert_eq!(asks.count(), 1);
 }
 
@@ -148,8 +195,11 @@ fn a_default_reply_uses_the_newest_ask_in_another_session() {
 fn a_named_code_answers_the_older_ask_with_hash_and_case() {
     let temp = TempDir::new("named");
     let asks = temp.store();
-    let older = asks.register("per_1", "ses_a", "Older", 100).unwrap();
-    asks.register("per_2", "ses_b", "Newer", 200).unwrap();
+    let older = asks
+        .register("per_1", "ses_a", "proj", "Older", 100)
+        .unwrap();
+    asks.register("per_2", "ses_b", "proj", "Newer", 200)
+        .unwrap();
     let permissions = FakePermissions::default();
 
     let token = format!("#{}", older.code.to_uppercase());
@@ -158,6 +208,7 @@ fn a_named_code_answers_the_older_ask_with_hash_and_case() {
         &asks,
         PermissionDecision::Reject,
         Some(&token),
+        "proj",
     ))
     .unwrap();
     assert_eq!(
@@ -184,6 +235,7 @@ fn an_empty_registry_names_no_session() {
         &asks,
         PermissionDecision::Once,
         None,
+        "proj",
     ))
     .unwrap_err();
     assert_eq!(error, PermissionError::NoAsk);
@@ -199,6 +251,7 @@ fn an_unknown_code_lists_at_most_three() {
         asks.register(
             &format!("per_{index}"),
             "ses_1",
+            "proj",
             &format!("T{index}"),
             index as i64,
         )
@@ -210,6 +263,7 @@ fn an_unknown_code_lists_at_most_three() {
         &asks,
         PermissionDecision::Once,
         Some("ffff"),
+        "proj",
     ))
     .unwrap_err();
     let message = error.message();
@@ -225,13 +279,16 @@ fn a_missing_or_conflicting_ask_maps_to_already_answered() {
     for status in [404, 409] {
         let temp = TempDir::new(&format!("gone-{status}"));
         let asks = temp.store();
-        let registered = asks.register("per_1", "ses_1", "Fix links", 1).unwrap();
+        let registered = asks
+            .register("per_1", "ses_1", "proj", "Fix links", 1)
+            .unwrap();
         let permissions = FakePermissions::failing(AdapterError::with_status(status, "gone"));
         let outcome = block_on(reply_to_permission(
             &permissions,
             &asks,
             PermissionDecision::Once,
             None,
+            "proj",
         ))
         .unwrap();
         assert_eq!(
@@ -250,13 +307,15 @@ fn a_400_already_answered_maps_to_already_answered() {
     for text in ["Permission already answered", "already REPLIED"] {
         let temp = TempDir::new(&format!("answered-{}", text.len()));
         let asks = temp.store();
-        asks.register("per_1", "ses_1", "Fix links", 1).unwrap();
+        asks.register("per_1", "ses_1", "proj", "Fix links", 1)
+            .unwrap();
         let permissions = FakePermissions::failing(AdapterError::with_status(400, text));
         let outcome = block_on(reply_to_permission(
             &permissions,
             &asks,
             PermissionDecision::Once,
             None,
+            "proj",
         ))
         .unwrap();
         assert!(matches!(outcome, PermissionOutcome::AlreadyAnswered { .. }));
@@ -268,13 +327,15 @@ fn a_400_already_answered_maps_to_already_answered() {
 fn another_400_keeps_the_record() {
     let temp = TempDir::new("bad-request");
     let asks = temp.store();
-    asks.register("per_1", "ses_1", "Fix links", 1).unwrap();
+    asks.register("per_1", "ses_1", "proj", "Fix links", 1)
+        .unwrap();
     let permissions = FakePermissions::failing(AdapterError::with_status(400, "bad decision"));
     let error = block_on(reply_to_permission(
         &permissions,
         &asks,
         PermissionDecision::Once,
         None,
+        "proj",
     ))
     .unwrap_err();
     assert_eq!(
@@ -292,7 +353,8 @@ fn a_server_fault_or_transport_error_keeps_the_record() {
     for status in [None, Some(500), Some(503)] {
         let temp = TempDir::new(&format!("fault-{status:?}"));
         let asks = temp.store();
-        asks.register("per_1", "ses_1", "Fix links", 1).unwrap();
+        asks.register("per_1", "ses_1", "proj", "Fix links", 1)
+            .unwrap();
         let error = match status {
             Some(status) => AdapterError::with_status(status, "boom"),
             None => AdapterError::new("connection reset"),
@@ -303,6 +365,7 @@ fn a_server_fault_or_transport_error_keeps_the_record() {
             &asks,
             PermissionDecision::Once,
             None,
+            "proj",
         ))
         .unwrap_err();
         assert_eq!(reply, PermissionError::Adapter(error));
@@ -314,7 +377,9 @@ fn a_server_fault_or_transport_error_keeps_the_record() {
 fn a_tombstoned_code_acks_without_a_call() {
     let temp = TempDir::new("tombstone");
     let asks = temp.store();
-    let registered = asks.register("per_1", "ses_1", "Fix links", 1).unwrap();
+    let registered = asks
+        .register("per_1", "ses_1", "proj", "Fix links", 1)
+        .unwrap();
     asks.remove("per_1").unwrap();
     let permissions = FakePermissions::default();
     let outcome = block_on(reply_to_permission(
@@ -322,6 +387,7 @@ fn a_tombstoned_code_acks_without_a_call() {
         &asks,
         PermissionDecision::Once,
         Some(&registered.code),
+        "proj",
     ))
     .unwrap();
     assert_eq!(
@@ -341,6 +407,7 @@ fn a_named_code_with_no_asks_is_empty_not_unknown() {
         &asks,
         PermissionDecision::Once,
         Some("abcdef"),
+        "proj",
     ))
     .unwrap_err();
     assert_eq!(error, PermissionError::NoAsk);

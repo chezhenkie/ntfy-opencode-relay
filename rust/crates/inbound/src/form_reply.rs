@@ -68,13 +68,15 @@ impl FormOutcome {
     }
 }
 
-/// Cancels the newest pushed form with the text the phone sent.
+/// Cancels the newest pushed form on the reply's topic with the text the phone
+/// sent.
 pub async fn apply_form_reply(
     forms: &FormStore,
     api: &dyn FormApi,
+    topic: &str,
     text: &str,
 ) -> Result<FormOutcome, FormError> {
-    let record = match forms.resolve(None) {
+    let record = match forms.resolve(None, topic) {
         Resolve::Empty | Resolve::Unknown { .. } => return Err(FormError::NoForm),
         Resolve::AlreadyAnswered(form) => {
             return Err(FormError::AlreadyAnswered { title: form.title })
@@ -181,12 +183,16 @@ mod tests {
     }
 
     fn register(store: &FormStore, form: &str, title: &str, pushed: i64) {
+        register_topic(store, form, title, "proj", pushed);
+    }
+
+    fn register_topic(store: &FormStore, form: &str, title: &str, topic: &str, pushed: i64) {
         store
             .register(FormRecord {
                 code: String::new(),
                 form: form.to_string(),
                 session: "ses_1".to_string(),
-                topic: "proj".to_string(),
+                topic: topic.to_string(),
                 title: title.to_string(),
                 pushed,
                 fields: Vec::new(),
@@ -199,7 +205,7 @@ mod tests {
         let store = store("free-text");
         register(&store, "frm_1", "Questions", 1);
         let api = FakeForms::new();
-        let outcome = apply_form_reply(&store, &api, " keep both, any order ")
+        let outcome = apply_form_reply(&store, &api, "proj", " keep both, any order ")
             .await
             .unwrap();
         assert_eq!(outcome.title, "Questions");
@@ -221,7 +227,9 @@ mod tests {
         register(&store, "frm_1", "Old", 10);
         register(&store, "frm_2", "New", 20);
         let api = FakeForms::new();
-        let outcome = apply_form_reply(&store, &api, "either").await.unwrap();
+        let outcome = apply_form_reply(&store, &api, "proj", "either")
+            .await
+            .unwrap();
         assert_eq!(outcome.title, "New");
         assert_eq!(api.cancels.lock().unwrap()[0].1, "frm_2");
         assert_eq!(store.count(), 1);
@@ -232,16 +240,46 @@ mod tests {
         let store = store("empty");
         register(&store, "frm_1", "Questions", 1);
         let api = FakeForms::new();
-        apply_form_reply(&store, &api, "   ").await.unwrap();
+        apply_form_reply(&store, &api, "proj", "   ").await.unwrap();
         assert_eq!(api.cancels.lock().unwrap()[0].2, EMPTY_ANSWER);
         assert_eq!(store.count(), 0);
+    }
+
+    #[tokio::test]
+    async fn the_newest_form_on_the_reply_topic_wins() {
+        let store = store("topic");
+        register_topic(&store, "frm_1", "Proj", "proj", 10);
+        register_topic(&store, "frm_2", "Other", "other", 20);
+        let api = FakeForms::new();
+        let outcome = apply_form_reply(&store, &api, "proj", "yes").await.unwrap();
+        assert_eq!(outcome.title, "Proj");
+        assert_eq!(api.cancels.lock().unwrap()[0].1, "frm_1");
+        let outcome = apply_form_reply(&store, &api, "other", "no").await.unwrap();
+        assert_eq!(outcome.title, "Other");
+        assert_eq!(api.cancels.lock().unwrap()[1].1, "frm_2");
+        assert_eq!(store.count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_form_on_another_topic_is_not_answered() {
+        let store = store("other-topic");
+        register_topic(&store, "frm_1", "Other", "other", 10);
+        let api = FakeForms::new();
+        let error = apply_form_reply(&store, &api, "proj", "yes")
+            .await
+            .unwrap_err();
+        assert_eq!(error, FormError::NoForm);
+        assert!(api.cancels.lock().unwrap().is_empty());
+        assert_eq!(store.count(), 1);
     }
 
     #[tokio::test]
     async fn no_form_answers_truthfully() {
         let store = store("none");
         let api = FakeForms::new();
-        let error = apply_form_reply(&store, &api, "yes").await.unwrap_err();
+        let error = apply_form_reply(&store, &api, "proj", "yes")
+            .await
+            .unwrap_err();
         assert_eq!(error, FormError::NoForm);
         assert_eq!(error.message(), "no pending question form");
         assert!(api.cancels.lock().unwrap().is_empty());
@@ -253,7 +291,9 @@ mod tests {
         register(&store, "frm_1", "Questions", 1);
         store.remove("frm_1");
         let api = FakeForms::new();
-        let error = apply_form_reply(&store, &api, "yes").await.unwrap_err();
+        let error = apply_form_reply(&store, &api, "proj", "yes")
+            .await
+            .unwrap_err();
         assert_eq!(
             error,
             FormError::AlreadyAnswered {
@@ -267,7 +307,9 @@ mod tests {
         let store = store("settled");
         register(&store, "frm_1", "Questions", 1);
         let api = FakeForms::failing(409, "FormAlreadySettledError");
-        let error = apply_form_reply(&store, &api, "yes").await.unwrap_err();
+        let error = apply_form_reply(&store, &api, "proj", "yes")
+            .await
+            .unwrap_err();
         assert_eq!(
             error,
             FormError::AlreadyAnswered {
@@ -282,7 +324,9 @@ mod tests {
         let store = store("fault");
         register(&store, "frm_1", "Questions", 1);
         let api = FakeForms::failing(500, "boom");
-        let error = apply_form_reply(&store, &api, "yes").await.unwrap_err();
+        let error = apply_form_reply(&store, &api, "proj", "yes")
+            .await
+            .unwrap_err();
         assert_eq!(
             error,
             FormError::Server {

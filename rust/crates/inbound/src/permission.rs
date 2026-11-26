@@ -25,13 +25,15 @@ pub fn decision_for_native(verb: &str) -> Option<PermissionDecision> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PermissionError {
-    /// The registry holds no record.
+    /// The registry holds no record for this topic.
     NoAsk,
-    /// A named code is not registered; `available` is newest first.
+    /// A named code is not registered on this topic; `available` is newest first.
     UnknownCode {
         requested: String,
         available: Vec<Ask>,
     },
+    /// Several live asks match the topic and no code was given.
+    Ambiguous { available: Vec<Ask> },
     /// The server rejected the reply for a reason a retry will not fix.
     Server { status: u16, message: String },
     /// Transport failure or a server fault; the record stays.
@@ -43,7 +45,7 @@ impl PermissionError {
         match self {
             Self::Server { status, .. } => Some(*status),
             Self::Adapter(error) => error.status(),
-            Self::NoAsk | Self::UnknownCode { .. } => None,
+            Self::NoAsk | Self::UnknownCode { .. } | Self::Ambiguous { .. } => None,
         }
     }
 
@@ -67,6 +69,17 @@ impl PermissionError {
                         listed.join(", ")
                     )
                 }
+            }
+            Self::Ambiguous { available } => {
+                let listed: Vec<String> = available
+                    .iter()
+                    .take(3)
+                    .map(|ask| format!("{} ({})", ask.code, ask.title))
+                    .collect();
+                format!(
+                    "several permission asks are pending; reply with a code: {}",
+                    listed.join(", ")
+                )
             }
             Self::Server { message, .. } => message.clone(),
             Self::Adapter(error) => error.message().to_string(),
@@ -131,16 +144,19 @@ impl PermissionOutcome {
     }
 }
 
-/// Resolves one registry record and posts the decision to its own session and
-/// request id. A successful or already-answered reply removes the record.
+/// Resolves one registry record on the reply's topic and posts the decision to
+/// its own session and request id. A successful or already-answered reply
+/// removes the record.
 pub async fn reply_to_permission(
     permissions: &dyn PermissionApi,
     asks: &AskStore,
     decision: PermissionDecision,
     code: Option<&str>,
+    topic: &str,
 ) -> Result<PermissionOutcome, PermissionError> {
-    let ask = match asks.resolve(code) {
+    let ask = match asks.resolve(code, topic) {
         Resolve::Empty => return Err(PermissionError::NoAsk),
+        Resolve::Ambiguous { available } => return Err(PermissionError::Ambiguous { available }),
         Resolve::Unknown {
             requested,
             available,
@@ -259,6 +275,7 @@ mod tests {
             code: format!("c{index:03}"),
             request: format!("per_{index}"),
             session: "ses_1".to_string(),
+            topic: "proj".to_string(),
             title: format!("T{index}"),
             pushed: index as i64,
         };
@@ -271,5 +288,25 @@ mod tests {
         assert!(message.contains("c003 (T3)"));
         assert!(!message.contains("c000"));
         assert!(!message.contains("ses_"));
+    }
+
+    #[test]
+    fn an_ambiguous_reply_lists_the_codes_and_asks_for_one() {
+        let ask = |index: usize| Ask {
+            code: format!("c{index:03}"),
+            request: format!("per_{index}"),
+            session: "ses_1".to_string(),
+            topic: "proj".to_string(),
+            title: format!("T{index}"),
+            pushed: index as i64,
+        };
+        let error = PermissionError::Ambiguous {
+            available: vec![ask(2), ask(1)],
+        };
+        let message = error.message();
+        assert_eq!(
+            message,
+            "several permission asks are pending; reply with a code: c002 (T2), c001 (T1)"
+        );
     }
 }

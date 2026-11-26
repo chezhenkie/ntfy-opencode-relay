@@ -993,9 +993,12 @@ impl Worker {
         let asks = self.asks.clone();
         let request = request_id.to_string();
         let session = notice.session_id.clone();
+        let topic = notice.topic.clone();
         let title = notice.title.clone();
-        match tokio::task::spawn_blocking(move || asks.register(&request, &session, &title, now))
-            .await
+        match tokio::task::spawn_blocking(move || {
+            asks.register(&request, &session, &topic, &title, now)
+        })
+        .await
         {
             Ok(result) => result,
             Err(error) => Err(RegisterError::Io(std::io::Error::other(error.to_string()))),
@@ -1924,7 +1927,7 @@ mod tests {
         }));
         let requests = harness.wait_requests(1).await;
         let body = json_body(&requests[0]);
-        let code = match harness.asks.resolve(None) {
+        let code = match harness.asks.resolve(None, "proj") {
             Resolve::Found(ask) => {
                 assert_eq!(ask.request, "per_1");
                 assert_eq!(ask.session, "ses_a");
@@ -2063,7 +2066,7 @@ mod tests {
         );
         assert!(
             matches!(
-                harness.forms.resolve(None),
+                harness.forms.resolve(None, "proj"),
                 ntfy_relay_core::forms::Resolve::Found(_)
             ),
             "the form is registered before its push"

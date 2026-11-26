@@ -44,14 +44,18 @@ fn records_round_trip_through_the_file() {
     let temp = TempDir::new("roundtrip");
     let (store, report) = AskStore::open(temp.file(), 1_700_000_000_000);
     assert_eq!(report, OpenReport::default());
-    let first = store.register("per_1", "ses_1", "Fix links", 100).unwrap();
-    store.register("per_2", "ses_2", "Other", 200).unwrap();
+    let first = store
+        .register("per_1", "ses_1", "proj", "Fix links", 100)
+        .unwrap();
+    store
+        .register("per_2", "ses_2", "proj", "Other", 200)
+        .unwrap();
 
     let (loaded, report) = AskStore::open(temp.file(), 1_700_000_000_000);
     assert_eq!(report.loaded, 2);
     assert_eq!(report.trimmed, 0);
     assert_eq!(loaded.count(), 2);
-    match loaded.resolve(Some(&first.code)) {
+    match loaded.resolve(Some(&first.code), "proj") {
         Resolve::Found(ask) => {
             assert_eq!(ask.request, "per_1");
             assert_eq!(ask.session, "ses_1");
@@ -131,7 +135,9 @@ fn a_code_extends_to_seven_characters_on_collision() {
     .unwrap();
 
     let (store, _) = AskStore::open(temp.file(), 0);
-    let registered = store.register(request, "ses_9", "Target", 2).unwrap();
+    let registered = store
+        .register(request, "ses_9", "proj", "Target", 2)
+        .unwrap();
     assert_eq!(registered.code.len(), 7);
     assert_eq!(registered.code, hash[..7]);
 }
@@ -157,7 +163,7 @@ fn a_seventh_collision_skips_the_push() {
     )
     .unwrap();
     let (store, _) = AskStore::open(temp.file(), 0);
-    match store.register(request, "ses_9", "Target", 2) {
+    match store.register(request, "ses_9", "proj", "Target", 2) {
         Err(RegisterError::CodeCollision { request: failed }) => assert_eq!(failed, request),
         other => panic!("expected a code collision, got {other:?}"),
     }
@@ -178,7 +184,7 @@ fn a_duplicate_code_in_a_hand_edited_file_keeps_the_newest() {
     let (store, report) = AskStore::open(temp.file(), 0);
     assert_eq!(report.trimmed, 1);
     assert_eq!(store.count(), 1);
-    match store.resolve(None) {
+    match store.resolve(None, "proj") {
         Resolve::Found(ask) => {
             assert_eq!(ask.request, "per_2");
             assert_eq!(ask.title, "New");
@@ -191,11 +197,13 @@ fn a_duplicate_code_in_a_hand_edited_file_keeps_the_newest() {
 fn a_desktop_answer_moves_the_record_to_a_tombstone() {
     let temp = TempDir::new("tombstone");
     let (store, _) = AskStore::open(temp.file(), 0);
-    store.register("per_1", "ses_1", "Fix links", 100).unwrap();
+    store
+        .register("per_1", "ses_1", "proj", "Fix links", 100)
+        .unwrap();
     let removed = store.remove("per_1").expect("the record exists");
     assert_eq!(removed.code.len(), 4);
     assert_eq!(store.count(), 0);
-    match store.resolve(None) {
+    match store.resolve(None, "proj") {
         Resolve::AlreadyAnswered(ask) => {
             assert_eq!(ask.request, "per_1");
             assert_eq!(ask.title, "Fix links");
@@ -222,7 +230,7 @@ fn the_tombstone_list_stays_bounded() {
     for index in 0..(MAX_TOMBSTONES + 2) {
         let request = format!("per_{index}");
         store
-            .register(&request, "ses_1", "T", index as i64)
+            .register(&request, "ses_1", "proj", "T", index as i64)
             .unwrap();
         store.remove(&request).unwrap();
     }
@@ -243,7 +251,7 @@ fn the_registry_file_is_owner_only() {
         return;
     }
     let (store, _) = AskStore::open(temp.file(), 0);
-    store.register("per_1", "ses_1", "T", 1).unwrap();
+    store.register("per_1", "ses_1", "proj", "T", 1).unwrap();
     let mode = fs::metadata(temp.file()).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
 }

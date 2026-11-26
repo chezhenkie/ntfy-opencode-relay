@@ -117,6 +117,7 @@ pub enum Resolve {
 struct Tombstone {
     code: String,
     form: String,
+    topic: String,
     title: String,
     at: i64,
 }
@@ -209,16 +210,18 @@ impl FormStore {
         Ok(Registered { code, evicted })
     }
 
-    pub fn resolve(&self, code: Option<&str>) -> Resolve {
-        self.resolve_at(code, now_ms())
+    pub fn resolve(&self, code: Option<&str>, topic: &str) -> Resolve {
+        self.resolve_at(code, topic, now_ms())
     }
 
-    /// Deterministic form used by tests.
-    pub fn resolve_at(&self, code: Option<&str>, now: i64) -> Resolve {
+    /// Deterministic form used by tests. A record written before the topic
+    /// field existed carries an empty topic and answers on any topic.
+    pub fn resolve_at(&self, code: Option<&str>, topic: &str, now: i64) -> Resolve {
         let mut inner = self.lock();
         prune_tombstones(&mut inner.tombstones, now);
-        let available = |forms: &[FormRecord]| {
-            let mut newest = forms.to_vec();
+        let same_topic = |held: &str| topic.is_empty() || held.is_empty() || held == topic;
+        let available = |forms: Vec<&FormRecord>| {
+            let mut newest: Vec<FormRecord> = forms.into_iter().cloned().collect();
             newest.sort_by(|left, right| {
                 right
                     .pushed
@@ -229,31 +232,54 @@ impl FormStore {
         };
         let requested = code.map(normalize_code).filter(|code| !code.is_empty());
         let Some(requested) = requested else {
-            // No code: the last pushed form, the same default `/allow` uses.
-            if let Some(form) = inner.forms.last() {
+            // No code: the newest pushed form on this topic.
+            if let Some(form) = inner
+                .forms
+                .iter()
+                .filter(|form| same_topic(&form.topic))
+                .max_by(|left, right| {
+                    left.pushed
+                        .cmp(&right.pushed)
+                        .then_with(|| right.form.cmp(&left.form))
+                })
+            {
                 return Resolve::Found(form.clone());
             }
-            return match inner.tombstones.last() {
+            return match inner
+                .tombstones
+                .iter()
+                .rev()
+                .find(|tombstone| same_topic(&tombstone.topic))
+            {
                 Some(tombstone) => Resolve::AlreadyAnswered(tombstone_form(tombstone)),
                 None => Resolve::Empty,
             };
         };
-        if let Some(form) = inner.forms.iter().find(|form| form.code == requested) {
+        if let Some(form) = inner
+            .forms
+            .iter()
+            .find(|form| form.code == requested && same_topic(&form.topic))
+        {
             return Resolve::Found(form.clone());
         }
         if let Some(tombstone) = inner
             .tombstones
             .iter()
-            .find(|tombstone| tombstone.code == requested)
+            .find(|tombstone| tombstone.code == requested && same_topic(&tombstone.topic))
         {
             return Resolve::AlreadyAnswered(tombstone_form(tombstone));
         }
-        if inner.forms.is_empty() {
+        let matching: Vec<&FormRecord> = inner
+            .forms
+            .iter()
+            .filter(|form| same_topic(&form.topic))
+            .collect();
+        if matching.is_empty() {
             return Resolve::Empty;
         }
         Resolve::Unknown {
             requested,
-            available: available(&inner.forms),
+            available: available(matching),
         }
     }
 
@@ -270,6 +296,7 @@ impl FormStore {
         inner.tombstones.push(Tombstone {
             code: record.code.clone(),
             form: record.form.clone(),
+            topic: record.topic.clone(),
             title: record.title.clone(),
             at: now_ms(),
         });
@@ -377,7 +404,7 @@ fn tombstone_form(tombstone: &Tombstone) -> FormRecord {
         code: tombstone.code.clone(),
         form: tombstone.form.clone(),
         session: String::new(),
-        topic: String::new(),
+        topic: tombstone.topic.clone(),
         title: tombstone.title.clone(),
         pushed: tombstone.at,
         fields: Vec::new(),
@@ -472,7 +499,10 @@ mod tests {
             .unwrap();
         assert_eq!(left.code, right.code);
         assert_eq!(left.code.len(), CODE_MIN_LEN);
-        assert!(matches!(first.resolve(Some(&left.code)), Resolve::Found(_)));
+        assert!(matches!(
+            first.resolve(Some(&left.code), "proj"),
+            Resolve::Found(_)
+        ));
     }
 
     #[test]
@@ -485,7 +515,7 @@ mod tests {
             .register(record("frm_1", 20, vec![field("a", "string", true)]))
             .unwrap();
         assert_eq!(again.code, first.code);
-        let Resolve::Found(form) = store.resolve(Some(&again.code)) else {
+        let Resolve::Found(form) = store.resolve(Some(&again.code), "proj") else {
             panic!("the record survives");
         };
         assert_eq!(form.pushed, 20);
@@ -524,7 +554,7 @@ mod tests {
         store
             .register(record("frm_2", 200, vec![field("a", "string", false)]))
             .unwrap();
-        match store.resolve(Some("ffff")) {
+        match store.resolve(Some("ffff"), "proj") {
             Resolve::Unknown {
                 requested,
                 available,
@@ -535,7 +565,9 @@ mod tests {
             }
             other => panic!("expected an unknown code, got {other:?}"),
         }
-        assert!(matches!(store.resolve(None), Resolve::Found(form) if form.form == "frm_2"));
+        assert!(
+            matches!(store.resolve(None, "proj"), Resolve::Found(form) if form.form == "frm_2")
+        );
     }
 
     #[test]
@@ -545,7 +577,7 @@ mod tests {
             .register(record("frm_1", 1, vec![field("note", "string", false)]))
             .unwrap();
         store.remove("frm_1").unwrap();
-        match store.resolve(Some(&registered.code)) {
+        match store.resolve(Some(&registered.code), "proj") {
             Resolve::AlreadyAnswered(form) => assert_eq!(form.form, "frm_1"),
             other => panic!("expected a tombstone, got {other:?}"),
         }

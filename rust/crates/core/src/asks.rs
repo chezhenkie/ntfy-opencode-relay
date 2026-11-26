@@ -40,6 +40,10 @@ pub struct Ask {
     pub request: String,
     /// The session the ask belongs to (`ses_...`).
     pub session: String,
+    /// The project topic the push went to. A file written before this field
+    /// existed loads with an empty topic and answers on any topic.
+    #[serde(default)]
+    pub topic: String,
     /// Session title at push time.
     pub title: String,
     /// Epoch milliseconds.
@@ -85,9 +89,13 @@ impl std::error::Error for RegisterError {}
 /// Outcome of a reply token lookup.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolve {
-    /// No record and no tombstone.
+    /// No record and no tombstone for this topic.
     Empty,
     Found(Ask),
+    /// Several live asks match the topic and no code was given.
+    Ambiguous {
+        available: Vec<Ask>,
+    },
     /// A named code that is not registered. `available` is newest first.
     Unknown {
         requested: String,
@@ -111,6 +119,7 @@ pub struct OpenReport {
 struct Tombstone {
     code: String,
     request: String,
+    topic: String,
     title: String,
     at: i64,
 }
@@ -172,6 +181,7 @@ impl AskStore {
         &self,
         request: &str,
         session: &str,
+        topic: &str,
         title: &str,
         pushed: i64,
     ) -> Result<Registered, RegisterError> {
@@ -185,6 +195,7 @@ impl AskStore {
                     evicted: None,
                 });
             }
+            next[index].topic = topic.to_string();
             next[index].pushed = pushed;
             sort_asks(&mut next);
             persist(&self.path, &next).map_err(RegisterError::Io)?;
@@ -199,6 +210,7 @@ impl AskStore {
             code: code.clone(),
             request: request.to_string(),
             session: session.to_string(),
+            topic: topic.to_string(),
             title: title.to_string(),
             pushed,
         });
@@ -213,16 +225,18 @@ impl AskStore {
         Ok(Registered { code, evicted })
     }
 
-    pub fn resolve(&self, token: Option<&str>) -> Resolve {
-        self.resolve_at(token, now_ms())
+    pub fn resolve(&self, token: Option<&str>, topic: &str) -> Resolve {
+        self.resolve_at(token, topic, now_ms())
     }
 
-    /// Deterministic form used by tests.
-    pub fn resolve_at(&self, token: Option<&str>, now: i64) -> Resolve {
+    /// Deterministic form used by tests. Records written before the topic field
+    /// existed carry an empty topic and answer on any topic.
+    pub fn resolve_at(&self, token: Option<&str>, topic: &str, now: i64) -> Resolve {
         let mut inner = self.lock();
         prune_tombstones(&mut inner.tombstones, now);
-        let available = |asks: &[Ask]| {
-            let mut newest = asks.to_vec();
+        let same_topic = |held: &str| topic.is_empty() || held.is_empty() || held == topic;
+        let available = |asks: Vec<&Ask>| {
+            let mut newest: Vec<Ask> = asks.into_iter().cloned().collect();
             newest.sort_by(|left, right| {
                 right
                     .pushed
@@ -233,29 +247,54 @@ impl AskStore {
         };
         match token.map(normalize_code).filter(|code| !code.is_empty()) {
             Some(requested) => {
-                if let Some(ask) = inner.asks.iter().find(|ask| ask.code == requested) {
+                if let Some(ask) = inner
+                    .asks
+                    .iter()
+                    .find(|ask| ask.code == requested && same_topic(&ask.topic))
+                {
                     return Resolve::Found(ask.clone());
                 }
                 if let Some(tombstone) = inner
                     .tombstones
                     .iter()
-                    .find(|tombstone| tombstone.code == requested)
+                    .find(|tombstone| tombstone.code == requested && same_topic(&tombstone.topic))
                 {
                     return Resolve::AlreadyAnswered(tombstone_ask(tombstone));
                 }
-                if inner.asks.is_empty() {
+                let matching: Vec<&Ask> = inner
+                    .asks
+                    .iter()
+                    .filter(|ask| same_topic(&ask.topic))
+                    .collect();
+                if matching.is_empty() {
                     return Resolve::Empty;
                 }
                 Resolve::Unknown {
                     requested,
-                    available: available(&inner.asks),
+                    available: available(matching),
                 }
             }
             None => {
-                if let Some(ask) = inner.asks.last() {
-                    return Resolve::Found(ask.clone());
+                let matching: Vec<&Ask> = inner
+                    .asks
+                    .iter()
+                    .filter(|ask| same_topic(&ask.topic))
+                    .collect();
+                match matching.len() {
+                    0 => {}
+                    1 => return Resolve::Found(matching[0].clone()),
+                    _ => {
+                        return Resolve::Ambiguous {
+                            available: available(matching),
+                        }
+                    }
                 }
-                match inner.tombstones.last() {
+                match inner
+                    .tombstones
+                    .iter()
+                    .rev()
+                    .find(|tombstone| same_topic(&tombstone.topic))
+                {
                     Some(tombstone) => Resolve::AlreadyAnswered(tombstone_ask(tombstone)),
                     None => Resolve::Empty,
                 }
@@ -278,6 +317,7 @@ impl AskStore {
         inner.tombstones.push(Tombstone {
             code: ask.code.clone(),
             request: ask.request.clone(),
+            topic: ask.topic.clone(),
             title: ask.title.clone(),
             at: now_ms(),
         });
@@ -385,6 +425,7 @@ fn tombstone_ask(tombstone: &Tombstone) -> Ask {
         code: tombstone.code.clone(),
         request: tombstone.request.clone(),
         session: String::new(),
+        topic: tombstone.topic.clone(),
         title: tombstone.title.clone(),
         pushed: tombstone.at,
     }
@@ -446,28 +487,81 @@ mod tests {
     #[test]
     fn the_newest_record_is_the_default_target() {
         let store = AskStore::open(temp_path("newest"), 0).0;
-        store.register("per_1", "ses_1", "One", 100).unwrap();
-        store.register("per_2", "ses_2", "Two", 200).unwrap();
-        match store.resolve(None) {
+        store
+            .register("per_1", "ses_1", "topic-a", "One", 100)
+            .unwrap();
+        store
+            .register("per_2", "ses_2", "topic-b", "Two", 200)
+            .unwrap();
+        match store.resolve(None, "topic-b") {
             Resolve::Found(ask) => {
                 assert_eq!(ask.request, "per_2");
                 assert_eq!(ask.title, "Two");
             }
             other => panic!("expected the newest record, got {other:?}"),
         }
+        match store.resolve(None, "topic-a") {
+            Resolve::Found(ask) => assert_eq!(ask.request, "per_1"),
+            other => panic!("expected the record for its own topic, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_code_less_reply_lists_both_codes_when_two_asks_share_a_topic() {
+        let store = AskStore::open(temp_path("ambiguous"), 0).0;
+        let first = store
+            .register("per_1", "ses_1", "proj", "One", 100)
+            .unwrap();
+        let second = store
+            .register("per_2", "ses_2", "proj", "Two", 200)
+            .unwrap();
+        match store.resolve(None, "proj") {
+            Resolve::Ambiguous { available } => {
+                assert_eq!(available.len(), 2);
+                assert_eq!(available[0].request, "per_2");
+                assert_eq!(available[1].request, "per_1");
+                assert!(available
+                    .iter()
+                    .any(|ask| ask.code == first.code && ask.title == "One"));
+                assert!(available
+                    .iter()
+                    .any(|ask| ask.code == second.code && ask.title == "Two"));
+            }
+            other => panic!("expected both codes, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_file_without_topics_loads_and_still_answers() {
+        let path = temp_path("legacy-topic");
+        fs::write(
+            &path,
+            r#"{"version":1,"asks":[{"code":"aa11","request":"per_1","session":"ses_1","title":"One","pushed":5}]}"#,
+        )
+        .unwrap();
+        let store = AskStore::open(path, 0).0;
+        match store.resolve(None, "proj") {
+            Resolve::Found(ask) => {
+                assert_eq!(ask.request, "per_1");
+                assert_eq!(ask.topic, "");
+            }
+            other => panic!("expected the legacy record, got {other:?}"),
+        }
     }
 
     #[test]
     fn a_code_resolves_with_or_without_a_hash() {
         let store = AskStore::open(temp_path("code"), 0).0;
-        let registered = store.register("per_1", "ses_1", "One", 100).unwrap();
+        let registered = store
+            .register("per_1", "ses_1", "proj", "One", 100)
+            .unwrap();
         assert_eq!(registered.code.len(), CODE_MIN_LEN);
         for token in [
             registered.code.clone(),
             format!("#{}", registered.code),
             format!("#{}", registered.code.to_uppercase()),
         ] {
-            match store.resolve(Some(&token)) {
+            match store.resolve(Some(&token), "proj") {
                 Resolve::Found(ask) => assert_eq!(ask.request, "per_1"),
                 other => panic!("expected the record, got {other:?}"),
             }
@@ -478,16 +572,18 @@ mod tests {
     fn the_code_is_deterministic() {
         let first = AskStore::open(temp_path("deterministic-a"), 0).0;
         let second = AskStore::open(temp_path("deterministic-b"), 0).0;
-        let left = first.register("per_1", "ses_1", "One", 1).unwrap();
-        let right = second.register("per_1", "ses_1", "One", 1).unwrap();
+        let left = first.register("per_1", "ses_1", "proj", "One", 1).unwrap();
+        let right = second.register("per_1", "ses_1", "proj", "One", 1).unwrap();
         assert_eq!(left.code, right.code);
     }
 
     #[test]
     fn re_registering_a_request_keeps_one_record() {
         let store = AskStore::open(temp_path("reregister"), 0).0;
-        let first = store.register("per_1", "ses_1", "Old", 100).unwrap();
-        let second = store.register("per_1", "ses_1", "Old", 50).unwrap();
+        let first = store
+            .register("per_1", "ses_1", "proj", "Old", 100)
+            .unwrap();
+        let second = store.register("per_1", "ses_1", "proj", "Old", 50).unwrap();
         assert_eq!(first.code, second.code);
         assert_eq!(store.count(), 1);
         assert!(second.evicted.is_none());
@@ -498,11 +594,11 @@ mod tests {
         let store = AskStore::open(temp_path("cap"), 0).0;
         for index in 0..MAX_ASKS {
             store
-                .register(&format!("per_{index}"), "ses_1", "T", index as i64)
+                .register(&format!("per_{index}"), "ses_1", "proj", "T", index as i64)
                 .unwrap();
         }
         let registered = store
-            .register("per_last", "ses_1", "T", MAX_ASKS as i64)
+            .register("per_last", "ses_1", "proj", "T", MAX_ASKS as i64)
             .unwrap();
         let evicted = registered.evicted.expect("the oldest is evicted");
         assert_eq!(evicted.request, "per_0");
@@ -512,9 +608,13 @@ mod tests {
     #[test]
     fn an_unknown_code_lists_the_current_ones_newest_first() {
         let store = AskStore::open(temp_path("unknown"), 0).0;
-        store.register("per_1", "ses_1", "One", 100).unwrap();
-        store.register("per_2", "ses_2", "Two", 200).unwrap();
-        match store.resolve(Some("ffff")) {
+        store
+            .register("per_1", "ses_1", "proj", "One", 100)
+            .unwrap();
+        store
+            .register("per_2", "ses_2", "proj", "Two", 200)
+            .unwrap();
+        match store.resolve(Some("ffff"), "proj") {
             Resolve::Unknown {
                 requested,
                 available,
@@ -530,8 +630,8 @@ mod tests {
     #[test]
     fn an_empty_registry_has_no_target() {
         let store = AskStore::open(temp_path("empty"), 0).0;
-        assert_eq!(store.resolve(None), Resolve::Empty);
-        assert_eq!(store.resolve(Some("3f2a")), Resolve::Empty);
+        assert_eq!(store.resolve(None, "proj"), Resolve::Empty);
+        assert_eq!(store.resolve(Some("3f2a"), "proj"), Resolve::Empty);
     }
 
     #[test]
@@ -540,7 +640,7 @@ mod tests {
         for index in 0..(MAX_TOMBSTONES + 4) {
             let request = format!("per_{index}");
             store
-                .register(&request, "ses_1", "T", index as i64)
+                .register(&request, "ses_1", "proj", "T", index as i64)
                 .unwrap();
             store.remove(&request).unwrap();
         }
@@ -554,7 +654,7 @@ mod tests {
     #[test]
     fn a_tombstone_expires_after_the_ttl() {
         let store = AskStore::open(temp_path("tombstone-ttl"), 0).0;
-        store.register("per_1", "ses_1", "One", 1).unwrap();
+        store.register("per_1", "ses_1", "proj", "One", 1).unwrap();
         store.remove("per_1").unwrap();
         let now = now_ms();
         assert!(store.answered_at("per_1", now + TOMBSTONE_TTL_MS).is_some());
